@@ -28,6 +28,7 @@ def main():
             api_key=api_key,
             base_url="https://api.deepseek.com",
         )
+        print("Ожидаем ответ DeepSeek...", flush=True)
         response = client.chat.completions.create(
             model="deepseek-v4-flash",
             messages=[{"role": "user", "content": prompt}],
