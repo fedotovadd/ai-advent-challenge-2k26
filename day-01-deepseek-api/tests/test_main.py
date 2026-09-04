@@ -56,6 +56,18 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("message-input", body)
         self.assertNotIn("DEEPSEEK_API_KEY", body)
 
+    def test_page_contains_response_settings_and_metadata(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        self.assertIn("Настройки ответа", body)
+        self.assertIn("system-prompt-input", body)
+        self.assertIn("response-format-input", body)
+        self.assertIn("max-tokens-input", body)
+        self.assertIn("stop-input", body)
+        self.assertIn("save-settings", body)
+        self.assertIn("Метаданные", body)
+
     def test_initial_session_is_available(self):
         status, body, headers = self.json_request("GET", "/api/sessions")
 
