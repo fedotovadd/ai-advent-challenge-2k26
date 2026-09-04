@@ -10,7 +10,7 @@ import main
 
 class DeepSeekWebTests(unittest.TestCase):
     def setUp(self):
-        self.payloads = []
+        self.calls = []
         self.answer = "Тестовый ответ"
         self.environment = patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"})
         self.environment.start()
@@ -25,8 +25,8 @@ class DeepSeekWebTests(unittest.TestCase):
         self.thread.join()
         self.environment.stop()
 
-    def ask_model(self, payload):
-        self.payloads.append(payload)
+    def ask_model(self, payload, **kwargs):
+        self.calls.append({"payload": payload, "kwargs": kwargs})
         return self.answer
 
     def request(self, method, path, payload=None, headers=None):
@@ -126,7 +126,7 @@ class DeepSeekWebTests(unittest.TestCase):
             "messages": [{"role": "user", "content": "Привет"}, {"role": "assistant", "content": "Тестовый ответ"}],
             "settings": main.DEFAULT_SETTINGS,
         })
-        self.assertEqual(self.payloads, [{"model": main.MODEL, "messages": expected_messages}])
+        self.assertEqual(self.calls, [{"payload": {"model": main.MODEL, "messages": expected_messages}, "kwargs": {}}])
         self.assertEqual(body["metadata"], {
             "userPrompt": "Привет", "systemPrompt": main.SYSTEM_PROMPT,
             "payload": {"model": main.MODEL, "messages": expected_messages},
@@ -139,7 +139,7 @@ class DeepSeekWebTests(unittest.TestCase):
         status, _, _ = self.json_request("POST", "/api/sessions/session-1/messages", {"text": "Второй"})
 
         self.assertEqual(status, 200)
-        self.assertEqual(self.payloads[-1]["messages"], [
+        self.assertEqual(self.calls[-1]["payload"]["messages"], [
             {"role": "system", "content": main.SYSTEM_PROMPT},
             {"role": "user", "content": "Первый"},
             {"role": "assistant", "content": "Тестовый ответ"},
@@ -152,6 +152,37 @@ class DeepSeekWebTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertEqual(body["session"]["title"], "а" * 40)
+
+    def test_json_settings_are_sent_to_the_model(self):
+        settings = {
+            "systemPrompt": "Верни данные.",
+            "format": "json",
+            "maxTokens": 300,
+            "stop": "<END>",
+        }
+        self.json_request("PUT", "/api/sessions/session-1/settings", settings)
+
+        status, body, _ = self.json_request("POST", "/api/sessions/session-1/messages", {"text": "Привет"})
+
+        self.assertEqual(status, 200)
+        self.assertEqual(self.calls[-1]["kwargs"], {
+            "response_format": {"type": "json_object"},
+            "max_tokens": 300,
+            "stop": "<END>",
+        })
+        self.assertEqual(body["metadata"]["payload"]["response_format"], {"type": "json_object"})
+        self.assertEqual(body["metadata"]["payload"]["max_tokens"], 300)
+        self.assertEqual(body["metadata"]["payload"]["stop"], "<END>")
+        self.assertIn("валидный JSON", body["metadata"]["systemPrompt"])
+
+    def test_text_settings_omit_optional_model_parameters(self):
+        status, body, _ = self.json_request("POST", "/api/sessions/session-1/messages", {"text": "Привет"})
+
+        self.assertEqual(status, 200)
+        self.assertEqual(self.calls[-1]["kwargs"], {})
+        self.assertNotIn("response_format", body["metadata"]["payload"])
+        self.assertNotIn("max_tokens", body["metadata"]["payload"])
+        self.assertNotIn("stop", body["metadata"]["payload"])
 
     def test_invalid_message_bodies_are_rejected(self):
         cases = [
@@ -212,7 +243,7 @@ class DeepSeekWebTests(unittest.TestCase):
                 status, body, _ = self.json_request("POST", path, payload, headers)
                 self.assertEqual(status, 403)
                 self.assertEqual(body, {"error": "Запрос с другого источника запрещён."})
-        self.assertEqual(self.payloads, [])
+        self.assertEqual(self.calls, [])
 
     def test_matching_origin_is_accepted(self):
         status, _, _ = self.json_request(

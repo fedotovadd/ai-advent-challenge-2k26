@@ -10,6 +10,7 @@ from openai import OpenAI
 
 MODEL = "deepseek-v4-flash"
 SYSTEM_PROMPT = "Ты полезный AI-помощник. Отвечай ясно, практично и по-русски."
+JSON_OUTPUT_INSTRUCTION = "Верни только валидный JSON без Markdown-разметки."
 DEFAULT_SETTINGS = {
     "systemPrompt": SYSTEM_PROMPT,
     "format": "text",
@@ -125,12 +126,12 @@ class SessionStore:
             return copy.deepcopy(session)
 
 
-def ask_deepseek(payload):
+def ask_deepseek(payload, **options):
     api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
         raise ValueError("missing API key")
     client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-    response = client.chat.completions.create(model=MODEL, messages=payload["messages"])
+    response = client.chat.completions.create(model=payload["model"], messages=payload["messages"], **options)
     if not response.choices or not response.choices[0].message.content:
         raise ValueError("empty API response")
     return response.choices[0].message.content
@@ -197,14 +198,29 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if not session:
             self._send_json(404, {"error": "Сессия не найдена."})
             return
-        payload = {"model": MODEL, "messages": [{"role": "system", "content": SYSTEM_PROMPT}, *session["messages"]]}
-        metadata = {"userPrompt": text, "systemPrompt": SYSTEM_PROMPT, "payload": payload, "status": {"kind": "success", "label": "200 OK"}}
+        settings = session["settings"]
+        system_prompt = settings["systemPrompt"]
+        options = {}
+        if settings["format"] == "json":
+            system_prompt = f"{system_prompt}\n\n{JSON_OUTPUT_INSTRUCTION}"
+            options["response_format"] = {"type": "json_object"}
+        if settings["maxTokens"] is not None:
+            options["max_tokens"] = settings["maxTokens"]
+        if settings["stop"]:
+            options["stop"] = settings["stop"]
+        payload = {"model": MODEL, "messages": [{"role": "system", "content": system_prompt}, *session["messages"]]}
+        metadata = {
+            "userPrompt": text,
+            "systemPrompt": system_prompt,
+            "payload": {**payload, **options},
+            "status": {"kind": "success", "label": "200 OK"},
+        }
         if not os.getenv("DEEPSEEK_API_KEY"):
             metadata["status"] = {"kind": "error", "label": "Ошибка API"}
             self._send_json(503, {"session": session, "error": "Не задан DEEPSEEK_API_KEY.", "metadata": metadata})
             return
         try:
-            answer = self.server.ask_model(payload)
+            answer = self.server.ask_model(payload, **options)
             if not isinstance(answer, str) or not answer.strip():
                 raise ValueError("empty API response")
         except Exception:
