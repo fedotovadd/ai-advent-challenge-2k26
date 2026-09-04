@@ -10,6 +10,12 @@ from openai import OpenAI
 
 MODEL = "deepseek-v4-flash"
 SYSTEM_PROMPT = "Ты полезный AI-помощник. Отвечай ясно, практично и по-русски."
+DEFAULT_SETTINGS = {
+    "systemPrompt": SYSTEM_PROMPT,
+    "format": "text",
+    "maxTokens": None,
+    "stop": "",
+}
 
 PAGE = """<!doctype html>
 <html lang="ru">
@@ -67,7 +73,14 @@ PAGE = """<!doctype html>
 class SessionStore:
     def __init__(self):
         self._lock = threading.Lock()
-        self._sessions = {"session-1": {"id": "session-1", "title": "Новый чат", "messages": []}}
+        self._sessions = {
+            "session-1": {
+                "id": "session-1",
+                "title": "Новый чат",
+                "messages": [],
+                "settings": copy.deepcopy(DEFAULT_SETTINGS),
+            }
+        }
         self._next_id = 2
 
     def sessions(self):
@@ -78,8 +91,21 @@ class SessionStore:
         with self._lock:
             session_id = f"session-{self._next_id}"
             self._next_id += 1
-            session = {"id": session_id, "title": "Новый чат", "messages": []}
+            session = {
+                "id": session_id,
+                "title": "Новый чат",
+                "messages": [],
+                "settings": copy.deepcopy(DEFAULT_SETTINGS),
+            }
             self._sessions[session_id] = session
+            return copy.deepcopy(session)
+
+    def update_settings(self, session_id, settings):
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if not session:
+                return None
+            session["settings"] = copy.deepcopy(settings)
             return copy.deepcopy(session)
 
     def add_user_message(self, session_id, text):
@@ -139,6 +165,16 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(404, {"error": "Маршрут не найден."})
 
+    def do_PUT(self):
+        if not self._same_origin():
+            self._send_json(403, {"error": "Запрос с другого источника запрещён."})
+            return
+        parts = urlparse(self.path).path.split("/")
+        if len(parts) == 5 and parts[:3] == ["", "api", "sessions"] and parts[4] == "settings":
+            self._handle_settings(parts[3])
+            return
+        self._send_json(404, {"error": "Маршрут не найден."})
+
     def _same_origin(self):
         origin = self.headers.get("Origin")
         return not origin or origin == f"http://{self.headers.get('Host')}"
@@ -177,6 +213,46 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         session = self.server.store.add_assistant_message(session_id, answer)
         self._send_json(200, {"session": session, "metadata": metadata})
+
+    def _handle_settings(self, session_id):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
+            self._send_json(400, {"error": "Некорректный JSON."})
+            return
+        settings, error = self._validate_settings(data)
+        if error:
+            self._send_json(400, {"error": error})
+            return
+        session = self.server.store.update_settings(session_id, settings)
+        if not session:
+            self._send_json(404, {"error": "Сессия не найдена."})
+            return
+        self._send_json(200, {"session": session})
+
+    def _validate_settings(self, data):
+        expected_fields = {"systemPrompt", "format", "maxTokens", "stop"}
+        if not isinstance(data, dict) or set(data) != expected_fields:
+            return None, "Настройки имеют неверный формат."
+        system_prompt = data["systemPrompt"]
+        response_format = data["format"]
+        max_tokens = data["maxTokens"]
+        stop = data["stop"]
+        if not isinstance(system_prompt, str) or not system_prompt.strip():
+            return None, "System prompt не может быть пустым."
+        if response_format not in {"text", "json"}:
+            return None, "Формат ответа должен быть text или json."
+        if max_tokens is not None and (isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens <= 0):
+            return None, "Максимум токенов должен быть положительным целым числом."
+        if not isinstance(stop, str):
+            return None, "Стоп-последовательность должна быть строкой."
+        return {
+            "systemPrompt": system_prompt.strip(),
+            "format": response_format,
+            "maxTokens": max_tokens,
+            "stop": stop.strip(),
+        }, None
 
     def _send_json(self, status, body):
         encoded = json.dumps(body, ensure_ascii=False).encode("utf-8")

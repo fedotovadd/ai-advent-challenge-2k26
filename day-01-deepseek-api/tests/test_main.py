@@ -63,14 +63,55 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("application/json", headers["Content-Type"])
         self.assertEqual(
             body,
-            {"sessions": [{"id": "session-1", "title": "Новый чат", "messages": []}]},
+            {"sessions": [{"id": "session-1", "title": "Новый чат", "messages": [], "settings": main.DEFAULT_SETTINGS}]},
         )
 
     def test_create_session_assigns_next_id(self):
         status, body, _ = self.json_request("POST", "/api/sessions")
 
         self.assertEqual(status, 201)
-        self.assertEqual(body["session"], {"id": "session-2", "title": "Новый чат", "messages": []})
+        self.assertEqual(body["session"], {"id": "session-2", "title": "Новый чат", "messages": [], "settings": main.DEFAULT_SETTINGS})
+
+    def test_settings_are_stored_per_session(self):
+        settings = {
+            "systemPrompt": "Отвечай кратко.",
+            "format": "json",
+            "maxTokens": 300,
+            "stop": "<END>",
+        }
+
+        status, body, _ = self.json_request("PUT", "/api/sessions/session-1/settings", settings)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body["session"]["settings"], settings)
+
+    def test_invalid_settings_do_not_replace_saved_values(self):
+        valid_settings = {
+            "systemPrompt": "Отвечай кратко.",
+            "format": "text",
+            "maxTokens": None,
+            "stop": "",
+        }
+        self.json_request("PUT", "/api/sessions/session-1/settings", valid_settings)
+
+        status, body, _ = self.json_request(
+            "PUT", "/api/sessions/session-1/settings",
+            {"systemPrompt": "   ", "format": "text", "maxTokens": 0, "stop": ""},
+        )
+
+        self.assertEqual(status, 400)
+        self.assertIn("system prompt", body["error"].lower())
+        _, sessions, _ = self.json_request("GET", "/api/sessions")
+        self.assertEqual(sessions["sessions"][0]["settings"], valid_settings)
+
+    def test_settings_for_unknown_session_return_404(self):
+        status, body, _ = self.json_request(
+            "PUT", "/api/sessions/missing/settings",
+            {"systemPrompt": "Отвечай кратко.", "format": "text", "maxTokens": None, "stop": ""},
+        )
+
+        self.assertEqual(status, 404)
+        self.assertEqual(body, {"error": "Сессия не найдена."})
 
     def test_message_returns_answer_and_exact_metadata(self):
         status, body, _ = self.json_request("POST", "/api/sessions/session-1/messages", {"text": "  Привет  "})
@@ -83,6 +124,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(body["session"], {
             "id": "session-1", "title": "Привет",
             "messages": [{"role": "user", "content": "Привет"}, {"role": "assistant", "content": "Тестовый ответ"}],
+            "settings": main.DEFAULT_SETTINGS,
         })
         self.assertEqual(self.payloads, [{"model": main.MODEL, "messages": expected_messages}])
         self.assertEqual(body["metadata"], {
