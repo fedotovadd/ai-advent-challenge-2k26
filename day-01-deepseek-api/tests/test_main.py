@@ -101,6 +101,13 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertNotIn("Инструкция свободного формата", body)
         self.assertIn("Метаданные", body)
 
+    def test_session_switch_handler_is_not_rendered_as_session_label(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        self.assertIn("button.append(title,detail);", body)
+        self.assertIn('button.addEventListener("click",async()=>', body)
+
     def test_initial_session_is_available(self):
         status, body, headers = self.json_request("GET", "/api/sessions")
 
