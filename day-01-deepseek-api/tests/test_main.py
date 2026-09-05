@@ -266,7 +266,14 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(body["metadata"]["payload"]["response_format"], {"type": "json_object"})
         self.assertEqual(body["metadata"]["payload"]["max_tokens"], 300)
         self.assertEqual(body["metadata"]["payload"]["stop"], "<END>")
-        self.assertEqual(body["metadata"]["systemPrompt"], "Верни данные.")
+        self.assertEqual(
+            body["metadata"]["systemPrompt"],
+            "Верни данные.\n\nВерни только валидный JSON без Markdown-разметки.",
+        )
+        self.assertEqual(
+            self.calls[-1]["payload"]["messages"][0]["content"],
+            "Верни данные.\n\nВерни только валидный JSON без Markdown-разметки.",
+        )
 
     def test_text_format_forwards_system_prompt_unchanged(self):
         settings = {

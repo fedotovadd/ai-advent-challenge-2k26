@@ -10,6 +10,7 @@ from openai import OpenAI
 
 MODEL = "deepseek-v4-flash"
 SYSTEM_PROMPT = "Ты полезный AI-помощник. Отвечай ясно, практично и по-русски."
+JSON_OUTPUT_INSTRUCTION = "Верни только валидный JSON без Markdown-разметки."
 DEFAULT_SETTINGS = {
     "systemPrompt": SYSTEM_PROMPT,
     "format": "text",
@@ -211,6 +212,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         system_prompt = settings["systemPrompt"]
         options = {}
         if settings["format"] == "json":
+            system_prompt = f"{system_prompt}\n\n{JSON_OUTPUT_INSTRUCTION}"
             options["response_format"] = {"type": "json_object"}
         if settings["maxTokens"] is not None:
             options["max_tokens"] = settings["maxTokens"]
