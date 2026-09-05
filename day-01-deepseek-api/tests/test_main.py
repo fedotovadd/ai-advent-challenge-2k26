@@ -63,8 +63,9 @@ class DeepSeekWebTests(unittest.TestCase):
         thread_css = self.css_block(body, ".thread")
         composer_css = self.css_block(body, ".composer-area")
         mobile_start = body.index("@media (max-width:860px)")
-        mobile_app_css = self.css_block(body, ".app", mobile_start)
-        mobile_chat_css = self.css_block(body, ".chat", mobile_start)
+        mobile_css = body[mobile_start:body.index("</style>", mobile_start)]
+        mobile_app_css = self.css_block(mobile_css, ".app")
+        mobile_chat_css = self.css_block(mobile_css, ".chat")
 
         self.assertIn("height:100vh", app_css)
         self.assertIn("overflow:hidden", app_css)
