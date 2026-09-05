@@ -365,6 +365,7 @@ class DeepSeekWebTests(unittest.TestCase):
             generated_prompt,
             "Решение с использованием сгенерированного промпта",
             "Решение группы экспертов",
+            "Качественное сравнение ответов",
         ]
 
         status, body, _ = self.json_request("POST", "/api/day-03/run")
@@ -386,8 +387,10 @@ class DeepSeekWebTests(unittest.TestCase):
             generated_method["calls"][1]["answer"],
             "Решение с использованием сгенерированного промпта",
         )
+        self.assertEqual(experiment["comparison"]["status"], "success")
+        self.assertEqual(experiment["comparison"]["call"]["answer"], "Качественное сравнение ответов")
 
-        self.assertEqual(len(self.calls), 5)
+        self.assertEqual(len(self.calls), 6)
         self.assertTrue(all(call["payload"]["model"] == main.MODEL for call in self.calls))
         user_prompts = [call["payload"]["messages"][-1]["content"] for call in self.calls]
         self.assertEqual(user_prompts[0], main.DAY_THREE_TASK)
@@ -399,12 +402,14 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("аналитик", user_prompts[4].lower())
         self.assertIn("инженер", user_prompts[4].lower())
         self.assertIn("критик", user_prompts[4].lower())
+        self.assertIn(main.DAY_THREE_REFERENCE_SOLUTION, user_prompts[5])
 
-    def test_day_three_run_rejects_nonempty_request_body(self):
-        status, body, _ = self.json_request("POST", "/api/day-03/run", {"task": "другая задача"})
+    def test_day_three_run_accepts_custom_task(self):
+        status, body, _ = self.json_request("POST", "/api/day-03/run", {"task": "  другая задача  "})
 
-        self.assertEqual(status, 400)
-        self.assertEqual(body, {"error": "Маршрут не принимает параметры."})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["experiment"]["task"], "другая задача")
+        self.assertIsNone(body["experiment"]["referenceSolution"])
 
     def test_day_three_run_rejects_chunked_request_body_without_calling_model(self):
         connection = http.client.HTTPConnection("127.0.0.1", self.port)
@@ -420,7 +425,7 @@ class DeepSeekWebTests(unittest.TestCase):
         connection.close()
 
         self.assertEqual(response.status, 400)
-        self.assertEqual(body, {"error": "Маршрут не принимает параметры."})
+        self.assertEqual(body, {"error": "Transfer-Encoding не поддерживается."})
         self.assertEqual(self.calls, [])
 
     def test_day_three_run_rejects_conflicting_content_lengths_without_calling_model(self):
@@ -437,26 +442,7 @@ class DeepSeekWebTests(unittest.TestCase):
             connection.close()
 
         self.assertEqual(response.status, 400)
-        self.assertEqual(body, {"error": "Маршрут не принимает параметры."})
-        self.assertEqual(self.calls, [])
-
-    def test_day_three_run_rejects_positive_content_length_without_reading_body(self):
-        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=1)
-        try:
-            connection.putrequest("POST", "/api/day-03/run")
-            connection.putheader("Content-Length", "2")
-            connection.endheaders()
-            try:
-                response = connection.getresponse()
-            except TimeoutError:
-                connection.send(b"{}")
-                raise
-            body = json.loads(response.read().decode("utf-8"))
-        finally:
-            connection.close()
-
-        self.assertEqual(response.status, 400)
-        self.assertEqual(body, {"error": "Маршрут не принимает параметры."})
+        self.assertEqual(body, {"error": "Неоднозначный Content-Length."})
         self.assertEqual(self.calls, [])
 
     def test_day_three_run_rejects_invalid_content_length_without_calling_model(self):
@@ -471,7 +457,7 @@ class DeepSeekWebTests(unittest.TestCase):
             connection.close()
 
         self.assertEqual(response.status, 400)
-        self.assertEqual(body, {"error": "Маршрут не принимает параметры."})
+        self.assertEqual(body, {"error": "Некорректный Content-Length."})
         self.assertEqual(self.calls, [])
 
     def test_day_three_run_provider_error_returns_502_without_partial_experiment(self):

@@ -27,6 +27,13 @@ DAY_THREE_REFERENCE_SOLUTION = (
     "в комнату один раз. Если лампа горит, к ней подключён второй выключатель; если она выключена, но тёплая — "
     "первый; если выключена и холодная — третий."
 )
+DAY_THREE_COMPARISON_CRITERIA = (
+    "правильная последовательность действий",
+    "использование нагрева лампы",
+    "корректное сопоставление всех трёх состояний с выключателями",
+)
+MAX_DAY_THREE_REQUEST_BYTES = 32_768
+MAX_DAY_THREE_TASK_CHARS = 10_000
 
 PAGE = """<!doctype html>
 <html lang="ru">
@@ -37,8 +44,8 @@ PAGE = """<!doctype html>
   <style>
     :root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color:#3d2922; background:#f8f2ed; }
     * { box-sizing:border-box; } body { margin:0; min-height:100vh; background:#f8f2ed; } button, textarea, input, select { font:inherit; } button { cursor:pointer; }
-    .app { height:100vh; overflow:hidden; display:grid; grid-template-columns:240px minmax(0,1fr) 330px; background:#fffdfa; }
-    .sidebar, .metadata { padding:20px 14px; background:#fbf5f0; } .sidebar { border-right:1px solid #ecdcd2; display:flex; flex-direction:column; } .metadata { border-left:1px solid #ecdcd2; overflow:auto; }
+    .app { height:100vh; overflow:hidden; display:grid; grid-template-columns:240px minmax(0,1fr) 330px; background:#fffdfa; } .app.day-three-active { grid-template-columns:240px minmax(0,1fr); }
+    .sidebar, .metadata { padding:20px 14px; background:#fbf5f0; } .sidebar { border-right:1px solid #ecdcd2; display:flex; flex-direction:column; } .metadata { border-left:1px solid #ecdcd2; overflow:auto; } .metadata[hidden] { display:none; }
     .brand { display:flex; align-items:center; gap:9px; padding:4px 8px 24px; font-size:18px; font-weight:750; color:#3a251e; } .mark { display:grid; place-items:center; width:28px; height:28px; border-radius:9px; color:#fff; background:linear-gradient(135deg,#9d3f2f,#d77951); }
     .new-chat, .send { border:0; border-radius:10px; background:#983d2d; color:#fffaf6; font-weight:650; } .new-chat { padding:11px 12px; text-align:left; margin-bottom:22px; } .new-chat:hover, .send:hover { background:#813224; }
     .sessions-label { margin:0 8px 8px; color:#a39288; font-size:11px; text-transform:uppercase; letter-spacing:.08em; } #session-list { display:grid; gap:3px; }
@@ -51,26 +58,26 @@ PAGE = """<!doctype html>
     .thread { flex:1; min-height:0; overflow:auto; padding:32px clamp(18px,8vw,100px); } .message { display:flex; gap:10px; max-width:88%; margin-bottom:22px; } .message.user { margin-left:auto; justify-content:flex-end; }
     .avatar { display:grid; place-items:center; flex:0 0 30px; width:30px; height:30px; border-radius:9px; color:#fff; background:linear-gradient(135deg,#9d3f2f,#d77951); font-size:12px; font-weight:750; } .bubble { color:#5d4940; font-size:14px; line-height:1.55; white-space:pre-wrap; } .message.user .bubble { padding:11px 14px; border-radius:14px 14px 3px 14px; color:#5e382f; background:#f8e7de; } .author { margin-bottom:3px; color:#4a3027; font-size:11px; font-weight:700; }
     .composer-area { flex:0 0 auto; padding:0 28px 20px; } .composer { display:flex; align-items:end; gap:10px; padding:8px 9px 8px 14px; border:1px solid #e7d9d1; border-radius:14px; background:#fff; } #message-input { min-height:28px; max-height:120px; flex:1; resize:vertical; border:0; outline:0; color:#4d352c; background:transparent; } #message-input::placeholder { color:#ad9d94; } .send { min-width:100px; padding:10px 12px; } .send:disabled { cursor:wait; opacity:.65; } .hint { margin-top:8px; color:#ae9e95; text-align:center; font-size:11px; }
-    .day-three-view { flex:1; min-height:0; overflow:auto; padding:24px 28px 32px; background:#fffdfa; } .day-three-top, .reference-panel { padding:20px; border:1px solid #eadbd3; border-radius:14px; background:#fbf5f0; } .day-three-heading { display:flex; align-items:start; justify-content:space-between; gap:18px; } .day-three-heading h1 { margin:0 0 5px; color:#402a22; font-size:20px; } .day-three-heading p { margin:0; color:#8b7469; font-size:12px; } .day-three-task { margin:16px 0; color:#5d4940; font-size:14px; line-height:1.55; } .day-three-actions { display:flex; align-items:center; gap:12px; } #run-day-three { border:0; border-radius:10px; padding:10px 14px; color:#fffaf6; background:#983d2d; font-weight:700; } #run-day-three:disabled { cursor:wait; opacity:.65; } #day-three-status { color:#8b7469; font-size:12px; } #day-three-status[data-kind="error"] { color:#a72c23; }
-    .day-three-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:16px 0; } .method-card { min-width:0; padding:18px; border:1px solid #eaded7; border-radius:14px; background:#fff; } .method-card h2 { margin:0 0 7px; color:#4a3027; font-size:16px; } .method-description { margin:0 0 14px; color:#8b7469; font-size:12px; line-height:1.45; } .method-answer { margin:0; color:#5d4940; font-size:13px; line-height:1.55; white-space:pre-wrap; word-break:break-word; } .method-card details { margin-top:15px; border-top:1px solid #f0e5df; padding-top:12px; } .method-card summary { cursor:pointer; color:#913d2d; font-size:12px; font-weight:700; } .prompt-call { margin-top:12px; padding:12px; border-radius:10px; background:#fbf5f0; } .prompt-call h3 { margin:0 0 9px; color:#6f5044; font-size:12px; } .prompt-label { display:block; margin:8px 0 4px; color:#9a7f73; font-size:10px; font-weight:750; letter-spacing:.06em; text-transform:uppercase; } .prompt-value { margin:0; color:#5e4a40; font-size:11px; line-height:1.5; white-space:pre-wrap; word-break:break-word; } .reference-panel { margin-top:16px; } .reference-panel h2 { margin:0 0 10px; color:#4a3027; font-size:16px; } .reference-panel p, .reference-panel li { color:#5d4940; font-size:13px; line-height:1.5; } .reference-panel ul { margin:10px 0 0; padding-left:20px; }
+    .day-three-view { flex:1; min-height:0; overflow:auto; padding:24px 28px 32px; background:#fffdfa; } .day-three-top, .reference-panel { padding:20px; border:1px solid #eadbd3; border-radius:14px; background:#fbf5f0; } .day-three-heading { display:flex; align-items:start; justify-content:space-between; gap:18px; } .day-three-heading h1 { margin:0 0 5px; color:#402a22; font-size:20px; } .day-three-heading p { margin:0; color:#8b7469; font-size:12px; } .day-three-task-field { display:grid; gap:6px; margin:16px 0; color:#7d6257; font-size:11px; font-weight:750; letter-spacing:.06em; text-transform:uppercase; } #day-three-task { width:100%; min-height:110px; resize:vertical; padding:12px 13px; border:1px solid #dfcec4; border-radius:10px; outline:none; color:#5d4940; background:#fffdfa; font-size:14px; font-weight:400; line-height:1.55; letter-spacing:normal; text-transform:none; } #day-three-task:focus { border-color:#b85b46; box-shadow:0 0 0 3px rgba(184,91,70,.12); } .day-three-actions { display:flex; align-items:center; gap:12px; } #run-day-three { border:0; border-radius:10px; padding:10px 14px; color:#fffaf6; background:#983d2d; font-weight:700; } #run-day-three:disabled { cursor:wait; opacity:.65; } #day-three-status { color:#8b7469; font-size:12px; } #day-three-status[data-kind="error"] { color:#a72c23; }
+    .day-three-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:16px 0; } .method-card { min-width:0; padding:18px; border:1px solid #eaded7; border-radius:14px; background:#fff; } .method-card h2 { margin:0 0 7px; color:#4a3027; font-size:16px; } .method-description { margin:0 0 14px; color:#8b7469; font-size:12px; line-height:1.45; } .method-answer { margin:0; color:#5d4940; font-size:13px; line-height:1.55; white-space:pre-wrap; word-break:break-word; } .method-card details { margin-top:15px; border-top:1px solid #f0e5df; padding-top:12px; } .method-card summary { cursor:pointer; color:#913d2d; font-size:12px; font-weight:700; } .prompt-call { margin-top:12px; padding:12px; border-radius:10px; background:#fbf5f0; } .prompt-call h3 { margin:0 0 9px; color:#6f5044; font-size:12px; } .prompt-label { display:block; margin:8px 0 4px; color:#9a7f73; font-size:10px; font-weight:750; letter-spacing:.06em; text-transform:uppercase; } .prompt-value { margin:0; color:#5e4a40; font-size:11px; line-height:1.5; white-space:pre-wrap; word-break:break-word; } .reference-panel { margin-top:16px; } .reference-panel h2 { margin:0 0 10px; color:#4a3027; font-size:16px; } .reference-panel p, .reference-panel li { color:#5d4940; font-size:13px; line-height:1.5; } .reference-panel ul { margin:10px 0 0; padding-left:20px; } .comparison-panel { margin-top:18px; padding-top:18px; border-top:1px solid #e6d4ca; } .comparison-panel details { margin-top:12px; } .comparison-panel summary { cursor:pointer; color:#913d2d; font-size:12px; font-weight:700; }
     .settings-panel { padding-bottom:17px; border-bottom:1px solid #eaded7; } .metadata-section { padding-top:18px; } .metadata-title { display:flex; align-items:center; justify-content:space-between; margin:4px 3px 14px; } .metadata-title h2 { margin:0; color:#4a3027; font-size:14px; } .metadata-title span { color:#a34b38; font-size:10px; } .setting-field { display:grid; gap:5px; margin-bottom:10px; color:#8b796e; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; } .setting-field textarea, .setting-field input, .setting-field select { width:100%; padding:9px 10px; border:1px solid #e7d9d1; border-radius:8px; outline-color:#c9634c; color:#5e4a40; background:#fffdfa; font-size:12px; font-weight:400; letter-spacing:normal; text-transform:none; } .setting-field textarea { min-height:72px; resize:vertical; line-height:1.4; } .setting-hint { margin:-4px 0 10px; color:#aa9990; font-size:10px; line-height:1.4; } .save-settings { width:100%; border:0; border-radius:9px; padding:10px; color:#fffaf6; background:#983d2d; font-size:12px; font-weight:700; } .save-settings:hover { background:#813224; } .save-settings:disabled { cursor:wait; opacity:.65; } .meta-card { margin-bottom:11px; overflow:hidden; border:1px solid #eaded7; border-radius:11px; background:#fffdfa; } .meta-label { padding:10px 11px; border-bottom:1px solid #f2eae5; color:#8b796e; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; } .meta-value { min-height:40px; padding:11px; color:#5e4a40; font-size:12px; line-height:1.5; white-space:pre-wrap; word-break:break-word; } pre.meta-value { margin:0; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:10px; }
-    @media (max-width:860px) { .app { height:auto; overflow:visible; grid-template-columns:1fr; } .chat { height:100vh; } .sidebar { border-right:0; border-bottom:1px solid #ecdcd2; } .sidebar, .metadata { padding:14px; } .brand { padding-bottom:12px; } .new-chat { margin-bottom:12px; } #session-list { display:flex; overflow:auto; } .session { min-width:150px; } .account { display:none; } .metadata { border-top:1px solid #ecdcd2; border-left:0; } header { height:auto; min-height:68px; flex-wrap:wrap; padding:10px 18px; } .view-toggle { order:3; width:100%; } .view-toggle button { flex:1; } .thread { min-height:340px; padding:24px 18px; } .composer-area { padding:0 18px 16px; } .day-three-view { padding:18px; } .day-three-grid { grid-template-columns:1fr; } .day-three-heading { flex-direction:column; } }
+    @media (max-width:860px) { .app, .app.day-three-active { height:auto; overflow:visible; grid-template-columns:1fr; } .chat { height:100vh; } .sidebar { border-right:0; border-bottom:1px solid #ecdcd2; } .sidebar, .metadata { padding:14px; } .brand { padding-bottom:12px; } .new-chat { margin-bottom:12px; } #session-list { display:flex; overflow:auto; } .session { min-width:150px; } .account { display:none; } .metadata { border-top:1px solid #ecdcd2; border-left:0; } header { height:auto; min-height:68px; flex-wrap:wrap; padding:10px 18px; } .view-toggle { order:3; width:100%; } .view-toggle button { flex:1; } .thread { min-height:340px; padding:24px 18px; } .composer-area { padding:0 18px 16px; } .day-three-view { padding:18px; } .day-three-grid { grid-template-columns:1fr; } .day-three-heading { flex-direction:column; } }
   </style>
 </head>
 <body>
   <div class="app">
     <aside class="sidebar"><div class="brand"><span class="mark">D</span>DeepSeek</div><button class="new-chat" id="new-chat" type="button">＋ Новый чат</button><div class="sessions-label">Сессии</div><nav id="session-list" aria-label="Сессии"></nav><div class="account">Локальный интерфейс<br><span class="model">История хранится до перезапуска</span></div></aside>
-    <main class="chat"><header><div><div id="chat-title">Новый чат</div><div class="model">DeepSeek V4 Flash</div></div><div class="view-toggle" role="group" aria-label="Переключить режим"><button id="view-chat" type="button" aria-pressed="true">Чат</button><button id="view-day-three" type="button" aria-pressed="false">День 3</button></div><div id="status" data-kind="ready">● Готов к работе</div></header><section class="chat-view" id="chat-view"><section class="thread" id="thread" aria-live="polite"></section><div class="composer-area"><form class="composer" id="composer"><textarea id="message-input" aria-label="Сообщение" placeholder="Напишите сообщение…" required></textarea><button class="send" id="send" type="submit">Отправить</button></form><div class="hint">⌘ Enter или Ctrl Enter — отправить</div></div></section><section class="day-three-view" id="day-three-view" hidden><section class="day-three-top"><div class="day-three-heading"><div><h1>День 3 — способы рассуждения</h1><p>Одна задача, четыре стратегии</p></div></div><p class="day-three-task">За закрытой дверью находится лампочка. Снаружи — три выключателя, и только один из них подключён к лампочке. В комнату можно войти только один раз. Как определить, какой выключатель подключён к лампочке?</p><div class="day-three-actions"><button id="run-day-three" type="button">Запустить 4 стратегии</button><span id="day-three-status" role="status">Готово к запуску</span></div></section><section class="day-three-grid" id="day-three-cards"><article class="method-card"><h2>Напрямую</h2><p class="method-description">Только текст задачи.</p><p class="method-answer">Результат ещё не получен.</p></article><article class="method-card"><h2>Пошагово</h2><p class="method-description">Явная просьба решать по шагам.</p><p class="method-answer">Результат ещё не получен.</p></article><article class="method-card"><h2>Свой промпт</h2><p class="method-description">Два вызова: создать промпт, затем решить задачу.</p><p class="method-answer">Результат ещё не получен.</p></article><article class="method-card"><h2>Группа экспертов</h2><p class="method-description">Независимые взгляды аналитика, инженера и критика.</p><p class="method-answer">Результат ещё не получен.</p></article></section><section class="reference-panel" id="day-three-reference" hidden></section></section></main>
+    <main class="chat"><header><div><div id="chat-title">Новый чат</div><div class="model">DeepSeek V4 Flash</div></div><div class="view-toggle" role="group" aria-label="Переключить режим"><button id="view-chat" type="button" aria-pressed="true">Чат</button><button id="view-day-three" type="button" aria-pressed="false">День 3</button></div><div id="status" data-kind="ready">● Готов к работе</div></header><section class="chat-view" id="chat-view"><section class="thread" id="thread" aria-live="polite"></section><div class="composer-area"><form class="composer" id="composer"><textarea id="message-input" aria-label="Сообщение" placeholder="Напишите сообщение…" required></textarea><button class="send" id="send" type="submit">Отправить</button></form><div class="hint">⌘ Enter или Ctrl Enter — отправить</div></div></section><section class="day-three-view" id="day-three-view" hidden><section class="day-three-top"><div class="day-three-heading"><div><h1>День 3 — способы рассуждения</h1><p>Одна задача, четыре стратегии</p></div></div><label class="day-three-task-field" for="day-three-task">Условие задачи<textarea id="day-three-task" aria-label="Условие задачи">За закрытой дверью находится лампочка. Снаружи — три выключателя, и только один из них подключён к лампочке. В комнату можно войти только один раз. Как определить, какой выключатель подключён к лампочке?</textarea></label><div class="day-three-actions"><button id="run-day-three" type="button">Запустить 4 стратегии</button><span id="day-three-status" role="status">Готово к запуску</span></div></section><section class="day-three-grid" id="day-three-cards"><article class="method-card"><h2>Напрямую</h2><p class="method-description">Только текст задачи.</p><p class="method-answer">Результат ещё не получен.</p></article><article class="method-card"><h2>Пошагово</h2><p class="method-description">Явная просьба решать по шагам.</p><p class="method-answer">Результат ещё не получен.</p></article><article class="method-card"><h2>Свой промпт</h2><p class="method-description">Два вызова: создать промпт, затем решить задачу.</p><p class="method-answer">Результат ещё не получен.</p></article><article class="method-card"><h2>Группа экспертов</h2><p class="method-description">Независимые взгляды аналитика, инженера и критика.</p><p class="method-answer">Результат ещё не получен.</p></article></section><section class="reference-panel" id="day-three-reference" hidden></section></section></main>
     <aside class="metadata"><section class="settings-panel"><div class="metadata-title"><h2>Настройки ответа</h2><span id="settings-status">сессия</span></div><div id="settings-form"><label class="setting-field" for="system-prompt-input">System prompt<textarea id="system-prompt-input" aria-label="System prompt" required></textarea></label><label class="setting-field" for="response-format-input">Формат ответа<select id="response-format-input" aria-label="Формат ответа"><option value="text">Обычный текст</option><option value="json">JSON</option></select></label><label class="setting-field" for="max-tokens-input">Максимум токенов<input id="max-tokens-input" aria-label="Максимум токенов" type="number" min="1" step="1" placeholder="Без ограничения"></label><label class="setting-field" for="stop-input">Стоп-последовательность<input id="stop-input" aria-label="Стоп-последовательность" type="text" placeholder="Например: &lt;END&gt;"></label><p class="setting-hint">Настройки сохраняются автоматически для текущей сессии.</p></div></section><section class="metadata-section"><div class="metadata-title"><h2>Метаданные</h2><span id="meta-status">ожидание</span></div><section class="meta-card"><div class="meta-label">User prompt</div><div class="meta-value" id="user-prompt">—</div></section><section class="meta-card"><div class="meta-label">System prompt</div><div class="meta-value" id="system-prompt">—</div></section><section class="meta-card"><div class="meta-label">Отправлено в API</div><pre class="meta-value" id="payload">—</pre></section><section class="meta-card"><div class="meta-label">Статус</div><div class="meta-value" id="api-status">—</div></section></section></aside>
   </div>
   <script>
     const state = { sessions: [], activeId: null, metadata: null, settingsTimer: null, pendingSettings: null, settingsSaveInFlight: null, view:"chat", experiment:null, experimentRunning:false };
-    const elements = { sessions:document.querySelector("#session-list"), title:document.querySelector("#chat-title"), thread:document.querySelector("#thread"), input:document.querySelector("#message-input"), send:document.querySelector("#send"), status:document.querySelector("#status"), settingsStatus:document.querySelector("#settings-status"), systemPromptInput:document.querySelector("#system-prompt-input"), responseFormatInput:document.querySelector("#response-format-input"), maxTokensInput:document.querySelector("#max-tokens-input"), stopInput:document.querySelector("#stop-input"), metaStatus:document.querySelector("#meta-status"), userPrompt:document.querySelector("#user-prompt"), systemPrompt:document.querySelector("#system-prompt"), payload:document.querySelector("#payload"), apiStatus:document.querySelector("#api-status"), viewChat:document.querySelector("#view-chat"), viewDayThree:document.querySelector("#view-day-three"), chatView:document.querySelector("#chat-view"), dayThreeView:document.querySelector("#day-three-view"), runDayThree:document.querySelector("#run-day-three"), dayThreeStatus:document.querySelector("#day-three-status"), dayThreeCards:document.querySelector("#day-three-cards"), dayThreeReference:document.querySelector("#day-three-reference") };
+    const elements = { app:document.querySelector(".app"), metadata:document.querySelector(".metadata"), sessions:document.querySelector("#session-list"), title:document.querySelector("#chat-title"), thread:document.querySelector("#thread"), input:document.querySelector("#message-input"), send:document.querySelector("#send"), status:document.querySelector("#status"), settingsStatus:document.querySelector("#settings-status"), systemPromptInput:document.querySelector("#system-prompt-input"), responseFormatInput:document.querySelector("#response-format-input"), maxTokensInput:document.querySelector("#max-tokens-input"), stopInput:document.querySelector("#stop-input"), metaStatus:document.querySelector("#meta-status"), userPrompt:document.querySelector("#user-prompt"), systemPrompt:document.querySelector("#system-prompt"), payload:document.querySelector("#payload"), apiStatus:document.querySelector("#api-status"), viewChat:document.querySelector("#view-chat"), viewDayThree:document.querySelector("#view-day-three"), chatView:document.querySelector("#chat-view"), dayThreeView:document.querySelector("#day-three-view"), dayThreeTask:document.querySelector("#day-three-task"), runDayThree:document.querySelector("#run-day-three"), dayThreeStatus:document.querySelector("#day-three-status"), dayThreeCards:document.querySelector("#day-three-cards"), dayThreeReference:document.querySelector("#day-three-reference") };
     async function api(url, options={}) { const response=await fetch(url,options); const body=await response.json().catch(()=>({error:"Сервер вернул некорректный ответ."})); return {response,body}; }
     function activeSession() { return state.sessions.find((session)=>session.id===state.activeId); }
     function setStatus(text, kind="ready") { elements.status.textContent=text; elements.status.dataset.kind=kind; }
-    function setView(view) { state.view=view; const chatSelected=view==="chat"; elements.chatView.hidden=!chatSelected; elements.dayThreeView.hidden=chatSelected; elements.viewChat.setAttribute("aria-pressed",String(chatSelected)); elements.viewDayThree.setAttribute("aria-pressed",String(!chatSelected)); }
-    function renderExperiment() { const experiment=state.experiment; if(!experiment)return; elements.dayThreeCards.replaceChildren(); experiment.methods.forEach((method)=>{ const card=document.createElement("article"); card.className="method-card"; const title=document.createElement("h2"); title.textContent=method.title; const description=document.createElement("p"); description.className="method-description"; description.textContent=method.description; const answer=document.createElement("p"); answer.className="method-answer"; answer.textContent=method.calls[method.calls.length-1].answer; const details=document.createElement("details"); const summary=document.createElement("summary"); summary.textContent="Что будет отправлено в модель"; details.append(summary); method.calls.forEach((call,index)=>{ const callBlock=document.createElement("section"); callBlock.className="prompt-call"; const callTitle=document.createElement("h3"); callTitle.textContent=method.id==="generated_prompt"?(index===0?"Вызов 1 — составить промпт":"Вызов 2 — решить с этим промптом"):"Вызов API"; callBlock.append(callTitle); [["System prompt",call.systemPrompt],["User prompt",call.userPrompt]].forEach(([label,value])=>{ const promptLabel=document.createElement("span"); promptLabel.className="prompt-label"; promptLabel.textContent=label; const promptValue=document.createElement("p"); promptValue.className="prompt-value"; promptValue.textContent=value; callBlock.append(promptLabel,promptValue); }); if(method.id==="generated_prompt"&&index===0){ const generatedLabel=document.createElement("span"); generatedLabel.className="prompt-label"; generatedLabel.textContent="Сгенерированный промпт"; const generatedValue=document.createElement("p"); generatedValue.className="prompt-value"; generatedValue.textContent=call.answer; callBlock.append(generatedLabel,generatedValue); } details.append(callBlock); }); card.append(title,description,answer,details); elements.dayThreeCards.append(card); }); elements.dayThreeReference.replaceChildren(); const referenceTitle=document.createElement("h2"); referenceTitle.textContent="Эталонное решение"; const referenceText=document.createElement("p"); referenceText.textContent=experiment.referenceSolution; const criteriaTitle=document.createElement("h2"); criteriaTitle.textContent="Критерии сравнения"; const criteria=document.createElement("ul"); ["Правильная последовательность действий.","Использование нагрева лампы.","Корректное сопоставление всех трёх состояний с выключателями."].forEach((text)=>{ const item=document.createElement("li"); item.textContent=text; criteria.append(item); }); elements.dayThreeReference.append(referenceTitle,referenceText,criteriaTitle,criteria); elements.dayThreeReference.hidden=false; }
+    function setView(view) { state.view=view; const chatSelected=view==="chat"; elements.chatView.hidden=!chatSelected; elements.dayThreeView.hidden=chatSelected; elements.metadata.hidden=!chatSelected; elements.app.classList.toggle("day-three-active",!chatSelected); elements.viewChat.setAttribute("aria-pressed",String(chatSelected)); elements.viewDayThree.setAttribute("aria-pressed",String(!chatSelected)); }
+    function renderExperiment() { const experiment=state.experiment; if(!experiment)return; elements.dayThreeCards.replaceChildren(); experiment.methods.forEach((method)=>{ const card=document.createElement("article"); card.className="method-card"; const title=document.createElement("h2"); title.textContent=method.title; const description=document.createElement("p"); description.className="method-description"; description.textContent=method.description; const answer=document.createElement("p"); answer.className="method-answer"; answer.textContent=method.calls[method.calls.length-1].answer; const details=document.createElement("details"); const summary=document.createElement("summary"); summary.textContent="Что будет отправлено в модель"; details.append(summary); method.calls.forEach((call,index)=>{ const callBlock=document.createElement("section"); callBlock.className="prompt-call"; const callTitle=document.createElement("h3"); callTitle.textContent=method.id==="generated_prompt"?(index===0?"Вызов 1 — составить промпт":"Вызов 2 — решить с этим промптом"):"Вызов API"; callBlock.append(callTitle); [["System prompt",call.systemPrompt],["User prompt",call.userPrompt]].forEach(([label,value])=>{ const promptLabel=document.createElement("span"); promptLabel.className="prompt-label"; promptLabel.textContent=label; const promptValue=document.createElement("p"); promptValue.className="prompt-value"; promptValue.textContent=value; callBlock.append(promptLabel,promptValue); }); if(method.id==="generated_prompt"&&index===0){ const generatedLabel=document.createElement("span"); generatedLabel.className="prompt-label"; generatedLabel.textContent="Сгенерированный промпт"; const generatedValue=document.createElement("p"); generatedValue.className="prompt-value"; generatedValue.textContent=call.answer; callBlock.append(generatedLabel,generatedValue); } details.append(callBlock); }); card.append(title,description,answer,details); elements.dayThreeCards.append(card); }); elements.dayThreeReference.replaceChildren(); const referenceTitle=document.createElement("h2"); referenceTitle.textContent="Эталонное решение"; const referenceText=document.createElement("p"); referenceText.textContent=experiment.referenceSolution||"Для изменённой задачи нейросеть выводит независимый эталон в сравнении ниже."; const criteriaTitle=document.createElement("h2"); criteriaTitle.textContent="Критерии сравнения"; const criteria=document.createElement("ul"); ["Правильная последовательность действий.","Использование нагрева лампы.","Корректное сопоставление всех трёх состояний с выключателями."].forEach((text)=>{ const item=document.createElement("li"); item.textContent=text; criteria.append(item); }); const comparisonPanel=document.createElement("section"); comparisonPanel.className="comparison-panel"; const comparisonTitle=document.createElement("h2"); comparisonTitle.textContent="Сравнение от нейросети"; comparisonPanel.append(comparisonTitle); if(experiment.comparison.status==="success"){ const comparisonText=document.createElement("p"); comparisonText.textContent=experiment.comparison.call.answer; const comparisonDetails=document.createElement("details"); const comparisonSummary=document.createElement("summary"); comparisonSummary.textContent="Что было отправлено для сравнения"; const comparisonCall=document.createElement("section"); comparisonCall.className="prompt-call"; [["System prompt",experiment.comparison.call.systemPrompt],["User prompt",experiment.comparison.call.userPrompt]].forEach(([label,value])=>{ const promptLabel=document.createElement("span"); promptLabel.className="prompt-label"; promptLabel.textContent=label; const promptValue=document.createElement("p"); promptValue.className="prompt-value"; promptValue.textContent=value; comparisonCall.append(promptLabel,promptValue); }); comparisonDetails.append(comparisonSummary,comparisonCall); comparisonPanel.append(comparisonText,comparisonDetails); } else { const comparisonError=document.createElement("p"); comparisonError.textContent=experiment.comparison.message; comparisonPanel.append(comparisonError); } elements.dayThreeReference.append(referenceTitle,referenceText,criteriaTitle,criteria,comparisonPanel); elements.dayThreeReference.hidden=false; }
     function renderSessions() { elements.sessions.replaceChildren(); state.sessions.forEach((session)=>{ const button=document.createElement("button"); button.type="button"; button.className="session"+(session.id===state.activeId?" active":""); const title=document.createElement("span"); title.textContent=session.title; const detail=document.createElement("span"); detail.className="session-date"; detail.textContent=session.messages.length+" сообщений"; button.append(title,detail); button.addEventListener("click",async()=>{await flushSettingsSave(); state.activeId=session.id; render(); elements.input.focus();}); elements.sessions.append(button); }); }
     function renderThread() { elements.thread.replaceChildren(); const session=activeSession(); elements.title.textContent=session?session.title:"Новый чат"; if(!session||!session.messages.length){const empty=document.createElement("div"); empty.className="bubble"; empty.textContent="Начните диалог — первое сообщение станет названием сессии."; elements.thread.append(empty); return;} session.messages.forEach((message)=>{const row=document.createElement("article"); row.className="message "+message.role; if(message.role==="assistant"){const avatar=document.createElement("div"); avatar.className="avatar"; avatar.textContent="D"; row.append(avatar);} const content=document.createElement("div"); content.className="bubble"; if(message.role==="assistant"){const author=document.createElement("div"); author.className="author"; author.textContent="DeepSeek"; content.append(author);} const text=document.createElement("div"); text.textContent=message.content; content.append(text); row.append(content); elements.thread.append(row);}); elements.thread.scrollTop=elements.thread.scrollHeight; }
     function renderSettings() { const settings=activeSession()?activeSession().settings:null; if(!settings)return; elements.systemPromptInput.value=settings.systemPrompt; elements.responseFormatInput.value=settings.format; elements.maxTokensInput.value=settings.maxTokens===null?"":settings.maxTokens; elements.stopInput.value=settings.stop; }
@@ -88,7 +95,7 @@ PAGE = """<!doctype html>
     document.querySelector("#new-chat").addEventListener("click",async()=>{if(!await flushSettingsSave())return;const {body}=await api("/api/sessions",{method:"POST"}); if(body.session){upsertSession(body.session); state.metadata=null; render(); elements.input.focus();}else setStatus(body.error||"Не удалось создать сессию.","error");});
     elements.viewChat.addEventListener("click",()=>setView("chat"));
     elements.viewDayThree.addEventListener("click",()=>setView("day-three"));
-    elements.runDayThree.addEventListener("click",async()=>{ if(state.experimentRunning)return; state.experimentRunning=true; elements.runDayThree.disabled=true; elements.dayThreeStatus.textContent="Запускаем четыре стратегии…"; elements.dayThreeStatus.removeAttribute("data-kind"); try { const {response,body}=await api("/api/day-03/run",{method:"POST"}); if(!response.ok){elements.dayThreeStatus.textContent=body.error||"Не удалось запустить эксперимент.";elements.dayThreeStatus.dataset.kind="error";return;} state.experiment=body.experiment; renderExperiment(); elements.dayThreeStatus.textContent="Все четыре стратегии готовы"; } catch(error) { elements.dayThreeStatus.textContent="Не удалось соединиться с локальным сервером."; elements.dayThreeStatus.dataset.kind="error"; } finally { state.experimentRunning=false; elements.runDayThree.disabled=false; }});
+    elements.runDayThree.addEventListener("click",async()=>{ if(state.experimentRunning)return; state.experimentRunning=true; elements.runDayThree.disabled=true; elements.dayThreeStatus.textContent="Запускаем четыре стратегии…"; elements.dayThreeStatus.removeAttribute("data-kind"); const task=elements.dayThreeTask.value.trim(); try { const {response,body}=await api("/api/day-03/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({task})}); if(!response.ok){elements.dayThreeStatus.textContent=body.error||"Не удалось запустить эксперимент.";elements.dayThreeStatus.dataset.kind="error";return;} state.experiment=body.experiment; renderExperiment(); elements.runDayThree.textContent="Запустить снова"; elements.dayThreeStatus.textContent="Все четыре стратегии готовы"; } catch(error) { elements.dayThreeStatus.textContent="Не удалось соединиться с локальным сервером."; elements.dayThreeStatus.dataset.kind="error"; } finally { state.experimentRunning=false; elements.runDayThree.disabled=false; }});
     elements.responseFormatInput.addEventListener("change",()=>scheduleSettingsSave(0));
     [elements.systemPromptInput,elements.maxTokensInput,elements.stopInput].forEach((input)=>input.addEventListener("input",()=>scheduleSettingsSave()));
     document.querySelector("#composer").addEventListener("submit",async(event)=>{event.preventDefault(); const text=elements.input.value.trim(); if(!text||!state.activeId)return; elements.send.disabled=true; if(!await flushSettingsSave()){elements.send.disabled=false;return;} setStatus("● Ожидаем ответ DeepSeek…"); try { const {response,body}=await api("/api/sessions/"+state.activeId+"/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({text})}); if(body.session)upsertSession(body.session); if(body.metadata)state.metadata=body.metadata; if(response.ok){elements.input.value="";setStatus("● Ответ получен");}else setStatus(body.error||"Не удалось получить ответ.","error"); render(); } catch(error) { setStatus("Не удалось соединиться с локальным сервером.","error"); } finally { elements.send.disabled=false; elements.input.focus(); }});
@@ -181,18 +188,18 @@ def _run_day_three_call(ask_model, user_prompt):
     return {"systemPrompt": SYSTEM_PROMPT, "userPrompt": user_prompt, "answer": answer}
 
 
-def run_day_three_experiment(ask_model):
-    direct_call = _run_day_three_call(ask_model, DAY_THREE_TASK)
+def run_day_three_experiment(ask_model, task):
+    direct_call = _run_day_three_call(ask_model, task)
     step_by_step_call = _run_day_three_call(
         ask_model,
-        f"{DAY_THREE_TASK}\n\nРешай пошагово.",
+        f"{task}\n\nРешай пошагово.",
     )
     generated_prompt_call = _run_day_three_call(
         ask_model,
         (
             "Создай на русском языке точный промпт для решения следующей логической задачи. "
             "Верни только текст промпта, без решения задачи.\n\n"
-            f"{DAY_THREE_TASK}"
+            f"{task}"
         ),
     )
     generated_solution_call = _run_day_three_call(ask_model, generated_prompt_call["answer"])
@@ -201,39 +208,67 @@ def run_day_three_experiment(ask_model):
         (
             "Реши следующую задачу как группа экспертов с ролями аналитик, инженер и критик. "
             "Пусть каждый эксперт предложит независимое решение, затем дай краткий общий синтез.\n\n"
-            f"{DAY_THREE_TASK}"
+            f"{task}"
         ),
     )
+    methods = [
+        {
+            "id": "direct",
+            "title": "Напрямую",
+            "description": "Только текст задачи без дополнительных инструкций.",
+            "calls": [direct_call],
+        },
+        {
+            "id": "step_by_step",
+            "title": "Пошагово",
+            "description": "Задача с явной просьбой решать пошагово.",
+            "calls": [step_by_step_call],
+        },
+        {
+            "id": "generated_prompt",
+            "title": "Свой промпт",
+            "description": "Модель сначала создаёт промпт, а затем решает задачу по нему.",
+            "calls": [generated_prompt_call, generated_solution_call],
+        },
+        {
+            "id": "experts",
+            "title": "Группа экспертов",
+            "description": "Независимые решения аналитика, инженера и критика с кратким общим выводом.",
+            "calls": [experts_call],
+        },
+    ]
+    criteria = "\n".join(f"- {criterion}" for criterion in DAY_THREE_COMPARISON_CRITERIA)
+    answers = "\n\n".join(
+        f"{method['title']}:\n{method['calls'][-1]['answer']}" for method in methods
+    )
+    reference_solution = DAY_THREE_REFERENCE_SOLUTION if task == DAY_THREE_TASK else None
+    reference_instruction = (
+        f"Эталонное решение:\n{reference_solution}"
+        if reference_solution
+        else (
+            "Сначала самостоятельно выведи правильное эталонное решение именно для этой задачи, "
+            "включи его в читаемое сравнение, а затем сравни с ним четыре ответа."
+        )
+    )
+    comparison_prompt = (
+        "Сравни на русском языке четыре ответа на логическую задачу. Опиши их различия, "
+        "укажи самый точный метод или скажи, что несколько методов одинаково точны. Ясно обоснуй вывод "
+        "через критерии ниже. Не используй числовые оценки.\n\n"
+        f"Задача:\n{task}\n\n"
+        f"{reference_instruction}\n\n"
+        f"Критерии:\n{criteria}\n\n"
+        f"Ответы методов:\n{answers}"
+    )
+    try:
+        comparison = {"status": "success", "call": _run_day_three_call(ask_model, comparison_prompt)}
+    except Exception:
+        comparison = {"status": "error", "message": "Не удалось получить сравнение DeepSeek."}
     return {
-        "task": DAY_THREE_TASK,
-        "referenceSolution": DAY_THREE_REFERENCE_SOLUTION,
+        "task": task,
+        "referenceSolution": reference_solution,
         "systemPrompt": SYSTEM_PROMPT,
-        "methods": [
-            {
-                "id": "direct",
-                "title": "Напрямую",
-                "description": "Только текст задачи без дополнительных инструкций.",
-                "calls": [direct_call],
-            },
-            {
-                "id": "step_by_step",
-                "title": "Пошагово",
-                "description": "Задача с явной просьбой решать пошагово.",
-                "calls": [step_by_step_call],
-            },
-            {
-                "id": "generated_prompt",
-                "title": "Свой промпт",
-                "description": "Модель сначала создаёт промпт, а затем решает задачу по нему.",
-                "calls": [generated_prompt_call, generated_solution_call],
-            },
-            {
-                "id": "experts",
-                "title": "Группа экспертов",
-                "description": "Независимые решения аналитика, инженера и критика с кратким общим выводом.",
-                "calls": [experts_call],
-            },
-        ],
+        "methods": methods,
+        "comparison": comparison,
     }
 
 
@@ -285,29 +320,49 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         return not origin or origin == f"http://{self.headers.get('Host')}"
 
     def _handle_day_three(self, query):
+        if query:
+            self._send_json(400, {"error": "Маршрут не принимает query-параметры."})
+            return
         if self.headers.get("Transfer-Encoding") is not None:
-            self._send_json(400, {"error": "Маршрут не принимает параметры."})
+            self._send_json(400, {"error": "Transfer-Encoding не поддерживается."})
             return
         content_lengths = self.headers.get_all("Content-Length", [])
         if len(content_lengths) > 1:
-            self._send_json(400, {"error": "Маршрут не принимает параметры."})
+            self._send_json(400, {"error": "Неоднозначный Content-Length."})
             return
         if content_lengths and (not content_lengths[0].isascii() or not content_lengths[0].isdigit()):
-            self._send_json(400, {"error": "Маршрут не принимает параметры."})
+            self._send_json(400, {"error": "Некорректный Content-Length."})
             return
         try:
             length = int(content_lengths[0]) if content_lengths else 0
         except ValueError:
-            self._send_json(400, {"error": "Маршрут не принимает параметры."})
+            self._send_json(400, {"error": "Некорректный Content-Length."})
             return
-        if query or length != 0:
-            self._send_json(400, {"error": "Маршрут не принимает параметры."})
+        if length > MAX_DAY_THREE_REQUEST_BYTES:
+            self._send_json(400, {"error": "Тело запроса слишком большое."})
             return
+        task = DAY_THREE_TASK
+        if length:
+            try:
+                data = json.loads(self.rfile.read(length).decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self._send_json(400, {"error": "Некорректный JSON."})
+                return
+            if not isinstance(data, dict) or set(data) != {"task"} or not isinstance(data["task"], str):
+                self._send_json(400, {"error": "Запрос должен содержать только строковое поле task."})
+                return
+            task = data["task"].strip()
+            if not task:
+                self._send_json(400, {"error": "Поле task должно быть непустой строкой."})
+                return
+            if len(task) > MAX_DAY_THREE_TASK_CHARS:
+                self._send_json(400, {"error": "Условие задачи слишком длинное."})
+                return
         if not os.getenv("DEEPSEEK_API_KEY"):
             self._send_json(503, {"error": "Не задан DEEPSEEK_API_KEY."})
             return
         try:
-            experiment = run_day_three_experiment(self.server.ask_model)
+            experiment = run_day_three_experiment(self.server.ask_model, task)
         except Exception:
             self._send_json(502, {"error": "Не удалось получить ответы DeepSeek."})
             return
