@@ -46,17 +46,40 @@ class DeepSeekWebTests(unittest.TestCase):
         status, body, response_headers = self.request(method, path, payload, headers)
         return status, json.loads(body), response_headers
 
+    def css_block(self, page, selector, start=0):
+        opening = page.find(f"{selector} {{", start)
+        self.assertNotEqual(opening, -1, f"Missing CSS block for {selector}.")
+        closing = page.index("}", opening)
+        return page[opening:closing + 1]
+
     def test_page_contains_chat_controls(self):
         status, body, headers = self.request("GET", "/")
 
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers["Content-Type"])
-        self.assertIn("height:100vh", body)
-        self.assertIn("overflow:hidden", body)
-        self.assertIn("header { flex:0 0 auto;", body)
-        self.assertIn(".composer-area { flex:0 0 auto;", body)
-        self.assertIn("@media (max-width:860px)", body)
-        self.assertIn("body { height:auto; overflow:auto; }", body)
+        app_css = self.css_block(body, ".app")
+        chat_css = self.css_block(body, ".chat")
+        header_css = self.css_block(body, "header")
+        thread_css = self.css_block(body, ".thread")
+        composer_css = self.css_block(body, ".composer-area")
+        mobile_start = body.index("@media (max-width:860px)")
+        mobile_app_css = self.css_block(body, ".app", mobile_start)
+        mobile_chat_css = self.css_block(body, ".chat", mobile_start)
+
+        self.assertIn("height:100vh", app_css)
+        self.assertIn("overflow:hidden", app_css)
+        self.assertIn("height:100vh", chat_css)
+        self.assertIn("display:flex", chat_css)
+        self.assertIn("flex-direction:column", chat_css)
+        self.assertIn("min-height:0", chat_css)
+        self.assertIn("flex:0 0 auto", header_css)
+        self.assertIn("flex:0 0 auto", composer_css)
+        self.assertIn("flex:1", thread_css)
+        self.assertIn("min-height:0", thread_css)
+        self.assertIn("overflow:auto", thread_css)
+        self.assertIn("height:auto", mobile_app_css)
+        self.assertIn("overflow:visible", mobile_app_css)
+        self.assertIn("height:100vh", mobile_chat_css)
         self.assertIn("Новый чат", body)
         self.assertIn("Метаданные", body)
         self.assertIn("message-input", body)
@@ -145,6 +168,15 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(body, {"error": "Сессия не найдена."})
 
     def test_legacy_format_instruction_setting_is_rejected(self):
+        valid_settings = {
+            "systemPrompt": "Базовая инструкция.",
+            "format": "text",
+            "maxTokens": None,
+            "stop": "",
+        }
+        seed_status, _, _ = self.json_request("PUT", "/api/sessions/session-1/settings", valid_settings)
+        self.assertEqual(seed_status, 200)
+
         status, body, _ = self.json_request(
             "PUT", "/api/sessions/session-1/settings",
             {
@@ -158,6 +190,8 @@ class DeepSeekWebTests(unittest.TestCase):
 
         self.assertEqual(status, 400)
         self.assertEqual(body, {"error": "Настройки имеют неверный формат."})
+        _, sessions, _ = self.json_request("GET", "/api/sessions")
+        self.assertEqual(sessions["sessions"][0]["settings"], valid_settings)
 
     def test_message_returns_answer_and_exact_metadata(self):
         status, body, _ = self.json_request("POST", "/api/sessions/session-1/messages", {"text": "  Привет  "})
