@@ -9,7 +9,10 @@ from openai import OpenAI
 
 
 MODEL = "deepseek-v4-flash"
-SYSTEM_PROMPT = "Ты полезный AI-помощник. Отвечай ясно, практично и по-русски."
+SYSTEM_PROMPT = (
+    "Ты полезный AI-помощник. Отвечай ясно, практично и по-русски. "
+    "Возвращай обычный текст без Markdown-разметки."
+)
 JSON_OUTPUT_INSTRUCTION = "Верни только валидный JSON без Markdown-разметки."
 DEFAULT_SETTINGS = {
     "systemPrompt": SYSTEM_PROMPT,
