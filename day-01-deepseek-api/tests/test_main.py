@@ -63,9 +63,11 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("Настройки ответа", body)
         self.assertIn("system-prompt-input", body)
         self.assertIn("response-format-input", body)
+        self.assertIn("format-instruction-input", body)
         self.assertIn("max-tokens-input", body)
         self.assertIn("stop-input", body)
-        self.assertIn("save-settings", body)
+        self.assertIn("scheduleSettingsSave", body)
+        self.assertNotIn('id="save-settings"', body)
         self.assertIn("Метаданные", body)
 
     def test_initial_session_is_available(self):
