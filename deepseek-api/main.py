@@ -17,6 +17,16 @@ DEFAULT_SETTINGS = {
     "maxTokens": None,
     "stop": "",
 }
+DAY_THREE_TASK = (
+    "За закрытой дверью находится лампочка. Снаружи — три выключателя, и только один из них "
+    "подключён к лампочке. В комнату можно войти только один раз. Как определить, какой "
+    "выключатель подключён к лампочке?"
+)
+DAY_THREE_REFERENCE_SOLUTION = (
+    "Включить первый выключатель на несколько минут, затем выключить его, включить второй и войти "
+    "в комнату один раз. Если лампа горит, к ней подключён второй выключатель; если она выключена, но тёплая — "
+    "первый; если выключена и холодная — третий."
+)
 
 PAGE = """<!doctype html>
 <html lang="ru">
@@ -147,6 +157,76 @@ def ask_deepseek(payload, **options):
     return response.choices[0].message.content
 
 
+def _run_day_three_call(ask_model, user_prompt):
+    payload = {
+        "model": MODEL,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+    answer = ask_model(payload)
+    if not isinstance(answer, str) or not answer.strip():
+        raise ValueError("empty API response")
+    return {"systemPrompt": SYSTEM_PROMPT, "userPrompt": user_prompt, "answer": answer}
+
+
+def run_day_three_experiment(ask_model):
+    direct_call = _run_day_three_call(ask_model, DAY_THREE_TASK)
+    step_by_step_call = _run_day_three_call(
+        ask_model,
+        f"{DAY_THREE_TASK}\n\nРешай пошагово.",
+    )
+    generated_prompt_call = _run_day_three_call(
+        ask_model,
+        (
+            "Создай на русском языке точный промпт для решения следующей логической задачи. "
+            "Верни только текст промпта, без решения задачи.\n\n"
+            f"{DAY_THREE_TASK}"
+        ),
+    )
+    generated_solution_call = _run_day_three_call(ask_model, generated_prompt_call["answer"])
+    experts_call = _run_day_three_call(
+        ask_model,
+        (
+            "Реши следующую задачу как группа экспертов с ролями аналитик, инженер и критик. "
+            "Пусть каждый эксперт предложит независимое решение, затем дай краткий общий синтез.\n\n"
+            f"{DAY_THREE_TASK}"
+        ),
+    )
+    return {
+        "task": DAY_THREE_TASK,
+        "referenceSolution": DAY_THREE_REFERENCE_SOLUTION,
+        "systemPrompt": SYSTEM_PROMPT,
+        "methods": [
+            {
+                "id": "direct",
+                "title": "Напрямую",
+                "description": "Только текст задачи без дополнительных инструкций.",
+                "calls": [direct_call],
+            },
+            {
+                "id": "step_by_step",
+                "title": "Пошагово",
+                "description": "Задача с явной просьбой решать пошагово.",
+                "calls": [step_by_step_call],
+            },
+            {
+                "id": "generated_prompt",
+                "title": "Свой промпт",
+                "description": "Модель сначала создаёт промпт, а затем решает задачу по нему.",
+                "calls": [generated_prompt_call, generated_solution_call],
+            },
+            {
+                "id": "experts",
+                "title": "Группа экспертов",
+                "description": "Независимые решения аналитика, инженера и критика с кратким общим выводом.",
+                "calls": [experts_call],
+            },
+        ],
+    }
+
+
 class ChatRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         return
@@ -166,7 +246,11 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if not self._same_origin():
             self._send_json(403, {"error": "Запрос с другого источника запрещён."})
             return
-        path = urlparse(self.path).path
+        parsed_path = urlparse(self.path)
+        path = parsed_path.path
+        if path == "/api/day-03/run":
+            self._handle_day_three(parsed_path.query)
+            return
         if path == "/api/sessions":
             self._send_json(201, {"session": self.server.store.create()})
             return
@@ -189,6 +273,27 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
     def _same_origin(self):
         origin = self.headers.get("Origin")
         return not origin or origin == f"http://{self.headers.get('Host')}"
+
+    def _handle_day_three(self, query):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._send_json(400, {"error": "Маршрут не принимает параметры."})
+            return
+        if query or length != 0:
+            if length > 0:
+                self.rfile.read(length)
+            self._send_json(400, {"error": "Маршрут не принимает параметры."})
+            return
+        if not os.getenv("DEEPSEEK_API_KEY"):
+            self._send_json(503, {"error": "Не задан DEEPSEEK_API_KEY."})
+            return
+        try:
+            experiment = run_day_three_experiment(self.server.ask_model)
+        except Exception:
+            self._send_json(502, {"error": "Не удалось получить ответы DeepSeek."})
+            return
+        self._send_json(200, {"experiment": experiment})
 
     def _handle_message(self, session_id):
         try:
