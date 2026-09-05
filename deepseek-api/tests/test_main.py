@@ -406,6 +406,23 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body, {"error": "Маршрут не принимает параметры."})
 
+    def test_day_three_run_rejects_chunked_request_body_without_calling_model(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.port)
+        connection.request(
+            "POST",
+            "/api/day-03/run",
+            body=[b'{"task":"another"}'],
+            headers={"Content-Type": "application/json"},
+            encode_chunked=True,
+        )
+        response = connection.getresponse()
+        body = json.loads(response.read().decode("utf-8"))
+        connection.close()
+
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body, {"error": "Маршрут не принимает параметры."})
+        self.assertEqual(self.calls, [])
+
     def test_day_three_run_provider_error_returns_502_without_partial_experiment(self):
         def failing_model(payload):
             raise RuntimeError("сеть недоступна")

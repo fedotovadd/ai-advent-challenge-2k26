@@ -275,6 +275,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         return not origin or origin == f"http://{self.headers.get('Host')}"
 
     def _handle_day_three(self, query):
+        if self.headers.get("Transfer-Encoding") is not None:
+            self._send_json(400, {"error": "Маршрут не принимает параметры."})
+            return
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
