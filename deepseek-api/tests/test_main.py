@@ -423,6 +423,57 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(body, {"error": "Маршрут не принимает параметры."})
         self.assertEqual(self.calls, [])
 
+    def test_day_three_run_rejects_conflicting_content_lengths_without_calling_model(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=1)
+        try:
+            connection.putrequest("POST", "/api/day-03/run")
+            connection.putheader("Content-Length", "0")
+            connection.putheader("Content-Length", "2")
+            connection.endheaders()
+            connection.send(b"{}")
+            response = connection.getresponse()
+            body = json.loads(response.read().decode("utf-8"))
+        finally:
+            connection.close()
+
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body, {"error": "Маршрут не принимает параметры."})
+        self.assertEqual(self.calls, [])
+
+    def test_day_three_run_rejects_positive_content_length_without_reading_body(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=1)
+        try:
+            connection.putrequest("POST", "/api/day-03/run")
+            connection.putheader("Content-Length", "2")
+            connection.endheaders()
+            try:
+                response = connection.getresponse()
+            except TimeoutError:
+                connection.send(b"{}")
+                raise
+            body = json.loads(response.read().decode("utf-8"))
+        finally:
+            connection.close()
+
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body, {"error": "Маршрут не принимает параметры."})
+        self.assertEqual(self.calls, [])
+
+    def test_day_three_run_rejects_invalid_content_length_without_calling_model(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=1)
+        try:
+            connection.putrequest("POST", "/api/day-03/run")
+            connection.putheader("Content-Length", "+0")
+            connection.endheaders()
+            response = connection.getresponse()
+            body = json.loads(response.read().decode("utf-8"))
+        finally:
+            connection.close()
+
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body, {"error": "Маршрут не принимает параметры."})
+        self.assertEqual(self.calls, [])
+
     def test_day_three_run_provider_error_returns_502_without_partial_experiment(self):
         def failing_model(payload):
             raise RuntimeError("сеть недоступна")

@@ -278,14 +278,19 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if self.headers.get("Transfer-Encoding") is not None:
             self._send_json(400, {"error": "Маршрут не принимает параметры."})
             return
+        content_lengths = self.headers.get_all("Content-Length", [])
+        if len(content_lengths) > 1:
+            self._send_json(400, {"error": "Маршрут не принимает параметры."})
+            return
+        if content_lengths and (not content_lengths[0].isascii() or not content_lengths[0].isdigit()):
+            self._send_json(400, {"error": "Маршрут не принимает параметры."})
+            return
         try:
-            length = int(self.headers.get("Content-Length", "0"))
+            length = int(content_lengths[0]) if content_lengths else 0
         except ValueError:
             self._send_json(400, {"error": "Маршрут не принимает параметры."})
             return
         if query or length != 0:
-            if length > 0:
-                self.rfile.read(length)
             self._send_json(400, {"error": "Маршрут не принимает параметры."})
             return
         if not os.getenv("DEEPSEEK_API_KEY"):
