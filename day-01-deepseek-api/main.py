@@ -10,10 +10,10 @@ from openai import OpenAI
 
 MODEL = "deepseek-v4-flash"
 SYSTEM_PROMPT = "Ты полезный AI-помощник. Отвечай ясно, практично и по-русски."
-JSON_OUTPUT_INSTRUCTION = "Верни только валидный JSON без Markdown-разметки."
 DEFAULT_SETTINGS = {
     "systemPrompt": SYSTEM_PROMPT,
     "format": "text",
+    "formatInstruction": "",
     "maxTokens": None,
     "stop": "",
 }
@@ -204,8 +204,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         system_prompt = settings["systemPrompt"]
         options = {}
         if settings["format"] == "json":
-            system_prompt = f"{system_prompt}\n\n{JSON_OUTPUT_INSTRUCTION}"
             options["response_format"] = {"type": "json_object"}
+        elif settings["formatInstruction"]:
+            system_prompt = f"{system_prompt}\n\n{settings['formatInstruction']}"
         if settings["maxTokens"] is not None:
             options["max_tokens"] = settings["maxTokens"]
         if settings["stop"]:
@@ -250,17 +251,20 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         self._send_json(200, {"session": session})
 
     def _validate_settings(self, data):
-        expected_fields = {"systemPrompt", "format", "maxTokens", "stop"}
+        expected_fields = {"systemPrompt", "format", "formatInstruction", "maxTokens", "stop"}
         if not isinstance(data, dict) or set(data) != expected_fields:
             return None, "Настройки имеют неверный формат."
         system_prompt = data["systemPrompt"]
         response_format = data["format"]
+        format_instruction = data["formatInstruction"]
         max_tokens = data["maxTokens"]
         stop = data["stop"]
         if not isinstance(system_prompt, str) or not system_prompt.strip():
             return None, "System prompt не может быть пустым."
         if response_format not in {"text", "json"}:
             return None, "Формат ответа должен быть text или json."
+        if not isinstance(format_instruction, str):
+            return None, "Инструкция формата должна быть строкой."
         if max_tokens is not None and (isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens <= 0):
             return None, "Максимум токенов должен быть положительным целым числом."
         if not isinstance(stop, str):
@@ -268,6 +272,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         return {
             "systemPrompt": system_prompt.strip(),
             "format": response_format,
+            "formatInstruction": format_instruction.strip(),
             "maxTokens": max_tokens,
             "stop": stop.strip(),
         }, None

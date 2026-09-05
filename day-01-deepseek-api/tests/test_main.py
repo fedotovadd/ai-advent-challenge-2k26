@@ -88,6 +88,7 @@ class DeepSeekWebTests(unittest.TestCase):
         settings = {
             "systemPrompt": "Отвечай кратко.",
             "format": "json",
+            "formatInstruction": "",
             "maxTokens": 300,
             "stop": "<END>",
         }
@@ -101,6 +102,7 @@ class DeepSeekWebTests(unittest.TestCase):
         valid_settings = {
             "systemPrompt": "Отвечай кратко.",
             "format": "text",
+            "formatInstruction": "",
             "maxTokens": None,
             "stop": "",
         }
@@ -108,7 +110,7 @@ class DeepSeekWebTests(unittest.TestCase):
 
         status, body, _ = self.json_request(
             "PUT", "/api/sessions/session-1/settings",
-            {"systemPrompt": "   ", "format": "text", "maxTokens": 0, "stop": ""},
+            {"systemPrompt": "   ", "format": "text", "formatInstruction": "", "maxTokens": 0, "stop": ""},
         )
 
         self.assertEqual(status, 400)
@@ -119,11 +121,45 @@ class DeepSeekWebTests(unittest.TestCase):
     def test_settings_for_unknown_session_return_404(self):
         status, body, _ = self.json_request(
             "PUT", "/api/sessions/missing/settings",
-            {"systemPrompt": "Отвечай кратко.", "format": "text", "maxTokens": None, "stop": ""},
+            {"systemPrompt": "Отвечай кратко.", "format": "text", "formatInstruction": "", "maxTokens": None, "stop": ""},
         )
 
         self.assertEqual(status, 404)
         self.assertEqual(body, {"error": "Сессия не найдена."})
+
+    def test_empty_format_instruction_is_saved(self):
+        settings = {
+            "systemPrompt": "Базовая инструкция.",
+            "format": "text",
+            "formatInstruction": "",
+            "maxTokens": None,
+            "stop": "",
+        }
+
+        status, body, _ = self.json_request("PUT", "/api/sessions/session-1/settings", settings)
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body["session"]["settings"]["formatInstruction"], "")
+
+    def test_non_string_format_instruction_is_rejected_without_saving(self):
+        valid_settings = {
+            "systemPrompt": "Базовая инструкция.",
+            "format": "text",
+            "formatInstruction": "Кратко.",
+            "maxTokens": None,
+            "stop": "",
+        }
+        self.json_request("PUT", "/api/sessions/session-1/settings", valid_settings)
+
+        status, body, _ = self.json_request(
+            "PUT", "/api/sessions/session-1/settings",
+            {**valid_settings, "formatInstruction": 12},
+        )
+
+        self.assertEqual(status, 400)
+        self.assertIn("инструкция", body["error"].lower())
+        _, sessions, _ = self.json_request("GET", "/api/sessions")
+        self.assertEqual(sessions["sessions"][0]["settings"], valid_settings)
 
     def test_message_returns_answer_and_exact_metadata(self):
         status, body, _ = self.json_request("POST", "/api/sessions/session-1/messages", {"text": "  Привет  "})
@@ -169,6 +205,7 @@ class DeepSeekWebTests(unittest.TestCase):
         settings = {
             "systemPrompt": "Верни данные.",
             "format": "json",
+            "formatInstruction": "Не использовать.",
             "maxTokens": 300,
             "stop": "<END>",
         }
@@ -185,7 +222,26 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(body["metadata"]["payload"]["response_format"], {"type": "json_object"})
         self.assertEqual(body["metadata"]["payload"]["max_tokens"], 300)
         self.assertEqual(body["metadata"]["payload"]["stop"], "<END>")
-        self.assertIn("валидный JSON", body["metadata"]["systemPrompt"])
+        self.assertEqual(body["metadata"]["systemPrompt"], "Верни данные.")
+
+    def test_text_format_appends_instruction_to_system_prompt(self):
+        settings = {
+            "systemPrompt": "Базовая инструкция.",
+            "format": "text",
+            "formatInstruction": "Ровно три коротких пункта.",
+            "maxTokens": None,
+            "stop": "",
+        }
+        self.json_request("PUT", "/api/sessions/session-1/settings", settings)
+
+        status, body, _ = self.json_request("POST", "/api/sessions/session-1/messages", {"text": "Привет"})
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            self.calls[-1]["payload"]["messages"][0]["content"],
+            "Базовая инструкция.\n\nРовно три коротких пункта.",
+        )
+        self.assertEqual(body["metadata"]["systemPrompt"], "Базовая инструкция.\n\nРовно три коротких пункта.")
 
     def test_text_settings_omit_optional_model_parameters(self):
         status, body, _ = self.json_request("POST", "/api/sessions/session-1/messages", {"text": "Привет"})
