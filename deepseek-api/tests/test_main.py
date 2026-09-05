@@ -11,6 +11,7 @@ import main
 class DeepSeekWebTests(unittest.TestCase):
     def setUp(self):
         self.calls = []
+        self.answers = []
         self.answer = "Тестовый ответ"
         self.environment = patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"})
         self.environment.start()
@@ -27,6 +28,8 @@ class DeepSeekWebTests(unittest.TestCase):
 
     def ask_model(self, payload, **kwargs):
         self.calls.append({"payload": payload, "kwargs": kwargs})
+        if self.answers:
+            return self.answers.pop(0)
         return self.answer
 
     def request(self, method, path, payload=None, headers=None):
@@ -354,9 +357,81 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(body["session"]["messages"], [{"role": "user", "content": "Привет"}])
         self.assertEqual(body["metadata"]["payload"]["model"], main.MODEL)
 
+    def test_day_three_run_returns_four_methods_and_uses_generated_prompt(self):
+        generated_prompt = "Сгенерированный промпт для решения задачи."
+        self.answers = [
+            "Прямое решение",
+            "Пошаговое решение",
+            generated_prompt,
+            "Решение с использованием сгенерированного промпта",
+            "Решение группы экспертов",
+        ]
+
+        status, body, _ = self.json_request("POST", "/api/day-03/run")
+
+        self.assertEqual(status, 200)
+        experiment = body["experiment"]
+        self.assertIn("task", experiment)
+        self.assertIn("referenceSolution", experiment)
+        self.assertIn("systemPrompt", experiment)
+        self.assertEqual(
+            [method["id"] for method in experiment["methods"]],
+            ["direct", "step_by_step", "generated_prompt", "experts"],
+        )
+        self.assertEqual([len(method["calls"]) for method in experiment["methods"]], [1, 1, 2, 1])
+        generated_method = experiment["methods"][2]
+        self.assertEqual(generated_method["calls"][0]["answer"], generated_prompt)
+        self.assertEqual(generated_method["calls"][1]["userPrompt"], generated_prompt)
+        self.assertEqual(
+            generated_method["calls"][1]["answer"],
+            "Решение с использованием сгенерированного промпта",
+        )
+
+        self.assertEqual(len(self.calls), 5)
+        self.assertTrue(all(call["payload"]["model"] == main.MODEL for call in self.calls))
+        user_prompts = [call["payload"]["messages"][-1]["content"] for call in self.calls]
+        self.assertEqual(user_prompts[0], main.DAY_THREE_TASK)
+        self.assertIn("Решай пошагово", user_prompts[1])
+        self.assertIn(main.DAY_THREE_TASK, user_prompts[2])
+        self.assertIn("промпт", user_prompts[2].lower())
+        self.assertIn("созд", user_prompts[2].lower())
+        self.assertEqual(user_prompts[3], generated_prompt)
+        self.assertIn("аналитик", user_prompts[4].lower())
+        self.assertIn("инженер", user_prompts[4].lower())
+        self.assertIn("критик", user_prompts[4].lower())
+
+    def test_day_three_run_rejects_nonempty_request_body(self):
+        status, body, _ = self.json_request("POST", "/api/day-03/run", {"task": "другая задача"})
+
+        self.assertEqual(status, 400)
+        self.assertEqual(body, {"error": "Маршрут не принимает параметры."})
+
+    def test_day_three_run_provider_error_returns_502_without_partial_experiment(self):
+        def failing_model(payload):
+            raise RuntimeError("сеть недоступна")
+
+        self.server.ask_model = failing_model
+        status, body, _ = self.json_request("POST", "/api/day-03/run")
+
+        self.assertEqual(status, 502)
+        self.assertEqual(body, {"error": "Не удалось получить ответы DeepSeek."})
+        self.assertNotIn("experiment", body)
+
+    def test_day_three_run_missing_key_returns_503(self):
+        with patch.dict(os.environ, {}, clear=True):
+            status, body, _ = self.json_request("POST", "/api/day-03/run")
+
+        self.assertEqual(status, 503)
+        self.assertEqual(body, {"error": "Не задан DEEPSEEK_API_KEY."})
+        self.assertNotIn("experiment", body)
+
     def test_foreign_origin_is_rejected_for_all_post_routes(self):
         headers = {"Origin": "http://evil.example"}
-        for path, payload in [("/api/sessions", None), ("/api/sessions/session-1/messages", {"text": "Привет"})]:
+        for path, payload in [
+            ("/api/sessions", None),
+            ("/api/sessions/session-1/messages", {"text": "Привет"}),
+            ("/api/day-03/run", None),
+        ]:
             with self.subTest(path=path):
                 status, body, _ = self.json_request("POST", path, payload, headers)
                 self.assertEqual(status, 403)
