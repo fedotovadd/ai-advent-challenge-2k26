@@ -364,7 +364,9 @@ class DeepSeekWebTests(unittest.TestCase):
             "Пошаговое решение",
             generated_prompt,
             "Решение с использованием сгенерированного промпта",
-            "Решение группы экспертов",
+            "Решение аналитика",
+            "Решение инженера",
+            "Решение критика",
             "Качественное сравнение ответов",
         ]
 
@@ -372,6 +374,9 @@ class DeepSeekWebTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         experiment = body["experiment"]
+        self.assertEqual(experiment["taskId"], "server-messages")
+        self.assertEqual(experiment["title"], "Три сервера")
+        self.assertEqual(experiment["criteria"], list(main.DAY_THREE_TASKS["server-messages"]["criteria"]))
         self.assertIn("task", experiment)
         self.assertIn("referenceSolution", experiment)
         self.assertIn("systemPrompt", experiment)
@@ -379,7 +384,7 @@ class DeepSeekWebTests(unittest.TestCase):
             [method["id"] for method in experiment["methods"]],
             ["direct", "step_by_step", "generated_prompt", "experts"],
         )
-        self.assertEqual([len(method["calls"]) for method in experiment["methods"]], [1, 1, 2, 1])
+        self.assertEqual([len(method["calls"]) for method in experiment["methods"]], [1, 1, 2, 3])
         generated_method = experiment["methods"][2]
         self.assertEqual(generated_method["calls"][0]["answer"], generated_prompt)
         self.assertEqual(generated_method["calls"][1]["userPrompt"], generated_prompt)
@@ -387,29 +392,99 @@ class DeepSeekWebTests(unittest.TestCase):
             generated_method["calls"][1]["answer"],
             "Решение с использованием сгенерированного промпта",
         )
+        experts_method = experiment["methods"][3]
+        self.assertEqual(
+            [call["title"] for call in experts_method["calls"]],
+            ["Аналитик", "Инженер", "Критик"],
+        )
+        self.assertIn("Решение аналитика", experts_method["answer"])
+        self.assertIn("Решение инженера", experts_method["answer"])
+        self.assertIn("Решение критика", experts_method["answer"])
         self.assertEqual(experiment["comparison"]["status"], "success")
         self.assertEqual(experiment["comparison"]["call"]["answer"], "Качественное сравнение ответов")
 
-        self.assertEqual(len(self.calls), 6)
+        self.assertEqual(len(self.calls), 8)
         self.assertTrue(all(call["payload"]["model"] == main.MODEL for call in self.calls))
+        self.assertEqual(
+            [call["payload"]["messages"][0]["content"] for call in self.calls],
+            [
+                main.DIRECT_SYSTEM,
+                main.STEPWISE_SYSTEM,
+                main.PROMPT_ENGINEER_SYSTEM,
+                main.PROMPT_EXECUTOR_SYSTEM,
+                main.ANALYST_SYSTEM,
+                main.ENGINEER_SYSTEM,
+                main.CRITIC_SYSTEM,
+                main.MODERATOR_SYSTEM,
+            ],
+        )
         user_prompts = [call["payload"]["messages"][-1]["content"] for call in self.calls]
-        self.assertEqual(user_prompts[0], main.DAY_THREE_TASK)
-        self.assertIn("Решай пошагово", user_prompts[1])
-        self.assertIn(main.DAY_THREE_TASK, user_prompts[2])
-        self.assertIn("промпт", user_prompts[2].lower())
-        self.assertIn("созд", user_prompts[2].lower())
+        self.assertEqual(user_prompts[0], main.DAY_THREE_TASKS["server-messages"]["task"])
+        self.assertEqual(user_prompts[1], main.DAY_THREE_TASKS["server-messages"]["task"])
+        self.assertIn(main.DAY_THREE_TASKS["server-messages"]["task"], user_prompts[2])
         self.assertEqual(user_prompts[3], generated_prompt)
-        self.assertIn("аналитик", user_prompts[4].lower())
-        self.assertIn("инженер", user_prompts[4].lower())
-        self.assertIn("критик", user_prompts[4].lower())
-        self.assertIn(main.DAY_THREE_REFERENCE_SOLUTION, user_prompts[5])
+        self.assertEqual(user_prompts[4], main.DAY_THREE_TASKS["server-messages"]["task"])
+        self.assertEqual(user_prompts[5], main.DAY_THREE_TASKS["server-messages"]["task"])
+        self.assertEqual(user_prompts[6], main.DAY_THREE_TASKS["server-messages"]["task"])
+        self.assertIn("Решение аналитика", user_prompts[7])
+        self.assertIn("Решение инженера", user_prompts[7])
+        self.assertIn("Решение критика", user_prompts[7])
+        self.assertIn(main.DAY_THREE_TASKS["server-messages"]["referenceSolution"], user_prompts[7])
+        self.assertIn("перебором исключены остальные варианты", user_prompts[7])
 
-    def test_day_three_run_accepts_custom_task(self):
-        status, body, _ = self.json_request("POST", "/api/day-03/run", {"task": "  другая задача  "})
+    def test_day_three_run_accepts_catalog_task_and_rejects_custom_task(self):
+        status, body, _ = self.json_request("POST", "/api/day-03/run", {"taskId": "channel-analysis"})
 
         self.assertEqual(status, 200)
-        self.assertEqual(body["experiment"]["task"], "другая задача")
-        self.assertIsNone(body["experiment"]["referenceSolution"])
+        self.assertEqual(body["experiment"]["taskId"], "channel-analysis")
+        self.assertIn("5 %", body["experiment"]["referenceSolution"])
+        self.assertIn("конверс", self.calls[-1]["payload"]["messages"][-1]["content"].lower())
+
+        self.calls.clear()
+        status, body, _ = self.json_request("POST", "/api/day-03/run", {"task": "другая задача"})
+
+        self.assertEqual(status, 400)
+        self.assertEqual(body, {"error": "Запрос должен содержать только известный taskId."})
+        self.assertEqual(self.calls, [])
+
+    def test_day_three_stream_emits_methods_before_comparison(self):
+        self.answers = ["direct", "steps", "prompt", "solution", "analyst", "engineer", "critic", "comparison"]
+        connection = http.client.HTTPConnection("127.0.0.1", self.port)
+        connection.request(
+            "POST", "/api/day-03/stream", json.dumps({"taskId": "server-messages"}),
+            {"Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        events = [json.loads(line) for line in response.read().decode("utf-8").splitlines()]
+        connection.close()
+
+        self.assertEqual(response.status, 200)
+        self.assertEqual(events[0]["type"], "start")
+        self.assertEqual({event["method"]["id"] for event in events if event["type"] == "method"}, {
+            "direct", "step_by_step", "generated_prompt", "experts",
+        })
+        self.assertEqual(events[-2]["type"], "comparison")
+        self.assertEqual(events[-1]["type"], "complete")
+
+    def test_day_three_catalog_keeps_only_two_fast_tasks(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(set(main.DAY_THREE_TASKS), {"server-messages", "channel-analysis"})
+        self.assertEqual(main.DAY_THREE_TASKS["server-messages"]["title"], "Три сервера")
+        self.assertEqual(main.DAY_THREE_TASKS["channel-analysis"]["title"], "Выбор канала")
+        self.assertIn('taskSelect.id="day-three-task-select"', body)
+        self.assertIn('id:"server-messages"', body)
+        self.assertIn('id:"channel-analysis"', body)
+        self.assertNotIn('id:"route-coupon"', body)
+        self.assertIn("state.experiments={}", body)
+        self.assertIn("activeDayThreeTaskId", body)
+
+    def test_page_keeps_the_stream_line_delimiter_as_javascript_source(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        self.assertIn('buffer.split("\\n")', body)
 
     def test_day_three_run_rejects_chunked_request_body_without_calling_model(self):
         connection = http.client.HTTPConnection("127.0.0.1", self.port)
