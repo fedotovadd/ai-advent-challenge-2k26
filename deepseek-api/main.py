@@ -288,11 +288,18 @@ class SessionStore:
             return copy.deepcopy(session)
 
 
+def _provider_settings(model):
+    if model == "glm-4.7-flash":
+        return "ZAI_API_KEY", "https://api.z.ai/api/paas/v4"
+    return "DEEPSEEK_API_KEY", "https://api.deepseek.com"
+
+
 def ask_deepseek(payload, **options):
-    api_key = os.getenv("DEEPSEEK_API_KEY")
+    key_name, base_url = _provider_settings(payload["model"])
+    api_key = os.getenv(key_name)
     if not api_key:
-        raise ValueError("missing API key")
-    client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        raise ValueError(f"missing {key_name}")
+    client = OpenAI(api_key=api_key, base_url=base_url)
     response = client.chat.completions.create(
         model=payload["model"],
         messages=payload["messages"],
@@ -698,10 +705,11 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             "usage": None,
             "cost": None,
         }
-        if not os.getenv("DEEPSEEK_API_KEY"):
+        key_name, _ = _provider_settings(settings["model"])
+        if not os.getenv(key_name):
             metadata["status"] = {"kind": "error", "label": "Ошибка API"}
             session = self.server.store.update_metadata(session_id, metadata)
-            self._send_json(503, {"session": session, "error": "Не задан DEEPSEEK_API_KEY.", "metadata": metadata})
+            self._send_json(503, {"session": session, "error": f"Не задан {key_name}.", "metadata": metadata})
             return
         try:
             started_at = time.monotonic()
