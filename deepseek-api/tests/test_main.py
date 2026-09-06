@@ -104,6 +104,15 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertNotIn("Инструкция свободного формата", body)
         self.assertIn("Метаданные", body)
 
+    def test_page_contains_model_and_usage_metadata(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        self.assertIn("model-input", body)
+        self.assertIn("Время ответа", body)
+        self.assertIn("Токены", body)
+        self.assertIn("Стоимость запроса", body)
+
     def test_session_switch_handler_is_not_rendered_as_session_label(self):
         status, body, _ = self.request("GET", "/")
 
@@ -119,11 +128,12 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(
             body,
             {"sessions": [{"id": "session-1", "title": "Новый чат", "messages": [], "settings": {
+                "model": main.MODEL,
                 "systemPrompt": main.SYSTEM_PROMPT,
                 "format": "text",
                 "maxTokens": None,
                 "stop": "",
-            }}]},
+            }, "metadata": None}]},
         )
 
     def test_create_session_assigns_next_id(self):
@@ -131,14 +141,16 @@ class DeepSeekWebTests(unittest.TestCase):
 
         self.assertEqual(status, 201)
         self.assertEqual(body["session"], {"id": "session-2", "title": "Новый чат", "messages": [], "settings": {
+            "model": main.MODEL,
             "systemPrompt": main.SYSTEM_PROMPT,
             "format": "text",
             "maxTokens": None,
             "stop": "",
-        }})
+        }, "metadata": None})
 
     def test_settings_are_stored_per_session(self):
         settings = {
+            "model": main.MODEL,
             "systemPrompt": "Отвечай кратко.",
             "format": "json",
             "maxTokens": 300,
@@ -150,8 +162,35 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body["session"]["settings"], settings)
 
+    def test_session_model_and_metadata_are_persisted(self):
+        settings = {
+            "systemPrompt": main.SYSTEM_PROMPT,
+            "format": "text",
+            "maxTokens": None,
+            "stop": "",
+            "model": "deepseek-v4-pro",
+        }
+        self.answer = {
+            "content": "Ответ сильной модели",
+            "usage": {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+        }
+        self.json_request("PUT", "/api/sessions/session-1/settings", settings)
+
+        status, body, _ = self.json_request("POST", "/api/sessions/session-1/messages", {"text": "Привет"})
+        _, sessions, _ = self.json_request("GET", "/api/sessions")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(self.calls[-1]["payload"]["model"], "deepseek-v4-pro")
+        self.assertEqual(body["metadata"]["usage"], {
+            "promptTokens": 100, "completionTokens": 50, "totalTokens": 150,
+        })
+        self.assertEqual(body["metadata"]["cost"], {"kind": "paid", "usd": 0.000165})
+        self.assertGreaterEqual(body["metadata"]["responseTimeMs"], 0)
+        self.assertEqual(sessions["sessions"][0]["metadata"], body["metadata"])
+
     def test_invalid_settings_do_not_replace_saved_values(self):
         valid_settings = {
+            "model": main.MODEL,
             "systemPrompt": "Отвечай кратко.",
             "format": "text",
             "maxTokens": None,
@@ -161,7 +200,7 @@ class DeepSeekWebTests(unittest.TestCase):
 
         status, body, _ = self.json_request(
             "PUT", "/api/sessions/session-1/settings",
-            {"systemPrompt": "   ", "format": "text", "maxTokens": 0, "stop": ""},
+            {"model": main.MODEL, "systemPrompt": "   ", "format": "text", "maxTokens": 0, "stop": ""},
         )
 
         self.assertEqual(status, 400)
@@ -172,7 +211,7 @@ class DeepSeekWebTests(unittest.TestCase):
     def test_settings_for_unknown_session_return_404(self):
         status, body, _ = self.json_request(
             "PUT", "/api/sessions/missing/settings",
-            {"systemPrompt": "Отвечай кратко.", "format": "text", "maxTokens": None, "stop": ""},
+            {"model": main.MODEL, "systemPrompt": "Отвечай кратко.", "format": "text", "maxTokens": None, "stop": ""},
         )
 
         self.assertEqual(status, 404)
@@ -180,6 +219,7 @@ class DeepSeekWebTests(unittest.TestCase):
 
     def test_legacy_format_instruction_setting_is_rejected(self):
         valid_settings = {
+            "model": main.MODEL,
             "systemPrompt": "Базовая инструкция.",
             "format": "text",
             "maxTokens": None,
@@ -191,6 +231,7 @@ class DeepSeekWebTests(unittest.TestCase):
         status, body, _ = self.json_request(
             "PUT", "/api/sessions/session-1/settings",
             {
+                "model": main.MODEL,
                 "systemPrompt": "Базовая инструкция.",
                 "format": "text",
                 "formatInstruction": "Кратко.",
@@ -212,26 +253,26 @@ class DeepSeekWebTests(unittest.TestCase):
             {"role": "user", "content": "Привет"},
         ]
         self.assertEqual(status, 200)
-        self.assertEqual(body["session"], {
-            "id": "session-1", "title": "Привет",
-            "messages": [{"role": "user", "content": "Привет"}, {"role": "assistant", "content": "Тестовый ответ"}],
-            "settings": {
-                "systemPrompt": main.SYSTEM_PROMPT,
-                "format": "text",
-                "maxTokens": None,
-                "stop": "",
-            },
-        })
+        self.assertEqual(body["session"]["id"], "session-1")
+        self.assertEqual(body["session"]["title"], "Привет")
+        self.assertEqual(body["session"]["messages"], [
+            {"role": "user", "content": "Привет"}, {"role": "assistant", "content": "Тестовый ответ"},
+        ])
+        self.assertEqual(body["session"]["settings"]["model"], main.MODEL)
+        self.assertEqual(body["session"]["metadata"], body["metadata"])
         self.assertEqual(self.calls, [{"payload": {
             "model": main.MODEL,
             "messages": expected_messages,
             "temperature": 1,
         }, "kwargs": {}}])
-        self.assertEqual(body["metadata"], {
-            "userPrompt": "Привет", "systemPrompt": main.SYSTEM_PROMPT,
-            "payload": {"model": main.MODEL, "messages": expected_messages, "temperature": 1},
-            "status": {"kind": "success", "label": "200 OK"},
+        self.assertEqual(body["metadata"]["userPrompt"], "Привет")
+        self.assertEqual(body["metadata"]["systemPrompt"], main.SYSTEM_PROMPT)
+        self.assertEqual(body["metadata"]["payload"], {
+            "model": main.MODEL, "messages": expected_messages, "temperature": 1,
         })
+        self.assertEqual(body["metadata"]["status"], {"kind": "success", "label": "200 OK"})
+        self.assertIsNone(body["metadata"]["usage"])
+        self.assertIsNone(body["metadata"]["cost"])
 
     def test_second_message_sends_complete_history(self):
         self.json_request("POST", "/api/sessions/session-1/messages", {"text": "Первый"})
@@ -255,6 +296,7 @@ class DeepSeekWebTests(unittest.TestCase):
 
     def test_json_settings_are_sent_to_the_model(self):
         settings = {
+            "model": main.MODEL,
             "systemPrompt": "Верни данные.",
             "format": "json",
             "maxTokens": 300,
@@ -284,6 +326,7 @@ class DeepSeekWebTests(unittest.TestCase):
 
     def test_text_format_forwards_system_prompt_unchanged(self):
         settings = {
+            "model": main.MODEL,
             "systemPrompt": "Базовая инструкция.",
             "format": "text",
             "maxTokens": None,

@@ -4,6 +4,7 @@ import json
 import math
 import os
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -11,6 +12,12 @@ from openai import OpenAI
 
 
 MODEL = "deepseek-v4-flash"
+MODELS = ("deepseek-v4-flash", "glm-4.7-flash", "deepseek-v4-pro")
+MODEL_PRICING = {
+    "deepseek-v4-flash": {"input": 0.22, "output": 0.66},
+    "glm-4.7-flash": None,
+    "deepseek-v4-pro": {"input": 0.66, "output": 1.98},
+}
 SYSTEM_PROMPT = (
     "Ты полезный AI-помощник. Отвечай ясно, практично и по-русски. "
     "Возвращай обычный текст без Markdown-разметки."
@@ -73,6 +80,7 @@ EXPERT_ROLES = (
 )
 JSON_OUTPUT_INSTRUCTION = "Верни только валидный JSON без Markdown-разметки."
 DEFAULT_SETTINGS = {
+    "model": MODEL,
     "systemPrompt": SYSTEM_PROMPT,
     "format": "text",
     "maxTokens": None,
@@ -160,6 +168,9 @@ PAGE = r"""<!doctype html>
     state.activeDayThreeTaskId="server-messages"; state.experiments={};
     const dayThreeTasks=[{id:"server-messages",title:"Три сервера",task:"В системе три сервера: A, B и C. Ровно один неисправен. Сообщения: A — «B неисправен»; B — «A и C находятся в одинаковом состоянии»; C — «A исправен». Ровно одно сообщение правдиво. Какой сервер неисправен? Докажите вывод."},{id:"channel-analysis",title:"Выбор канала",task:"Канал A получил 1 000 показов и 30 регистраций. Канал B получил 200 показов и 10 регистраций. Какой канал эффективнее по конверсии? Если дополнительно купить 100 показов и предположить, что конверсия не изменится, сколько регистраций ожидается от каждого канала?"}];
     const taskSelect=document.createElement("select"); taskSelect.id="day-three-task-select"; taskSelect.setAttribute("aria-label","Задача для сравнения"); dayThreeTasks.forEach((task)=>{const option=document.createElement("option");option.value=task.id;option.textContent=task.title;taskSelect.append(option);}); const taskText=document.createElement("p"); taskText.id="day-three-task-text"; taskText.className="day-three-task-text"; taskText.textContent=dayThreeTasks[0].task; elements.dayThreeTask.parentElement.htmlFor=taskSelect.id; elements.dayThreeTask.replaceWith(taskSelect); taskSelect.after(taskText); elements.dayThreeTaskSelect=taskSelect; elements.dayThreeTaskText=taskText;
+    const modelField=document.createElement("label"); modelField.className="setting-field"; modelField.textContent="Модель"; const modelInput=document.createElement("select"); modelInput.id="model-input"; modelInput.setAttribute("aria-label","Модель"); [["deepseek-v4-flash","Слабая — deepseek-v4-flash"],["glm-4.7-flash","Средняя — glm-4.7-flash"],["deepseek-v4-pro","Сильная — deepseek-v4-pro"]].forEach(([value,label])=>{const option=document.createElement("option");option.value=value;option.textContent=label;modelInput.append(option);}); modelField.append(modelInput); document.querySelector("#settings-form").prepend(modelField); elements.modelInput=modelInput;
+    function usageCard(label,id) { const card=document.createElement("section"); card.className="meta-card"; const title=document.createElement("div"); title.className="meta-label"; title.textContent=label; const value=document.createElement("div"); value.className="meta-value"; value.id=id; value.textContent="—"; card.append(title,value); return card; }
+    const metadataSection=document.querySelector(".metadata-section"); const metadataBefore=elements.userPrompt.parentElement; [["Время ответа","response-time"],["Токены","token-count"],["Стоимость запроса","request-cost"]].forEach(([label,id])=>metadataSection.insertBefore(usageCard(label,id),metadataBefore)); elements.responseTime=document.querySelector("#response-time"); elements.tokenCount=document.querySelector("#token-count"); elements.requestCost=document.querySelector("#request-cost");
     async function api(url, options={}) { const response=await fetch(url,options); const body=await response.json().catch(()=>({error:"Сервер вернул некорректный ответ."})); return {response,body}; }
     function activeSession() { return state.sessions.find((session)=>session.id===state.activeId); }
     function setStatus(text, kind="ready") { elements.status.textContent=text; elements.status.dataset.kind=kind; }
@@ -175,12 +186,12 @@ PAGE = r"""<!doctype html>
     }
     function renderSessions() { elements.sessions.replaceChildren(); state.sessions.forEach((session)=>{ const button=document.createElement("button"); button.type="button"; button.className="session"+(session.id===state.activeId?" active":""); const title=document.createElement("span"); title.textContent=session.title; const detail=document.createElement("span"); detail.className="session-date"; detail.textContent=session.messages.length+" сообщений"; button.append(title,detail); button.addEventListener("click",async()=>{await flushSettingsSave(); state.activeId=session.id; render(); elements.input.focus();}); elements.sessions.append(button); }); }
     function renderThread() { elements.thread.replaceChildren(); const session=activeSession(); elements.title.textContent=session?session.title:"Новый чат"; if(!session||!session.messages.length){const empty=document.createElement("div"); empty.className="bubble"; empty.textContent="Начните диалог — первое сообщение станет названием сессии."; elements.thread.append(empty); return;} session.messages.forEach((message)=>{const row=document.createElement("article"); row.className="message "+message.role; if(message.role==="assistant"){const avatar=document.createElement("div"); avatar.className="avatar"; avatar.textContent="D"; row.append(avatar);} const content=document.createElement("div"); content.className="bubble"; if(message.role==="assistant"){const author=document.createElement("div"); author.className="author"; author.textContent="DeepSeek"; content.append(author);} const text=document.createElement("div"); text.textContent=message.content; content.append(text); row.append(content); elements.thread.append(row);}); elements.thread.scrollTop=elements.thread.scrollHeight; }
-    function renderSettings() { const settings=activeSession()?activeSession().settings:null; if(!settings)return; elements.systemPromptInput.value=settings.systemPrompt; elements.responseFormatInput.value=settings.format; elements.maxTokensInput.value=settings.maxTokens===null?"":settings.maxTokens; elements.stopInput.value=settings.stop; }
-    function renderMetadata() { const metadata=state.metadata; elements.userPrompt.textContent=metadata?metadata.userPrompt:"—"; elements.systemPrompt.textContent=metadata?metadata.systemPrompt:"—"; elements.payload.textContent=metadata?JSON.stringify(metadata.payload,null,2):"—"; elements.apiStatus.textContent=metadata?metadata.status.label:"—"; elements.metaStatus.textContent=metadata?(metadata.status.kind==="success"?"последний запрос":"ошибка"):"ожидание"; }
+    function renderSettings() { const settings=activeSession()?activeSession().settings:null; if(!settings)return; elements.modelInput.value=settings.model; document.querySelector("header .model").textContent=settings.model; elements.systemPromptInput.value=settings.systemPrompt; elements.responseFormatInput.value=settings.format; elements.maxTokensInput.value=settings.maxTokens===null?"":settings.maxTokens; elements.stopInput.value=settings.stop; }
+    function renderMetadata() { const session=activeSession(); const metadata=session?session.metadata:null; elements.userPrompt.textContent=metadata?metadata.userPrompt:"—"; elements.systemPrompt.textContent=metadata?metadata.systemPrompt:"—"; elements.payload.textContent=metadata?JSON.stringify(metadata.payload,null,2):"—"; elements.apiStatus.textContent=metadata?metadata.status.label:"—"; elements.responseTime.textContent=metadata&&metadata.responseTimeMs!==null?(metadata.responseTimeMs/1000).toFixed(2)+" с":"—"; elements.tokenCount.textContent=metadata&&metadata.usage&&metadata.usage.totalTokens!==null?metadata.usage.totalTokens:"—"; elements.requestCost.textContent=metadata&&metadata.cost?(metadata.cost.kind==="free"?"Бесплатно":"$"+metadata.cost.usd.toFixed(6)):"—"; elements.metaStatus.textContent=metadata?(metadata.status.kind==="success"?"последний запрос":"ошибка"):"ожидание"; }
     function render() { renderSessions(); renderThread(); renderSettings(); renderMetadata(); }
     function upsertSession(session) { const index=state.sessions.findIndex((item)=>item.id===session.id); if(index===-1) state.sessions.push(session); else state.sessions[index]=session; state.activeId=session.id; }
     function replaceSession(session) { const index=state.sessions.findIndex((item)=>item.id===session.id); if(index===-1)state.sessions.push(session); else state.sessions[index]=session; }
-    function settingsValues() { const maxTokens=elements.maxTokensInput.value.trim(); return {systemPrompt:elements.systemPromptInput.value,format:elements.responseFormatInput.value,maxTokens:maxTokens?Number(maxTokens):null,stop:elements.stopInput.value}; }
+    function settingsValues() { const maxTokens=elements.maxTokensInput.value.trim(); return {model:elements.modelInput.value,systemPrompt:elements.systemPromptInput.value,format:elements.responseFormatInput.value,maxTokens:maxTokens?Number(maxTokens):null,stop:elements.stopInput.value}; }
     function settingsMatch(left,right) { return JSON.stringify(left)===JSON.stringify(right); }
     async function persistSettings(pending) { if(pending.sessionId===state.activeId)elements.settingsStatus.textContent="сохраняем"; try { const {response,body}=await api("/api/sessions/"+pending.sessionId+"/settings",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(pending.settings)}); if(response.ok&&body.session){replaceSession(body.session); if(pending.sessionId===state.activeId&&settingsMatch(settingsValues(),pending.settings)){renderSettings();elements.settingsStatus.textContent="сохранено";} return true;} if(pending.sessionId===state.activeId){elements.settingsStatus.textContent="ошибка";setStatus(body.error||"Не удалось сохранить настройки.","error");} return false; } catch(error) { if(pending.sessionId===state.activeId){elements.settingsStatus.textContent="ошибка";setStatus("Не удалось соединиться с локальным сервером.","error");} return false; }}
     async function savePendingSettings() { if(!state.pendingSettings)return state.settingsSaveInFlight?state.settingsSaveInFlight:true; const pending=state.pendingSettings; state.pendingSettings=null; const promise=persistSettings(pending); state.settingsSaveInFlight=promise; const saved=await promise; if(state.settingsSaveInFlight===promise)state.settingsSaveInFlight=null; return saved; }
@@ -198,6 +209,7 @@ PAGE = r"""<!doctype html>
     const streamingButton=elements.runDayThree.cloneNode(true); elements.runDayThree.replaceWith(streamingButton); elements.runDayThree=streamingButton;
     elements.dayThreeTaskSelect.addEventListener("change",()=>{const task=dayThreeTasks.find((item)=>item.id===elements.dayThreeTaskSelect.value); elements.dayThreeTaskText.textContent=task.task;});
     elements.runDayThree.addEventListener("click",async()=>{ if(state.experimentRunning)return; const taskId=state.activeDayThreeTaskId; state.experimentRunning=true; elements.runDayThree.disabled=true; elements.dayThreeStatus.textContent="Запускаем четыре стратегии…"; elements.dayThreeStatus.removeAttribute("data-kind"); try { const response=await fetch("/api/day-03/stream",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({taskId})}); if(!response.ok){const body=await response.json().catch(()=>({})); throw new Error(body.error||"Не удалось запустить эксперимент.");} const reader=response.body.getReader(); const decoder=new TextDecoder(); let buffer=""; while(true){const chunk=await reader.read(); buffer+=decoder.decode(chunk.value||new Uint8Array(),{stream:!chunk.done}); const lines=buffer.split("\n"); buffer=lines.pop(); for(const line of lines){if(!line)continue; const event=JSON.parse(line); if(event.type==="start"){state.experiments[taskId]={...event.experiment,methods:[],comparison:{status:"pending",message:"Собираем итоговое сравнение…"}}; renderExperiment();} else if(event.type==="method"){const experiment=state.experiments[taskId]; experiment.methods=experiment.methods.filter((method)=>method.id!==event.method.id); experiment.methods.push(event.method); renderExperiment(); elements.dayThreeStatus.textContent="Получен ответ: "+event.method.title;} else if(event.type==="comparison"){state.experiments[taskId].comparison=event.comparison; renderExperiment();} else if(event.type==="error"){throw new Error(event.message);} } if(chunk.done)break;} elements.dayThreeStatus.textContent="Все четыре стратегии готовы"; } catch(error) { elements.dayThreeStatus.textContent=error.message||"Не удалось соединиться с локальным сервером."; elements.dayThreeStatus.dataset.kind="error"; } finally { state.experimentRunning=false; elements.runDayThree.disabled=false; }});
+    elements.modelInput.addEventListener("change",()=>scheduleSettingsSave(0));
     elements.responseFormatInput.addEventListener("change",()=>scheduleSettingsSave(0));
     [elements.systemPromptInput,elements.maxTokensInput,elements.stopInput].forEach((input)=>input.addEventListener("input",()=>scheduleSettingsSave()));
     elements.temperature.addEventListener("input",()=>{elements.temperatureValue.textContent=elements.temperature.value;});
@@ -220,6 +232,7 @@ class SessionStore:
                 "title": "Новый чат",
                 "messages": [],
                 "settings": copy.deepcopy(DEFAULT_SETTINGS),
+                "metadata": None,
             }
         }
         self._next_id = 2
@@ -237,6 +250,7 @@ class SessionStore:
                 "title": "Новый чат",
                 "messages": [],
                 "settings": copy.deepcopy(DEFAULT_SETTINGS),
+                "metadata": None,
             }
             self._sessions[session_id] = session
             return copy.deepcopy(session)
@@ -265,6 +279,14 @@ class SessionStore:
             session["messages"].append({"role": "assistant", "content": text})
             return copy.deepcopy(session)
 
+    def update_metadata(self, session_id, metadata):
+        with self._lock:
+            session = self._sessions.get(session_id)
+            if not session:
+                return None
+            session["metadata"] = copy.deepcopy(metadata)
+            return copy.deepcopy(session)
+
 
 def ask_deepseek(payload, **options):
     api_key = os.getenv("DEEPSEEK_API_KEY")
@@ -279,7 +301,42 @@ def ask_deepseek(payload, **options):
     )
     if not response.choices or not response.choices[0].message.content:
         raise ValueError("empty API response")
-    return response.choices[0].message.content
+    return {"content": response.choices[0].message.content, "usage": response.usage}
+
+
+def _response_content_and_usage(response):
+    if isinstance(response, str):
+        return response, None
+    if isinstance(response, dict):
+        return response.get("content"), response.get("usage")
+    return None, None
+
+
+def _usage_value(usage, name):
+    value = usage.get(name) if isinstance(usage, dict) else getattr(usage, name, None)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _request_usage_and_cost(model, usage):
+    prompt_tokens = _usage_value(usage, "prompt_tokens")
+    completion_tokens = _usage_value(usage, "completion_tokens")
+    total_tokens = _usage_value(usage, "total_tokens")
+    if total_tokens is None and prompt_tokens is not None and completion_tokens is not None:
+        total_tokens = prompt_tokens + completion_tokens
+    details = None if usage is None else {
+        "promptTokens": prompt_tokens,
+        "completionTokens": completion_tokens,
+        "totalTokens": total_tokens,
+    }
+    pricing = MODEL_PRICING[model]
+    if pricing is None:
+        return details, {"kind": "free"}
+    if prompt_tokens is None or completion_tokens is None:
+        return details, None
+    return details, {
+        "kind": "paid",
+        "usd": round((prompt_tokens * pricing["input"] + completion_tokens * pricing["output"]) / 1_000_000, 12),
+    }
 
 
 def _run_day_three_call(ask_model, user_prompt, system_prompt, title="Вызов API"):
@@ -290,7 +347,7 @@ def _run_day_three_call(ask_model, user_prompt, system_prompt, title="Вызов
             {"role": "user", "content": user_prompt},
         ],
     }
-    answer = ask_model(payload)
+    answer, _ = _response_content_and_usage(ask_model(payload))
     if not isinstance(answer, str) or not answer.strip():
         raise ValueError("empty API response")
     return {
@@ -628,7 +685,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if settings["stop"]:
             options["stop"] = settings["stop"]
         payload = {
-            "model": MODEL,
+            "model": settings["model"],
             "messages": [{"role": "system", "content": system_prompt}, *session["messages"]],
             "temperature": temperature,
         }
@@ -637,19 +694,28 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             "systemPrompt": system_prompt,
             "payload": {**payload, **options},
             "status": {"kind": "success", "label": "200 OK"},
+            "responseTimeMs": None,
+            "usage": None,
+            "cost": None,
         }
         if not os.getenv("DEEPSEEK_API_KEY"):
             metadata["status"] = {"kind": "error", "label": "Ошибка API"}
+            session = self.server.store.update_metadata(session_id, metadata)
             self._send_json(503, {"session": session, "error": "Не задан DEEPSEEK_API_KEY.", "metadata": metadata})
             return
         try:
-            answer = self.server.ask_model(payload, **options)
+            started_at = time.monotonic()
+            answer, usage = _response_content_and_usage(self.server.ask_model(payload, **options))
+            metadata["responseTimeMs"] = round((time.monotonic() - started_at) * 1000)
+            metadata["usage"], metadata["cost"] = _request_usage_and_cost(settings["model"], usage)
             if not isinstance(answer, str) or not answer.strip():
                 raise ValueError("empty API response")
         except Exception:
             metadata["status"] = {"kind": "error", "label": "Ошибка API"}
+            session = self.server.store.update_metadata(session_id, metadata)
             self._send_json(502, {"session": session, "error": "Не удалось получить ответ DeepSeek.", "metadata": metadata})
             return
+        self.server.store.update_metadata(session_id, metadata)
         session = self.server.store.add_assistant_message(session_id, answer)
         self._send_json(200, {"session": session, "metadata": metadata})
 
@@ -671,15 +737,18 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         self._send_json(200, {"session": session})
 
     def _validate_settings(self, data):
-        expected_fields = {"systemPrompt", "format", "maxTokens", "stop"}
+        expected_fields = {"model", "systemPrompt", "format", "maxTokens", "stop"}
         if not isinstance(data, dict) or set(data) != expected_fields:
             return None, "Настройки имеют неверный формат."
         system_prompt = data["systemPrompt"]
+        model = data["model"]
         response_format = data["format"]
         max_tokens = data["maxTokens"]
         stop = data["stop"]
         if not isinstance(system_prompt, str) or not system_prompt.strip():
             return None, "System prompt не может быть пустым."
+        if model not in MODELS:
+            return None, "Неизвестная модель."
         if response_format not in {"text", "json"}:
             return None, "Формат ответа должен быть text или json."
         if max_tokens is not None and (isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens <= 0):
@@ -687,6 +756,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if not isinstance(stop, str):
             return None, "Стоп-последовательность должна быть строкой."
         return {
+            "model": model,
             "systemPrompt": system_prompt.strip(),
             "format": response_format,
             "maxTokens": max_tokens,
