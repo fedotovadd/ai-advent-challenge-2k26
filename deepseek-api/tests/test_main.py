@@ -222,10 +222,14 @@ class DeepSeekWebTests(unittest.TestCase):
                 "stop": "",
             },
         })
-        self.assertEqual(self.calls, [{"payload": {"model": main.MODEL, "messages": expected_messages}, "kwargs": {}}])
+        self.assertEqual(self.calls, [{"payload": {
+            "model": main.MODEL,
+            "messages": expected_messages,
+            "temperature": 1,
+        }, "kwargs": {}}])
         self.assertEqual(body["metadata"], {
             "userPrompt": "Привет", "systemPrompt": main.SYSTEM_PROMPT,
-            "payload": {"model": main.MODEL, "messages": expected_messages},
+            "payload": {"model": main.MODEL, "messages": expected_messages, "temperature": 1},
             "status": {"kind": "success", "label": "200 OK"},
         })
 
