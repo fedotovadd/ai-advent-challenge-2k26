@@ -88,7 +88,11 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("height:auto", mobile_app_css)
         self.assertIn("overflow:visible", mobile_app_css)
         self.assertIn("height:100vh", mobile_chat_css)
-        self.assertIn("Новый чат", body)
+        self.assertIn("Создать агента", body)
+        self.assertIn("Агенты", body)
+        self.assertIn('id="agent-count-input"', body)
+        self.assertIn('id="create-many-agents"', body)
+        self.assertIn('id="agent-list"', body)
         self.assertIn("Метаданные", body)
         self.assertIn("message-input", body)
         self.assertNotIn("DEEPSEEK_API_KEY", body)
@@ -141,6 +145,9 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("button.append(title,detail);", body)
         self.assertIn('button.addEventListener("click",async()=>', body)
+        self.assertIn("/api/agents", body)
+        self.assertIn("/api/agents/bulk", body)
+        self.assertNotIn("/api/sessions", body)
 
     def test_initial_agent_is_available(self):
         status, body, headers = self.json_request("GET", "/api/agents")
