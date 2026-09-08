@@ -1,14 +1,12 @@
-import copy
 import concurrent.futures
 import json
-import math
 import os
-import threading
-import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from openai import OpenAI
+
+from agent import AgentRegistry, MissingApiKeyError
 
 
 MODEL = "deepseek-v4-flash"
@@ -223,71 +221,6 @@ PAGE = r"""<!doctype html>
 """
 
 
-class SessionStore:
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._sessions = {
-            "session-1": {
-                "id": "session-1",
-                "title": "Новый чат",
-                "messages": [],
-                "settings": copy.deepcopy(DEFAULT_SETTINGS),
-                "metadata": None,
-            }
-        }
-        self._next_id = 2
-
-    def sessions(self):
-        with self._lock:
-            return copy.deepcopy(list(self._sessions.values()))
-
-    def create(self):
-        with self._lock:
-            session_id = f"session-{self._next_id}"
-            self._next_id += 1
-            session = {
-                "id": session_id,
-                "title": "Новый чат",
-                "messages": [],
-                "settings": copy.deepcopy(DEFAULT_SETTINGS),
-                "metadata": None,
-            }
-            self._sessions[session_id] = session
-            return copy.deepcopy(session)
-
-    def update_settings(self, session_id, settings):
-        with self._lock:
-            session = self._sessions.get(session_id)
-            if not session:
-                return None
-            session["settings"] = copy.deepcopy(settings)
-            return copy.deepcopy(session)
-
-    def add_user_message(self, session_id, text):
-        with self._lock:
-            session = self._sessions.get(session_id)
-            if not session:
-                return None
-            if not session["messages"]:
-                session["title"] = text[:40]
-            session["messages"].append({"role": "user", "content": text})
-            return copy.deepcopy(session)
-
-    def add_assistant_message(self, session_id, text):
-        with self._lock:
-            session = self._sessions[session_id]
-            session["messages"].append({"role": "assistant", "content": text})
-            return copy.deepcopy(session)
-
-    def update_metadata(self, session_id, metadata):
-        with self._lock:
-            session = self._sessions.get(session_id)
-            if not session:
-                return None
-            session["metadata"] = copy.deepcopy(metadata)
-            return copy.deepcopy(session)
-
-
 def _provider_settings(model):
     if model == "glm-4.7-flash":
         return "ZAI_API_KEY", "https://api.z.ai/api/paas/v4"
@@ -298,7 +231,7 @@ def ask_deepseek(payload, **options):
     key_name, base_url = _provider_settings(payload["model"])
     api_key = os.getenv(key_name)
     if not api_key:
-        raise ValueError(f"missing {key_name}")
+        raise MissingApiKeyError(key_name)
     client = OpenAI(api_key=api_key, base_url=base_url)
     response = client.chat.completions.create(
         model=payload["model"],
@@ -542,8 +475,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/":
             self._send_html(200, PAGE)
-        elif path == "/api/sessions":
-            self._send_json(200, {"sessions": self.server.store.sessions()})
+        elif path == "/api/agents":
+            self._send_json(200, {"agents": self.server.registry.agents()})
         elif path.startswith("/api/"):
             self._send_json(404, {"error": "Маршрут не найден."})
         else:
@@ -561,11 +494,14 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if path == "/api/day-03/stream":
             self._handle_day_three_stream(parsed_path.query)
             return
-        if path == "/api/sessions":
-            self._send_json(201, {"session": self.server.store.create()})
+        if path == "/api/agents":
+            self._send_json(201, {"agent": self.server.registry.create()})
+            return
+        if path == "/api/agents/bulk":
+            self._handle_bulk_create()
             return
         parts = path.split("/")
-        if len(parts) == 5 and parts[:3] == ["", "api", "sessions"] and parts[4] == "messages":
+        if len(parts) == 5 and parts[:3] == ["", "api", "agents"] and parts[4] == "messages":
             self._handle_message(parts[3])
             return
         self._send_json(404, {"error": "Маршрут не найден."})
@@ -575,7 +511,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_json(403, {"error": "Запрос с другого источника запрещён."})
             return
         parts = urlparse(self.path).path.split("/")
-        if len(parts) == 5 and parts[:3] == ["", "api", "sessions"] and parts[4] == "settings":
+        if len(parts) == 5 and parts[:3] == ["", "api", "agents"] and parts[4] == "settings":
             self._handle_settings(parts[3])
             return
         self._send_json(404, {"error": "Маршрут не найден."})
@@ -654,7 +590,24 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
                 return None
         return task_id
 
-    def _handle_message(self, session_id):
+    def _handle_bulk_create(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
+            self._send_json(400, {"error": "Некорректный JSON."})
+            return
+        if not isinstance(data, dict) or set(data) != {"count"}:
+            self._send_json(400, {"error": "Количество агентов должно быть целым числом от 1 до 100."})
+            return
+        try:
+            agents = self.server.registry.create_many(data["count"])
+        except ValueError as error:
+            self._send_json(400, {"error": str(error)})
+            return
+        self._send_json(201, {"agents": agents})
+
+    def _handle_message(self, agent_id):
         try:
             length = int(self.headers.get("Content-Length", "0"))
             data = json.loads(self.rfile.read(length).decode("utf-8"))
@@ -664,70 +617,43 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if not isinstance(data, dict) or "text" not in data or not isinstance(data["text"], str):
             self._send_json(400, {"error": "Поле text должно быть непустой строкой."})
             return
-        text = data["text"].strip()
-        if not text:
-            self._send_json(400, {"error": "Пустое сообщение."})
-            return
         temperature = data.get("temperature", DEFAULT_TEMPERATURE)
-        if (
-            isinstance(temperature, bool)
-            or not isinstance(temperature, (int, float))
-            or not math.isfinite(temperature)
-            or not 0 <= temperature <= 2
-        ):
-            self._send_json(400, {"error": "Поле temperature должно быть числом от 0 до 2."})
-            return
-        session = self.server.store.add_user_message(session_id, text)
-        if not session:
-            self._send_json(404, {"error": "Сессия не найдена."})
-            return
-        settings = session["settings"]
-        system_prompt = settings["systemPrompt"]
-        options = {}
-        if settings["format"] == "json":
-            system_prompt = f"{system_prompt}\n\n{JSON_OUTPUT_INSTRUCTION}"
-            options["response_format"] = {"type": "json_object"}
-        if settings["maxTokens"] is not None:
-            options["max_tokens"] = settings["maxTokens"]
-        if settings["stop"]:
-            options["stop"] = settings["stop"]
-        payload = {
-            "model": settings["model"],
-            "messages": [{"role": "system", "content": system_prompt}, *session["messages"]],
-            "temperature": temperature,
-        }
-        metadata = {
-            "userPrompt": text,
-            "systemPrompt": system_prompt,
-            "payload": {**payload, **options},
-            "status": {"kind": "success", "label": "200 OK"},
-            "responseTimeMs": None,
-            "usage": None,
-            "cost": None,
-        }
-        key_name, _ = _provider_settings(settings["model"])
-        if not os.getenv(key_name):
-            metadata["status"] = {"kind": "error", "label": "Ошибка API"}
-            session = self.server.store.update_metadata(session_id, metadata)
-            self._send_json(503, {"session": session, "error": f"Не задан {key_name}.", "metadata": metadata})
+        agent = self.server.registry.get(agent_id)
+        if not agent:
+            self._send_json(404, {"error": "Агент не найден."})
             return
         try:
-            started_at = time.monotonic()
-            answer, usage = _response_content_and_usage(self.server.ask_model(payload, **options))
-            metadata["responseTimeMs"] = round((time.monotonic() - started_at) * 1000)
-            metadata["usage"], metadata["cost"] = _request_usage_and_cost(settings["model"], usage)
-            if not isinstance(answer, str) or not answer.strip():
-                raise ValueError("empty API response")
-        except Exception:
-            metadata["status"] = {"kind": "error", "label": "Ошибка API"}
-            session = self.server.store.update_metadata(session_id, metadata)
-            self._send_json(502, {"session": session, "error": "Не удалось получить ответ DeepSeek.", "metadata": metadata})
+            snapshot = agent.respond(data["text"], temperature)
+        except MissingApiKeyError as error:
+            snapshot = agent.snapshot()
+            self._send_json(503, {
+                "agent": snapshot,
+                "error": f"Не задан {error.key_name}.",
+                "metadata": snapshot["metadata"],
+            })
             return
-        self.server.store.update_metadata(session_id, metadata)
-        session = self.server.store.add_assistant_message(session_id, answer)
-        self._send_json(200, {"session": session, "metadata": metadata})
+        except ValueError as error:
+            if str(error) in {"Пустое сообщение.", "Поле temperature должно быть числом от 0 до 2."}:
+                self._send_json(400, {"error": str(error)})
+                return
+            snapshot = agent.snapshot()
+            self._send_json(502, {
+                "agent": snapshot,
+                "error": "Не удалось получить ответ DeepSeek.",
+                "metadata": snapshot["metadata"],
+            })
+            return
+        except Exception:
+            snapshot = agent.snapshot()
+            self._send_json(502, {
+                "agent": snapshot,
+                "error": "Не удалось получить ответ DeepSeek.",
+                "metadata": snapshot["metadata"],
+            })
+            return
+        self._send_json(200, {"agent": snapshot, "metadata": snapshot["metadata"]})
 
-    def _handle_settings(self, session_id):
+    def _handle_settings(self, agent_id):
         try:
             length = int(self.headers.get("Content-Length", "0"))
             data = json.loads(self.rfile.read(length).decode("utf-8"))
@@ -738,11 +664,11 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if error:
             self._send_json(400, {"error": error})
             return
-        session = self.server.store.update_settings(session_id, settings)
-        if not session:
-            self._send_json(404, {"error": "Сессия не найдена."})
+        agent = self.server.registry.get(agent_id)
+        if not agent:
+            self._send_json(404, {"error": "Агент не найден."})
             return
-        self._send_json(200, {"session": session})
+        self._send_json(200, {"agent": agent.update_settings(settings)})
 
     def _validate_settings(self, data):
         expected_fields = {"model", "systemPrompt", "format", "maxTokens", "stop"}
@@ -791,7 +717,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
 class ChatServer(ThreadingHTTPServer):
     def __init__(self, address, ask_model):
         super().__init__(address, ChatRequestHandler)
-        self.store = SessionStore()
+        self.registry = AgentRegistry(ask_model)
         self.ask_model = ask_model
 
 
