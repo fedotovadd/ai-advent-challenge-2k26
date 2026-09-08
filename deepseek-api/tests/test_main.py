@@ -139,7 +139,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("Токены", body)
         self.assertIn("Стоимость запроса", body)
 
-    def test_agent_switch_handler_and_message_composer_use_active_agent_state(self):
+    def test_agent_chat_feedback_and_send_button_follow_the_selected_agent(self):
         status, body, _ = self.request("GET", "/")
 
         self.assertEqual(status, 200)
@@ -148,11 +148,18 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("/api/agents", body)
         self.assertNotIn("/api/agents/bulk", body)
         self.assertNotIn("/api/sessions", body)
-        self.assertIn("function renderStatus()", body)
+        self.assertNotIn('id="status"', body)
+        self.assertNotIn("function renderStatus()", body)
+        self.assertIn("pendingAgentIds:new Set()", body)
+        self.assertIn("drafts:{}", body)
+        self.assertIn("function appendChatStatus", body)
+        self.assertIn("state.pendingAgentIds.has(state.activeId)", body)
+        self.assertIn("function addOptimisticUserMessage", body)
+        self.assertIn("function renderComposer()", body)
         self.assertIn("const agentId=state.activeId;", body)
-        self.assertIn("elements.input.value=\"\"; state.messageInFlight=true; syncSendButton();", body)
+        self.assertIn("state.pendingAgentIds.add(agentId); addOptimisticUserMessage(agentId,text);", body)
         self.assertIn('"/api/agents/"+agentId+"/messages"', body)
-        self.assertIn("function syncSendButton()", body)
+        self.assertLess(body.index("addOptimisticUserMessage(agentId,text)"), body.index('"/api/agents/"+agentId+"/messages"'))
         self.assertIn('id="send" type="submit" disabled', body)
 
     def test_initial_agent_is_available(self):
