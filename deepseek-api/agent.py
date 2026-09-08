@@ -25,11 +25,6 @@ DEFAULT_SETTINGS = {
     "stop": "",
 }
 MAX_BULK_AGENTS = 100
-DEMO_PROFILES = (
-    ("Краткий помощник", "deepseek-v4-flash", "Отвечай кратко, ясно и по существу."),
-    ("Аналитик", "glm-4.7-flash", "Разбирай вопрос по шагам и объясняй вывод."),
-    ("Критик", "deepseek-v4-pro", "Проверяй допущения и отмечай возможные ошибки."),
-)
 
 
 class MissingApiKeyError(ValueError):
@@ -160,7 +155,7 @@ class AgentRegistry:
         self._lock = threading.Lock()
         self._ask_model = ask_model
         self._agents = {
-            "agent-1": Agent("agent-1", "Первый агент", default_settings(), ask_model),
+            "agent-1": Agent("agent-1", "Агент 1", default_settings(), ask_model),
         }
         self._next_id = 2
 
@@ -188,10 +183,7 @@ class AgentRegistry:
             for _ in range(count):
                 agent_number = self._next_id
                 agent_id = f"agent-{agent_number}"
-                profile_name, model, system_prompt = DEMO_PROFILES[(agent_number - 2) % len(DEMO_PROFILES)]
-                settings = default_settings()
-                settings.update({"model": model, "systemPrompt": system_prompt})
-                agent = Agent(agent_id, f"{profile_name} {agent_number}", settings, self._ask_model)
+                agent = Agent(agent_id, f"Агент {agent_number}", default_settings(), self._ask_model)
                 self._agents[agent_id] = agent
                 self._next_id += 1
                 created.append(agent.snapshot())

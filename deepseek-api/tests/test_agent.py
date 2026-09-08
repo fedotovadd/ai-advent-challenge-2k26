@@ -118,18 +118,17 @@ class AgentTests(unittest.TestCase):
 
 
 class AgentRegistryTests(unittest.TestCase):
-    def test_create_many_adds_requested_agents_with_unique_configurations(self):
+    def test_create_many_adds_requested_agents_with_default_configuration(self):
         registry = AgentRegistry(lambda payload, **options: "Ответ")
 
         created = registry.create_many(3)
 
         self.assertEqual([agent["id"] for agent in created], ["agent-2", "agent-3", "agent-4"])
+        self.assertEqual([agent["name"] for agent in created], ["Агент 2", "Агент 3", "Агент 4"])
         self.assertEqual(len(registry.agents()), 4)
         self.assertEqual(registry.agents()[0]["id"], "agent-1")
-        self.assertEqual(len({
-            (agent["name"], agent["settings"]["model"], agent["settings"]["systemPrompt"])
-            for agent in created
-        }), 3)
+        self.assertEqual(registry.agents()[0]["name"], "Агент 1")
+        self.assertTrue(all(agent["settings"] == default_settings() for agent in created))
 
     def test_agents_created_by_registry_keep_messages_and_settings_isolated(self):
         calls = []

@@ -90,8 +90,8 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("height:100vh", mobile_chat_css)
         self.assertIn("Создать агента", body)
         self.assertIn("Агенты", body)
-        self.assertIn('id="agent-count-input"', body)
-        self.assertIn('id="create-many-agents"', body)
+        self.assertNotIn('id="agent-count-input"', body)
+        self.assertNotIn('id="create-many-agents"', body)
         self.assertIn('id="agent-list"', body)
         self.assertIn("Метаданные", body)
         self.assertIn("message-input", body)
@@ -139,15 +139,21 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("Токены", body)
         self.assertIn("Стоимость запроса", body)
 
-    def test_agent_switch_handler_is_not_rendered_as_agent_label(self):
+    def test_agent_switch_handler_and_message_composer_use_active_agent_state(self):
         status, body, _ = self.request("GET", "/")
 
         self.assertEqual(status, 200)
         self.assertIn("button.append(title,detail);", body)
         self.assertIn('button.addEventListener("click",async()=>', body)
         self.assertIn("/api/agents", body)
-        self.assertIn("/api/agents/bulk", body)
+        self.assertNotIn("/api/agents/bulk", body)
         self.assertNotIn("/api/sessions", body)
+        self.assertIn("function renderStatus()", body)
+        self.assertIn("const agentId=state.activeId;", body)
+        self.assertIn("elements.input.value=\"\"; state.messageInFlight=true; syncSendButton();", body)
+        self.assertIn('"/api/agents/"+agentId+"/messages"', body)
+        self.assertIn("function syncSendButton()", body)
+        self.assertIn('id="send" type="submit" disabled', body)
 
     def test_initial_agent_is_available(self):
         status, body, headers = self.json_request("GET", "/api/agents")
@@ -156,7 +162,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("application/json", headers["Content-Type"])
         self.assertEqual(
             body,
-            {"agents": [{"id": "agent-1", "name": "Первый агент", "messages": [], "settings": {
+            {"agents": [{"id": "agent-1", "name": "Агент 1", "messages": [], "settings": {
                 "model": main.MODEL,
                 "systemPrompt": main.SYSTEM_PROMPT,
                 "format": "text",
@@ -182,11 +188,9 @@ class DeepSeekWebTests(unittest.TestCase):
 
         self.assertEqual(status, 201)
         self.assertEqual([agent["id"] for agent in body["agents"]], ["agent-2", "agent-3", "agent-4"])
+        self.assertEqual([agent["name"] for agent in body["agents"]], ["Агент 2", "Агент 3", "Агент 4"])
         self.assertEqual(len(self.server.registry.agents()), 4)
-        self.assertEqual(len({
-            (agent["name"], agent["settings"]["model"], agent["settings"]["systemPrompt"])
-            for agent in body["agents"]
-        }), 3)
+        self.assertTrue(all(agent["settings"]["systemPrompt"] == main.SYSTEM_PROMPT for agent in body["agents"]))
         self.assertEqual(self.calls, [])
 
     def test_bulk_create_rejects_invalid_count(self):
@@ -302,7 +306,7 @@ class DeepSeekWebTests(unittest.TestCase):
         ]
         self.assertEqual(status, 200)
         self.assertEqual(body["agent"]["id"], "agent-1")
-        self.assertEqual(body["agent"]["name"], "Первый агент")
+        self.assertEqual(body["agent"]["name"], "Агент 1")
         self.assertEqual(body["agent"]["messages"], [
             {"role": "user", "content": "Привет"}, {"role": "assistant", "content": "Тестовый ответ"},
         ])
