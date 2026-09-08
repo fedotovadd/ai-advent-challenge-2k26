@@ -24,6 +24,12 @@ DEFAULT_SETTINGS = {
     "maxTokens": None,
     "stop": "",
 }
+MAX_BULK_AGENTS = 100
+DEMO_PROFILES = (
+    ("Краткий помощник", "deepseek-v4-flash", "Отвечай кратко, ясно и по существу."),
+    ("Аналитик", "glm-4.7-flash", "Разбирай вопрос по шагам и объясняй вывод."),
+    ("Критик", "deepseek-v4-pro", "Проверяй допущения и отмечай возможные ошибки."),
+)
 
 
 def default_settings():
@@ -141,3 +147,46 @@ class Agent:
             self._metadata = metadata
             self._messages.append({"role": "assistant", "content": answer})
             return self.snapshot()
+
+
+class AgentRegistry:
+    def __init__(self, ask_model):
+        self._lock = threading.Lock()
+        self._ask_model = ask_model
+        self._agents = {
+            "agent-1": Agent("agent-1", "Первый агент", default_settings(), ask_model),
+        }
+        self._next_id = 2
+
+    def agents(self):
+        with self._lock:
+            return [agent.snapshot() for agent in self._agents.values()]
+
+    def get(self, agent_id):
+        with self._lock:
+            return self._agents.get(agent_id)
+
+    def create(self):
+        with self._lock:
+            agent_id = f"agent-{self._next_id}"
+            self._next_id += 1
+            agent = Agent(agent_id, f"Агент {agent_id[6:]}", default_settings(), self._ask_model)
+            self._agents[agent_id] = agent
+            return agent.snapshot()
+
+    def create_many(self, count):
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= MAX_BULK_AGENTS:
+            raise ValueError("Количество агентов должно быть целым числом от 1 до 100.")
+        with self._lock:
+            created = []
+            for _ in range(count):
+                agent_number = self._next_id
+                agent_id = f"agent-{agent_number}"
+                profile_name, model, system_prompt = DEMO_PROFILES[(agent_number - 2) % len(DEMO_PROFILES)]
+                settings = default_settings()
+                settings.update({"model": model, "systemPrompt": system_prompt})
+                agent = Agent(agent_id, f"{profile_name} {agent_number}", settings, self._ask_model)
+                self._agents[agent_id] = agent
+                self._next_id += 1
+                created.append(agent.snapshot())
+            return created

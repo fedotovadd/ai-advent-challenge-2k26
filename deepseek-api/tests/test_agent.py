@@ -1,6 +1,6 @@
 import unittest
 
-from agent import Agent, default_settings
+from agent import Agent, AgentRegistry, MAX_BULK_AGENTS, default_settings
 
 
 class AgentTests(unittest.TestCase):
@@ -115,6 +115,51 @@ class AgentTests(unittest.TestCase):
         result = agent.snapshot()
         self.assertEqual(result["messages"], [{"role": "user", "content": "Привет"}])
         self.assertEqual(result["metadata"]["status"], {"kind": "error", "label": "Ошибка API"})
+
+
+class AgentRegistryTests(unittest.TestCase):
+    def test_create_many_adds_requested_agents_with_unique_configurations(self):
+        registry = AgentRegistry(lambda payload, **options: "Ответ")
+
+        created = registry.create_many(3)
+
+        self.assertEqual([agent["id"] for agent in created], ["agent-2", "agent-3", "agent-4"])
+        self.assertEqual(len(registry.agents()), 4)
+        self.assertEqual(registry.agents()[0]["id"], "agent-1")
+        self.assertEqual(len({
+            (agent["name"], agent["settings"]["model"], agent["settings"]["systemPrompt"])
+            for agent in created
+        }), 3)
+
+    def test_agents_created_by_registry_keep_messages_and_settings_isolated(self):
+        calls = []
+
+        def ask_model(payload, **options):
+            calls.append(payload)
+            return "Ответ"
+
+        registry = AgentRegistry(ask_model)
+        first, second = registry.create_many(2)
+        settings = default_settings()
+        settings["systemPrompt"] = "Отвечай только одним словом."
+
+        registry.get(first["id"]).update_settings(settings)
+        registry.get(first["id"]).respond("Привет", 1)
+
+        self.assertEqual(calls[0]["messages"][0]["content"], "Отвечай только одним словом.")
+        self.assertEqual(registry.get(second["id"]).snapshot()["messages"], [])
+        self.assertNotEqual(
+            registry.get(second["id"]).snapshot()["settings"]["systemPrompt"],
+            "Отвечай только одним словом.",
+        )
+
+    def test_create_many_rejects_counts_outside_allowed_range(self):
+        registry = AgentRegistry(lambda payload, **options: "Ответ")
+
+        for count in (0, -1, MAX_BULK_AGENTS + 1, True, "3"):
+            with self.subTest(count=count):
+                with self.assertRaises(ValueError):
+                    registry.create_many(count)
 
 
 if __name__ == "__main__":
