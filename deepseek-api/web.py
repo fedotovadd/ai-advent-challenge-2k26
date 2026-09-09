@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from agent import AgentRegistry, DEFAULT_TEMPERATURE, MODELS
+from agent import AgentRegistry, DEFAULT_TEMPERATURE, MODELS, PersistenceError
 from day_three import (
     DAY_THREE_TASKS,
     MAX_DAY_THREE_REQUEST_BYTES,
@@ -15,6 +15,7 @@ from errors import MissingApiKeyError
 
 
 STATIC_PAGE = Path(__file__).with_name("static") / "index.html"
+STATIC_AGENT_STATE = Path(__file__).with_name("static") / "agent-state.js"
 
 
 class ChatRequestHandler(BaseHTTPRequestHandler):
@@ -25,6 +26,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/":
             self._send_html(200, STATIC_PAGE.read_text(encoding="utf-8"))
+        elif path == "/static/agent-state.js":
+            self._send_javascript(200, STATIC_AGENT_STATE.read_text(encoding="utf-8"))
         elif path == "/api/agents":
             self._send_json(200, {"agents": self.server.registry.agents()})
         elif path.startswith("/api/"):
@@ -45,7 +48,12 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._handle_day_three_stream(parsed_path.query)
             return
         if path == "/api/agents":
-            self._send_json(201, {"agent": self.server.registry.create()})
+            try:
+                created = self.server.registry.create()
+            except PersistenceError:
+                self._send_storage_error()
+                return
+            self._send_json(201, {"agent": created})
             return
         if path == "/api/agents/bulk":
             self._handle_bulk_create()
@@ -65,6 +73,25 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._handle_settings(parts[3])
             return
         self._send_json(404, {"error": "Маршрут не найден."})
+
+    def do_DELETE(self):
+        if not self._same_origin():
+            self._send_json(403, {"error": "Запрос с другого источника запрещён."})
+            return
+        parts = urlparse(self.path).path.split("/")
+        if len(parts) != 4 or parts[:3] != ["", "api", "agents"]:
+            self._send_json(404, {"error": "Маршрут не найден."})
+            return
+        agent_id = parts[3]
+        try:
+            deleted = self.server.registry.delete(agent_id)
+        except PersistenceError:
+            self._send_storage_error()
+            return
+        if deleted is None:
+            self._send_json(404, {"error": "Агент не найден."})
+            return
+        self._send_json(200, {"deletedId": agent_id})
 
     def _same_origin(self):
         origin = self.headers.get("Origin")
@@ -155,6 +182,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             self._send_json(400, {"error": str(error)})
             return
+        except PersistenceError:
+            self._send_storage_error()
+            return
         self._send_json(201, {"agents": agents})
 
     def _handle_message(self, agent_id):
@@ -173,7 +203,10 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "Агент не найден."})
             return
         try:
-            snapshot = agent.respond(data["text"], temperature)
+            snapshot = self.server.registry.respond(agent_id, data["text"], temperature)
+        except PersistenceError:
+            self._send_storage_error()
+            return
         except MissingApiKeyError as error:
             snapshot = agent.snapshot()
             self._send_json(503, {
@@ -201,6 +234,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
                 "metadata": snapshot["metadata"],
             })
             return
+        if snapshot is None:
+            self._send_json(404, {"error": "Агент не найден."})
+            return
         self._send_json(200, {"agent": snapshot, "metadata": snapshot["metadata"]})
 
     def _handle_settings(self, agent_id):
@@ -218,7 +254,15 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if not agent:
             self._send_json(404, {"error": "Агент не найден."})
             return
-        self._send_json(200, {"agent": agent.update_settings(settings)})
+        try:
+            snapshot = self.server.registry.update_settings(agent_id, settings)
+        except PersistenceError:
+            self._send_storage_error()
+            return
+        if snapshot is None:
+            self._send_json(404, {"error": "Агент не найден."})
+            return
+        self._send_json(200, {"agent": snapshot})
 
     def _validate_settings(self, data):
         expected_fields = {"model", "systemPrompt", "format", "maxTokens", "stop"}
@@ -255,6 +299,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
+    def _send_storage_error(self):
+        self._send_json(500, {"error": "Не удалось сохранить состояние агента."})
+
     def _send_html(self, status, body):
         encoded = body.encode("utf-8")
         self.send_response(status)
@@ -263,9 +310,17 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
+    def _send_javascript(self, status, body):
+        encoded = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/javascript; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
 
 class ChatServer(ThreadingHTTPServer):
-    def __init__(self, address, ask_model):
+    def __init__(self, address, ask_model, state_path=None):
         super().__init__(address, ChatRequestHandler)
-        self.registry = AgentRegistry(ask_model)
+        self.registry = AgentRegistry(ask_model, state_path)
         self.ask_model = ask_model

@@ -1,6 +1,7 @@
 import http.client
 import json
 import os
+import tempfile
 import threading
 import unittest
 from pathlib import Path
@@ -18,9 +19,11 @@ class DeepSeekWebTests(unittest.TestCase):
         self.answers = []
         self.answer = "Тестовый ответ"
         self.model_error = None
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.state_path = Path(self.temporary_directory.name) / "agents.json"
         self.environment = patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"})
         self.environment.start()
-        self.server = web.ChatServer(("127.0.0.1", 0), self.ask_model)
+        self.server = web.ChatServer(("127.0.0.1", 0), self.ask_model, self.state_path)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -30,6 +33,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join()
         self.environment.stop()
+        self.temporary_directory.cleanup()
 
     def ask_model(self, payload, **kwargs):
         self.calls.append({"payload": payload, "kwargs": kwargs})
@@ -96,6 +100,16 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertNotIn('id="agent-count-input"', body)
         self.assertNotIn('id="create-many-agents"', body)
         self.assertIn('id="agent-list"', body)
+        self.assertIn('<script src="/static/agent-state.js"></script>', body)
+        self.assertIn('setAttribute("aria-label","Удалить агента")', body)
+        self.assertIn('.agent-row.active { background:#f3dfd4', body)
+        self.assertIn('.agent-row.active .session { background:transparent', body)
+        self.assertIn('row.className="agent-row"+(agent.id===state.activeId?" active":"")', body)
+        self.assertIn('window.confirm("Удалить агента "+agent.name+"? Это действие нельзя отменить.")', body)
+        self.assertIn('method:"DELETE"', body)
+        self.assertIn('"/api/agents/"+agent.id', body)
+        self.assertIn('AgentClientState.agentExists(state,pending.agentId)', body)
+        self.assertIn('AgentClientState.agentExists(state,agentId)', body)
         self.assertIn("Метаданные", body)
         self.assertIn("message-input", body)
         self.assertNotIn("DEEPSEEK_API_KEY", body)
@@ -108,6 +122,15 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers["Content-Type"])
         self.assertEqual(body, static_page.read_text(encoding="utf-8"))
+
+    def test_static_agent_state_script_is_served(self):
+        static_script = Path(web.__file__).with_name("static") / "agent-state.js"
+
+        status, body, headers = self.request("GET", "/static/agent-state.js")
+
+        self.assertEqual(status, 200)
+        self.assertIn("application/javascript", headers["Content-Type"])
+        self.assertEqual(body, static_script.read_text(encoding="utf-8"))
 
     def test_page_contains_response_settings_and_metadata(self):
         status, body, _ = self.request("GET", "/")
@@ -172,6 +195,50 @@ class DeepSeekWebTests(unittest.TestCase):
             }, "metadata": None}]},
         )
 
+    def test_server_restart_restores_agent_context(self):
+        settings = {
+            "model": "deepseek-v4-pro",
+            "systemPrompt": "Отвечай по имени.",
+            "format": "text",
+            "maxTokens": None,
+            "stop": "",
+        }
+        self.json_request("PUT", "/api/agents/agent-1/settings", settings)
+        self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Меня зовут Маша"})
+
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+        self.server = web.ChatServer(("127.0.0.1", 0), self.ask_model, self.state_path)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+        status, _, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Как меня зовут?"})
+
+        self.assertEqual(status, 200)
+        self.assertEqual(self.calls[-1]["payload"], {
+            "model": "deepseek-v4-pro",
+            "messages": [
+                {"role": "system", "content": "Отвечай по имени."},
+                {"role": "user", "content": "Меня зовут Маша"},
+                {"role": "assistant", "content": "Тестовый ответ"},
+                {"role": "user", "content": "Как меня зовут?"},
+            ],
+            "temperature": 1,
+        })
+
+    def test_storage_error_returns_safe_500(self):
+        with patch.object(
+            agent.AgentRegistry,
+            "_save",
+            side_effect=agent.PersistenceError("Диск недоступен"),
+        ):
+            status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Привет"})
+
+        self.assertEqual(status, 500)
+        self.assertEqual(body, {"error": "Не удалось сохранить состояние агента."})
+
     def test_create_agent_assigns_next_id(self):
         status, body, _ = self.json_request("POST", "/api/agents")
 
@@ -183,6 +250,95 @@ class DeepSeekWebTests(unittest.TestCase):
             "maxTokens": None,
             "stop": "",
         }, "metadata": None})
+
+    def test_delete_agent_removes_its_saved_history_and_returns_id(self):
+        _, created, _ = self.json_request("POST", "/api/agents")
+        agent_id = created["agent"]["id"]
+        self.json_request("POST", f"/api/agents/{agent_id}/messages", {"text": "Удаляемая история"})
+
+        status, body, _ = self.json_request("DELETE", f"/api/agents/{agent_id}")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {"deletedId": agent_id})
+        _, agents, _ = self.json_request("GET", "/api/agents")
+        self.assertEqual([snapshot["id"] for snapshot in agents["agents"]], ["agent-1"])
+        saved_state = self.state_path.read_text(encoding="utf-8")
+        self.assertNotIn(agent_id, saved_state)
+        self.assertNotIn("Удаляемая история", saved_state)
+
+    def test_delete_missing_agent_returns_404(self):
+        status, body, _ = self.json_request("DELETE", "/api/agents/missing")
+
+        self.assertEqual(status, 404)
+        self.assertEqual(body, {"error": "Агент не найден."})
+
+    def test_delete_storage_error_returns_safe_500(self):
+        with patch.object(
+            agent.AgentRegistry,
+            "delete",
+            side_effect=agent.PersistenceError("Диск недоступен"),
+        ):
+            status, body, _ = self.json_request("DELETE", "/api/agents/agent-1")
+
+        self.assertEqual(status, 500)
+        self.assertEqual(body, {"error": "Не удалось сохранить состояние агента."})
+
+    def test_delete_rejects_foreign_origin_and_accepts_matching_origin(self):
+        status, body, _ = self.json_request(
+            "DELETE", "/api/agents/agent-1", headers={"Origin": "http://evil.example"},
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(body, {"error": "Запрос с другого источника запрещён."})
+
+        status, body, _ = self.json_request(
+            "DELETE", "/api/agents/agent-1", headers={"Origin": f"http://127.0.0.1:{self.port}"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {"deletedId": "agent-1"})
+
+    def test_message_returns_404_when_agent_is_deleted_after_lookup(self):
+        self._assert_request_returns_404_when_agent_is_deleted_after_lookup(
+            "POST", "/api/agents/agent-1/messages", {"text": "Привет"},
+        )
+
+    def test_settings_returns_404_when_agent_is_deleted_after_lookup(self):
+        self._assert_request_returns_404_when_agent_is_deleted_after_lookup(
+            "PUT", "/api/agents/agent-1/settings", {
+                "model": agent.MODEL,
+                "systemPrompt": agent.SYSTEM_PROMPT,
+                "format": "text",
+                "maxTokens": None,
+                "stop": "",
+            },
+        )
+
+    def _assert_request_returns_404_when_agent_is_deleted_after_lookup(self, method, path, payload):
+        original_get = self.server.registry.get
+        lookup_finished = threading.Event()
+        continue_request = threading.Event()
+        response = {}
+
+        def delayed_get(agent_id):
+            result = original_get(agent_id)
+            if agent_id == "agent-1" and not lookup_finished.is_set():
+                lookup_finished.set()
+                continue_request.wait(timeout=2)
+            return result
+
+        with patch.object(self.server.registry, "get", side_effect=delayed_get):
+            request_thread = threading.Thread(
+                target=lambda: response.update(result=self.json_request(method, path, payload)),
+                daemon=True,
+            )
+            request_thread.start()
+            self.assertTrue(lookup_finished.wait(timeout=2))
+            status, _, _ = self.json_request("DELETE", "/api/agents/agent-1")
+            self.assertEqual(status, 200)
+            continue_request.set()
+            request_thread.join(timeout=2)
+
+        self.assertFalse(request_thread.is_alive())
+        self.assertEqual(response["result"][:2], (404, {"error": "Агент не найден."}))
 
     def test_bulk_create_returns_requested_independent_agents(self):
         status, body, _ = self.json_request("POST", "/api/agents/bulk", {"count": 3})

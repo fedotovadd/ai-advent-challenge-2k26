@@ -2,5 +2,6 @@
 AI Advent Challenge by Alexey Gladkov
 
 ## Задания
+
 - [День 1 — минимальный CLI-клиент DeepSeek](deepseek-api/) — ветка `main`.
 - Остальные дни — ветки `day-XX`.

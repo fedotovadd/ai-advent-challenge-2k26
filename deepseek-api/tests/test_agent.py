@@ -1,6 +1,10 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
-from agent import Agent, AgentRegistry, MAX_BULK_AGENTS, default_settings
+from agent import Agent, AgentRegistry, MAX_BULK_AGENTS, PersistenceError, default_settings
 
 
 class AgentTests(unittest.TestCase):
@@ -118,8 +122,77 @@ class AgentTests(unittest.TestCase):
 
 
 class AgentRegistryTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.state_path = Path(self.temporary_directory.name) / "agents.json"
+
+    def tearDown(self):
+        self.temporary_directory.cleanup()
+
+    def test_registry_restores_messages_settings_and_context(self):
+        first_registry = AgentRegistry(lambda payload, **options: "Рада познакомиться!", self.state_path)
+        settings = default_settings()
+        settings.update({"model": "deepseek-v4-pro", "systemPrompt": "Отвечай дружелюбно."})
+
+        first_registry.update_settings("agent-1", settings)
+        first_registry.respond("agent-1", "Меня зовут Маша", 1)
+
+        calls = []
+
+        def ask_model(payload, **options):
+            calls.append(payload)
+            return "Тебя зовут Маша."
+
+        restarted_registry = AgentRegistry(ask_model, self.state_path)
+        restored = restarted_registry.get("agent-1").snapshot()
+        restarted_registry.respond("agent-1", "Как меня зовут?", 1)
+
+        self.assertEqual(restored["settings"], settings)
+        self.assertEqual(restored["messages"], [
+            {"role": "user", "content": "Меня зовут Маша"},
+            {"role": "assistant", "content": "Рада познакомиться!"},
+        ])
+        self.assertEqual(restored["metadata"]["status"], {"kind": "success", "label": "200 OK"})
+        self.assertEqual(calls[0]["messages"], [
+            {"role": "system", "content": "Отвечай дружелюбно."},
+            {"role": "user", "content": "Меня зовут Маша"},
+            {"role": "assistant", "content": "Рада познакомиться!"},
+            {"role": "user", "content": "Как меня зовут?"},
+        ])
+
+    def test_registry_ignores_invalid_saved_state(self):
+        self.state_path.write_text(json.dumps({
+            "version": 1,
+            "nextId": 2,
+            "agents": [{
+                "id": "agent-1",
+                "name": "Сохранённый агент",
+                "messages": [],
+                "settings": default_settings(),
+                "metadata": {
+                    "userPrompt": 42,
+                    "systemPrompt": "Отвечай ясно.",
+                    "payload": {},
+                    "status": {"kind": "success", "label": "200 OK"},
+                    "responseTimeMs": None,
+                    "usage": None,
+                    "cost": None,
+                },
+            }],
+        }), encoding="utf-8")
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents(), [{
+            "id": "agent-1",
+            "name": "Агент 1",
+            "messages": [],
+            "settings": default_settings(),
+            "metadata": None,
+        }])
+
     def test_create_many_adds_requested_agents_with_default_configuration(self):
-        registry = AgentRegistry(lambda payload, **options: "Ответ")
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
 
         created = registry.create_many(3)
 
@@ -137,7 +210,7 @@ class AgentRegistryTests(unittest.TestCase):
             calls.append(payload)
             return "Ответ"
 
-        registry = AgentRegistry(ask_model)
+        registry = AgentRegistry(ask_model, self.state_path)
         first, second = registry.create_many(2)
         settings = default_settings()
         settings["systemPrompt"] = "Отвечай только одним словом."
@@ -153,12 +226,52 @@ class AgentRegistryTests(unittest.TestCase):
         )
 
     def test_create_many_rejects_counts_outside_allowed_range(self):
-        registry = AgentRegistry(lambda payload, **options: "Ответ")
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
 
         for count in (0, -1, MAX_BULK_AGENTS + 1, True, "3"):
             with self.subTest(count=count):
                 with self.assertRaises(ValueError):
                     registry.create_many(count)
+
+    def test_delete_removes_agent_history_settings_and_metadata_from_saved_state(self):
+        registry = AgentRegistry(lambda payload, **options: "Секретный ответ", self.state_path)
+        created = registry.create()
+        settings = default_settings()
+        settings["systemPrompt"] = "Не сохраняй этот текст."
+        registry.update_settings(created["id"], settings)
+        registry.respond(created["id"], "Секретный вопрос", 1)
+
+        deleted = registry.delete(created["id"])
+
+        self.assertEqual(deleted["id"], created["id"])
+        self.assertIsNone(registry.get(created["id"]))
+        self.assertEqual([snapshot["id"] for snapshot in registry.agents()], ["agent-1"])
+        saved_state = self.state_path.read_text(encoding="utf-8")
+        self.assertNotIn(created["id"], saved_state)
+        self.assertNotIn("Секретный вопрос", saved_state)
+        self.assertNotIn("Не сохраняй этот текст.", saved_state)
+        self.assertNotIn("Секретный ответ", saved_state)
+
+    def test_delete_last_agent_persists_empty_registry_and_keeps_next_id(self):
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        registry.delete("agent-1")
+
+        restarted = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+        self.assertEqual(restarted.agents(), [])
+        self.assertEqual(restarted.create()["id"], "agent-2")
+
+    def test_delete_rolls_back_memory_when_persistence_fails(self):
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+        registry.create()
+        before = self.state_path.read_text(encoding="utf-8")
+
+        with patch.object(registry, "_save_state", side_effect=PersistenceError("Диск недоступен")):
+            with self.assertRaises(PersistenceError):
+                registry.delete("agent-1")
+
+        self.assertIsNotNone(registry.get("agent-1"))
+        self.assertEqual(self.state_path.read_text(encoding="utf-8"), before)
 
 
 if __name__ == "__main__":
