@@ -1,6 +1,7 @@
 import http.client
 import json
 import os
+import tempfile
 import threading
 import unittest
 from pathlib import Path
@@ -18,9 +19,11 @@ class DeepSeekWebTests(unittest.TestCase):
         self.answers = []
         self.answer = "Тестовый ответ"
         self.model_error = None
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.state_path = Path(self.temporary_directory.name) / "agents.json"
         self.environment = patch.dict(os.environ, {"DEEPSEEK_API_KEY": "test-key"})
         self.environment.start()
-        self.server = web.ChatServer(("127.0.0.1", 0), self.ask_model)
+        self.server = web.ChatServer(("127.0.0.1", 0), self.ask_model, self.state_path)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -30,6 +33,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.server.server_close()
         self.thread.join()
         self.environment.stop()
+        self.temporary_directory.cleanup()
 
     def ask_model(self, payload, **kwargs):
         self.calls.append({"payload": payload, "kwargs": kwargs})
@@ -171,6 +175,50 @@ class DeepSeekWebTests(unittest.TestCase):
                 "stop": "",
             }, "metadata": None}]},
         )
+
+    def test_server_restart_restores_agent_context(self):
+        settings = {
+            "model": "deepseek-v4-pro",
+            "systemPrompt": "Отвечай по имени.",
+            "format": "text",
+            "maxTokens": None,
+            "stop": "",
+        }
+        self.json_request("PUT", "/api/agents/agent-1/settings", settings)
+        self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Меня зовут Маша"})
+
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+        self.server = web.ChatServer(("127.0.0.1", 0), self.ask_model, self.state_path)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+        status, _, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Как меня зовут?"})
+
+        self.assertEqual(status, 200)
+        self.assertEqual(self.calls[-1]["payload"], {
+            "model": "deepseek-v4-pro",
+            "messages": [
+                {"role": "system", "content": "Отвечай по имени."},
+                {"role": "user", "content": "Меня зовут Маша"},
+                {"role": "assistant", "content": "Тестовый ответ"},
+                {"role": "user", "content": "Как меня зовут?"},
+            ],
+            "temperature": 1,
+        })
+
+    def test_storage_error_returns_safe_500(self):
+        with patch.object(
+            agent.AgentRegistry,
+            "_save",
+            side_effect=agent.PersistenceError("Диск недоступен"),
+        ):
+            status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Привет"})
+
+        self.assertEqual(status, 500)
+        self.assertEqual(body, {"error": "Не удалось сохранить состояние агента."})
 
     def test_create_agent_assigns_next_id(self):
         status, body, _ = self.json_request("POST", "/api/agents")
