@@ -15,6 +15,7 @@ from errors import MissingApiKeyError
 
 
 STATIC_PAGE = Path(__file__).with_name("static") / "index.html"
+STATIC_AGENT_STATE = Path(__file__).with_name("static") / "agent-state.js"
 
 
 class ChatRequestHandler(BaseHTTPRequestHandler):
@@ -25,6 +26,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/":
             self._send_html(200, STATIC_PAGE.read_text(encoding="utf-8"))
+        elif path == "/static/agent-state.js":
+            self._send_javascript(200, STATIC_AGENT_STATE.read_text(encoding="utf-8"))
         elif path == "/api/agents":
             self._send_json(200, {"agents": self.server.registry.agents()})
         elif path.startswith("/api/"):
@@ -303,6 +306,14 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         encoded = body.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def _send_javascript(self, status, body):
+        encoded = body.encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/javascript; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
         self.end_headers()
         self.wfile.write(encoded)

@@ -100,6 +100,13 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertNotIn('id="agent-count-input"', body)
         self.assertNotIn('id="create-many-agents"', body)
         self.assertIn('id="agent-list"', body)
+        self.assertIn('<script src="/static/agent-state.js"></script>', body)
+        self.assertIn('setAttribute("aria-label","Удалить агента")', body)
+        self.assertIn('window.confirm("Удалить агента "+agent.name+"? Это действие нельзя отменить.")', body)
+        self.assertIn('method:"DELETE"', body)
+        self.assertIn('"/api/agents/"+agent.id', body)
+        self.assertIn('AgentClientState.agentExists(state,pending.agentId)', body)
+        self.assertIn('AgentClientState.agentExists(state,agentId)', body)
         self.assertIn("Метаданные", body)
         self.assertIn("message-input", body)
         self.assertNotIn("DEEPSEEK_API_KEY", body)
@@ -112,6 +119,15 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("text/html", headers["Content-Type"])
         self.assertEqual(body, static_page.read_text(encoding="utf-8"))
+
+    def test_static_agent_state_script_is_served(self):
+        static_script = Path(web.__file__).with_name("static") / "agent-state.js"
+
+        status, body, headers = self.request("GET", "/static/agent-state.js")
+
+        self.assertEqual(status, 200)
+        self.assertIn("application/javascript", headers["Content-Type"])
+        self.assertEqual(body, static_script.read_text(encoding="utf-8"))
 
     def test_page_contains_response_settings_and_metadata(self):
         status, body, _ = self.request("GET", "/")
