@@ -3,6 +3,8 @@ import math
 import threading
 import time
 
+from errors import MissingApiKeyError
+
 
 MODEL = "deepseek-v4-flash"
 MODELS = ("deepseek-v4-flash", "glm-4.7-flash", "deepseek-v4-pro")
@@ -25,12 +27,6 @@ DEFAULT_SETTINGS = {
     "stop": "",
 }
 MAX_BULK_AGENTS = 100
-
-
-class MissingApiKeyError(ValueError):
-    def __init__(self, key_name):
-        super().__init__(f"missing {key_name}")
-        self.key_name = key_name
 
 
 def default_settings():
