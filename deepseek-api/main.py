@@ -1,8 +1,8 @@
-from providers import ask_deepseek
+from providers import ask_model
 from web import ChatServer
 
 
-def create_server(host="127.0.0.1", port=8000, ask_model=ask_deepseek):
+def create_server(host="127.0.0.1", port=8000, ask_model=ask_model):
     # Параметр ask_model позволяет тестам подменять провайдера без реального API-вызова.
     return ChatServer((host, port), ask_model)
 

@@ -11,7 +11,7 @@ def _provider_settings(model):
     return "DEEPSEEK_API_KEY", "https://api.deepseek.com"
 
 
-def ask_deepseek(payload, **options):
+def ask_model(payload, **options):
     key_name, base_url = _provider_settings(payload["model"])
     api_key = os.getenv(key_name)
     if not api_key:

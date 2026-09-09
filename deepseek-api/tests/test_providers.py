@@ -20,7 +20,7 @@ class ProviderTests(unittest.TestCase):
         }
 
         with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "deepseek-key", "ZAI_API_KEY": "zai-key"}, clear=True):
-            result = providers.ask_deepseek(payload)
+            result = providers.ask_model(payload)
 
         openai.assert_called_once_with(api_key="zai-key", base_url="https://api.z.ai/api/paas/v4")
         self.assertEqual(result["content"], "Ответ GLM")
