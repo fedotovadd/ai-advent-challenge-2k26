@@ -308,6 +308,25 @@ class AgentRegistry:
             self._save()
             return snapshot
 
+    def delete(self, agent_id):
+        with self._lock:
+            agent = self._agents.get(agent_id)
+            if agent is None:
+                return None
+            remaining_agents = {
+                current_id: current_agent
+                for current_id, current_agent in self._agents.items()
+                if current_id != agent_id
+            }
+            state = {
+                "version": STATE_VERSION,
+                "nextId": self._next_id,
+                "agents": [current_agent.snapshot() for current_agent in remaining_agents.values()],
+            }
+            self._save_state(state)
+            self._agents = remaining_agents
+            return agent.snapshot()
+
     def _state(self):
         with self._lock:
             return {
@@ -317,13 +336,16 @@ class AgentRegistry:
             }
 
     def _save(self):
+        self._save_state(self._state())
+
+    def _save_state(self, state):
         temporary_path = None
         try:
             self._state_path.parent.mkdir(parents=True, exist_ok=True)
             with NamedTemporaryFile(
                 "w", encoding="utf-8", dir=self._state_path.parent, delete=False,
             ) as temporary_file:
-                json.dump(self._state(), temporary_file, ensure_ascii=False)
+                json.dump(state, temporary_file, ensure_ascii=False)
                 temporary_file.flush()
                 os.fsync(temporary_file.fileno())
                 temporary_path = Path(temporary_file.name)
@@ -347,14 +369,14 @@ class AgentRegistry:
             or state["version"] != STATE_VERSION
             or not isinstance(state["nextId"], int)
             or isinstance(state["nextId"], bool)
+            or state["nextId"] < 1
             or not isinstance(state["agents"], list)
-            or not state["agents"]
             or not all(_valid_agent_snapshot(snapshot) for snapshot in state["agents"])
         ):
             return None
         ids = [snapshot["id"] for snapshot in state["agents"]]
         numbers = [_agent_number(agent_id) for agent_id in ids]
-        if len(set(ids)) != len(ids) or state["nextId"] <= max(numbers):
+        if len(set(ids)) != len(ids) or (numbers and state["nextId"] <= max(numbers)):
             return None
         return {
             snapshot["id"]: Agent(

@@ -2,8 +2,9 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from agent import Agent, AgentRegistry, MAX_BULK_AGENTS, default_settings
+from agent import Agent, AgentRegistry, MAX_BULK_AGENTS, PersistenceError, default_settings
 
 
 class AgentTests(unittest.TestCase):
@@ -231,6 +232,46 @@ class AgentRegistryTests(unittest.TestCase):
             with self.subTest(count=count):
                 with self.assertRaises(ValueError):
                     registry.create_many(count)
+
+    def test_delete_removes_agent_history_settings_and_metadata_from_saved_state(self):
+        registry = AgentRegistry(lambda payload, **options: "Секретный ответ", self.state_path)
+        created = registry.create()
+        settings = default_settings()
+        settings["systemPrompt"] = "Не сохраняй этот текст."
+        registry.update_settings(created["id"], settings)
+        registry.respond(created["id"], "Секретный вопрос", 1)
+
+        deleted = registry.delete(created["id"])
+
+        self.assertEqual(deleted["id"], created["id"])
+        self.assertIsNone(registry.get(created["id"]))
+        self.assertEqual([snapshot["id"] for snapshot in registry.agents()], ["agent-1"])
+        saved_state = self.state_path.read_text(encoding="utf-8")
+        self.assertNotIn(created["id"], saved_state)
+        self.assertNotIn("Секретный вопрос", saved_state)
+        self.assertNotIn("Не сохраняй этот текст.", saved_state)
+        self.assertNotIn("Секретный ответ", saved_state)
+
+    def test_delete_last_agent_persists_empty_registry_and_keeps_next_id(self):
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        registry.delete("agent-1")
+
+        restarted = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+        self.assertEqual(restarted.agents(), [])
+        self.assertEqual(restarted.create()["id"], "agent-2")
+
+    def test_delete_rolls_back_memory_when_persistence_fails(self):
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+        registry.create()
+        before = self.state_path.read_text(encoding="utf-8")
+
+        with patch.object(registry, "_save_state", side_effect=PersistenceError("Диск недоступен")):
+            with self.assertRaises(PersistenceError):
+                registry.delete("agent-1")
+
+        self.assertIsNotNone(registry.get("agent-1"))
+        self.assertEqual(self.state_path.read_text(encoding="utf-8"), before)
 
 
 if __name__ == "__main__":
