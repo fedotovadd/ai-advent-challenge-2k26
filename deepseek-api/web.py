@@ -71,6 +71,25 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(404, {"error": "Маршрут не найден."})
 
+    def do_DELETE(self):
+        if not self._same_origin():
+            self._send_json(403, {"error": "Запрос с другого источника запрещён."})
+            return
+        parts = urlparse(self.path).path.split("/")
+        if len(parts) != 4 or parts[:3] != ["", "api", "agents"]:
+            self._send_json(404, {"error": "Маршрут не найден."})
+            return
+        agent_id = parts[3]
+        try:
+            deleted = self.server.registry.delete(agent_id)
+        except PersistenceError:
+            self._send_storage_error()
+            return
+        if deleted is None:
+            self._send_json(404, {"error": "Агент не найден."})
+            return
+        self._send_json(200, {"deletedId": agent_id})
+
     def _same_origin(self):
         origin = self.headers.get("Origin")
         return not origin or origin == f"http://{self.headers.get('Host')}"
@@ -212,6 +231,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
                 "metadata": snapshot["metadata"],
             })
             return
+        if snapshot is None:
+            self._send_json(404, {"error": "Агент не найден."})
+            return
         self._send_json(200, {"agent": snapshot, "metadata": snapshot["metadata"]})
 
     def _handle_settings(self, agent_id):
@@ -233,6 +255,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             snapshot = self.server.registry.update_settings(agent_id, settings)
         except PersistenceError:
             self._send_storage_error()
+            return
+        if snapshot is None:
+            self._send_json(404, {"error": "Агент не найден."})
             return
         self._send_json(200, {"agent": snapshot})
 
