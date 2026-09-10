@@ -4,10 +4,90 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import agent
 from agent import Agent, AgentRegistry, MAX_BULK_AGENTS, PersistenceError, default_settings
 
 
 class AgentTests(unittest.TestCase):
+    def test_estimate_payload_counts_system_messages_and_request_options(self):
+        request = {
+            "model": "deepseek-v4-flash",
+            "messages": [
+                {"role": "system", "content": "Будь кратким"},
+                {"role": "user", "content": "Привет"},
+            ],
+            "temperature": 1,
+            "max_tokens": 300,
+        }
+
+        self.assertGreater(agent.estimate_text_tokens("один два"), 0)
+        self.assertGreater(agent.estimate_payload_tokens(request), agent.estimate_text_tokens("Привет"))
+        self.assertGreater(
+            agent.estimate_payload_tokens(request),
+            agent.estimate_payload_tokens({**request, "messages": request["messages"][1:]}),
+        )
+
+    def test_usage_uses_estimates_when_usage_is_missing_or_partial(self):
+        actual, _ = agent.request_usage_and_cost(
+            "deepseek-v4-flash", {"prompt_tokens": 10, "completion_tokens": 5}, 12, 4,
+        )
+        estimated, cost = agent.request_usage_and_cost("deepseek-v4-flash", {"prompt_tokens": 10}, 12, 4)
+
+        self.assertEqual(actual["source"], "actual")
+        self.assertEqual(estimated, {
+            "promptTokens": 12, "completionTokens": 4, "totalTokens": 16, "source": "estimated",
+        })
+        self.assertEqual(cost["kind"], "paid")
+
+    def test_model_capabilities_keep_real_context_and_output_limits(self):
+        self.assertEqual(agent.MODEL_CAPABILITIES["deepseek-v4-pro"]["contextLimit"], 1_000_000)
+        self.assertEqual(agent.MODEL_CAPABILITIES["deepseek-v4-pro"]["maxOutputTokens"], 384_000)
+        self.assertEqual(agent.MODEL_CAPABILITIES["glm-4.7-flash"]["contextLimit"], 200_000)
+        self.assertEqual(agent.MODEL_CAPABILITIES["glm-4.7-flash"]["maxOutputTokens"], 131_072)
+
+    def test_successful_response_records_isolated_session_metrics(self):
+        def ask_model(payload, **options):
+            return {"content": "Ответ", "usage": {"prompt_tokens": 100, "completion_tokens": 50}}
+
+        first = Agent("agent-1", "Первый", default_settings(), ask_model)
+        second = Agent("agent-2", "Второй", default_settings(), ask_model)
+        result = first.respond("Привет")
+
+        record = result["metrics"]["calls"][0]
+        self.assertEqual(record["messageNumber"], 1)
+        self.assertEqual(record["promptTokens"], 100)
+        self.assertEqual(record["completionTokens"], 50)
+        self.assertIn("historyBeforeTokens", record)
+        self.assertIn("historyAfterTokens", record)
+        self.assertEqual(result["metrics"]["totals"]["totalTokens"], 150)
+        self.assertEqual(second.snapshot()["metrics"]["calls"], [])
+
+    def test_overflow_blocks_request_without_changing_history(self):
+        calls = []
+        settings = default_settings()
+        settings["trainingContextLimit"] = 10
+        agent_instance = Agent("agent-1", "Первый", settings, lambda *args, **kwargs: calls.append(args))
+
+        with self.assertRaisesRegex(agent.ContextOverflowError, "превышают лимит"):
+            agent_instance.respond("Длинное сообщение")
+
+        self.assertEqual(calls, [])
+        self.assertEqual(agent_instance.snapshot()["messages"], [])
+        self.assertEqual(agent_instance.snapshot()["metrics"]["lastContextAttempt"]["mode"], "blocked")
+
+    def test_overflow_probe_returns_provider_message_without_committing_message(self):
+        class ProviderFailure(RuntimeError):
+            body = {"error": {"message": "maximum context length exceeded"}}
+
+        settings = default_settings()
+        settings.update({"trainingContextLimit": 10, "sendOnOverflow": True})
+        agent_instance = Agent("agent-1", "Первый", settings, lambda *args, **kwargs: (_ for _ in ()).throw(ProviderFailure()))
+
+        with self.assertRaisesRegex(agent.OverflowProbeError, "maximum context"):
+            agent_instance.respond("Длинное сообщение")
+
+        self.assertEqual(agent_instance.snapshot()["messages"], [])
+
     def test_respond_builds_request_from_its_settings_and_saves_answer(self):
         calls = []
 
@@ -45,8 +125,9 @@ class AgentTests(unittest.TestCase):
             "promptTokens": 10,
             "completionTokens": 5,
             "totalTokens": 15,
+            "source": "actual",
         })
-        self.assertEqual(result["metadata"]["cost"], {"kind": "paid", "usd": 0.0000165})
+        self.assertEqual(result["metadata"]["cost"], {"kind": "paid", "usd": 0.0000165, "source": "actual"})
 
     def test_respond_sends_only_its_own_previous_messages(self):
         calls = []
@@ -189,6 +270,7 @@ class AgentRegistryTests(unittest.TestCase):
             "messages": [],
             "settings": default_settings(),
             "metadata": None,
+            "metrics": agent.default_metrics(),
         }])
 
     def test_create_many_adds_requested_agents_with_default_configuration(self):

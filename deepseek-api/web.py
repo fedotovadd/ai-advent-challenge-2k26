@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from agent import AgentRegistry, DEFAULT_TEMPERATURE, MODELS, PersistenceError
+from agent import AgentRegistry, ContextOverflowError, DEFAULT_TEMPERATURE, MODELS, MODEL_CAPABILITIES, OverflowProbeError, PersistenceError
 from day_three import (
     DAY_THREE_TASKS,
     MAX_DAY_THREE_REQUEST_BYTES,
@@ -215,6 +215,14 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
                 "metadata": snapshot["metadata"],
             })
             return
+        except ContextOverflowError as error:
+            snapshot = agent.snapshot()
+            self._send_json(409, {"agent": snapshot, "error": str(error), "metadata": snapshot["metadata"]})
+            return
+        except OverflowProbeError as error:
+            snapshot = agent.snapshot()
+            self._send_json(422, {"agent": snapshot, "error": str(error), "metadata": snapshot["metadata"], "probe": True})
+            return
         except ValueError as error:
             if str(error) in {"Пустое сообщение.", "Поле temperature должно быть числом от 0 до 2."}:
                 self._send_json(400, {"error": str(error)})
@@ -265,30 +273,40 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         self._send_json(200, {"agent": snapshot})
 
     def _validate_settings(self, data):
-        expected_fields = {"model", "systemPrompt", "format", "maxTokens", "stop"}
-        if not isinstance(data, dict) or set(data) != expected_fields:
+        legacy_fields = {"model", "systemPrompt", "format", "maxTokens", "stop"}
+        expected_fields = legacy_fields | {"trainingContextLimit", "sendOnOverflow"}
+        if not isinstance(data, dict) or (set(data) != legacy_fields and set(data) != expected_fields):
             return None, "Настройки имеют неверный формат."
+        data = {"trainingContextLimit": None, "sendOnOverflow": False, **data}
         system_prompt = data["systemPrompt"]
         model = data["model"]
         response_format = data["format"]
         max_tokens = data["maxTokens"]
         stop = data["stop"]
+        training_limit = data["trainingContextLimit"]
+        send_on_overflow = data["sendOnOverflow"]
         if not isinstance(system_prompt, str) or not system_prompt.strip():
             return None, "System prompt не может быть пустым."
         if model not in MODELS:
             return None, "Неизвестная модель."
         if response_format not in {"text", "json"}:
             return None, "Формат ответа должен быть text или json."
-        if max_tokens is not None and (isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens <= 0):
+        if max_tokens is not None and (isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens <= 0 or max_tokens > MODEL_CAPABILITIES[model]["maxOutputTokens"]):
             return None, "Максимум токенов должен быть положительным целым числом."
         if not isinstance(stop, str):
             return None, "Стоп-последовательность должна быть строкой."
+        if training_limit is not None and (isinstance(training_limit, bool) or not isinstance(training_limit, int) or training_limit <= 0):
+            return None, "Учебный лимит контекста должен быть положительным целым числом."
+        if not isinstance(send_on_overflow, bool):
+            return None, "Флаг демонстрации переполнения должен быть логическим значением."
         return {
             "model": model,
             "systemPrompt": system_prompt.strip(),
             "format": response_format,
             "maxTokens": max_tokens,
             "stop": stop.strip(),
+            "trainingContextLimit": training_limit,
+            "sendOnOverflow": send_on_overflow,
         }, None
 
     def _send_json(self, status, body):
