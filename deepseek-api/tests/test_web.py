@@ -161,22 +161,25 @@ class DeepSeekWebTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         for marker in (
-            'id="token-summary"', 'id="last-step-metrics"',
-            'token-metric-card', 'id="context-attempt-card"',
+            '"token-summary"', '"last-step-metrics"',
+            'token-metrics-list', 'token-metric-row', 'id="context-attempt-card"',
             'id="token-history-scroll"', 'id="token-history-table"',
             'context-demo-row',
         ):
             self.assertIn(marker, body)
         for label in (
+            "Метрики чата", "Сообщений", "Стоимость",
             "Токенов в сообщении", "Токенов на входе",
-            "Токенов в ответе", "Вся история (накоплено)",
+            "Токенов на выходе", "Токенов в ответе", "Вся история (накоплено)",
             "Контекст / лимит",
         ):
             self.assertIn(label, body)
-        self.assertIn("Сообщений:", body)
         self.assertNotIn('"История до"', body)
-        self.assertIn("context-limit-card", body)
-        self.assertIn(".context-limit-card { grid-column:1 / -1; }", body)
+        self.assertNotIn("token-metric-card", body)
+        self.assertNotIn("context-limit-card", body)
+        self.assertNotIn("≈", body)
+        self.assertIn("Рост по ходам", body)
+        self.assertIn("История по ходам", body)
         for header in ("Ход", "Вход", "Выход", "Всего", "Накопленные токены", "Стоимость"):
             self.assertIn(header, body)
 
