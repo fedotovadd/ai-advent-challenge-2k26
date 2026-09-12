@@ -188,6 +188,8 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("Данных пока нет", body)
         self.assertIn("metrics.calls.map(call=>call.promptTokens)", body)
         self.assertIn("Math.max(values.length-1,1)", body)
+        self.assertIn("#token-metrics .token-growth { order:3; }", body)
+        self.assertIn("#last-step-metrics { order:4; }", body)
 
     def test_agent_chat_feedback_and_send_button_follow_the_selected_agent(self):
         status, body, _ = self.request("GET", "/")
