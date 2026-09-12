@@ -168,10 +168,15 @@ class DeepSeekWebTests(unittest.TestCase):
         ):
             self.assertIn(marker, body)
         for label in (
-            "Новое сообщение", "История до", "Вход API", "Ответ API",
-            "История после", "Контекст / лимит",
+            "Токенов в сообщении", "Токенов на входе",
+            "Токенов в ответе", "Вся история (накоплено)",
+            "Контекст / лимит",
         ):
             self.assertIn(label, body)
+        self.assertIn("Сообщений:", body)
+        self.assertNotIn('"История до"', body)
+        self.assertIn("context-limit-card", body)
+        self.assertIn(".context-limit-card { grid-column:1 / -1; }", body)
         for header in ("Ход", "Вход", "Выход", "Всего", "Накопленные токены", "Стоимость"):
             self.assertIn(header, body)
 
