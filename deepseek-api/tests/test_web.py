@@ -156,6 +156,42 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("Токены", body)
         self.assertIn("Стоимость запроса", body)
 
+    def test_page_contains_structured_token_metrics(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        for marker in (
+            '"token-summary"', '"last-step-metrics"',
+            'token-metrics-list', 'token-metric-row', 'id="context-attempt-card"',
+            'id="token-history-scroll"', 'id="token-history-table"',
+            'context-demo-row',
+        ):
+            self.assertIn(marker, body)
+        for label in (
+            "Метрики чата", "Сообщений", "Стоимость",
+            "Токенов в сообщении", "Токенов на входе",
+            "Токенов на выходе", "Токенов в ответе", "Вся история (накоплено)",
+            "Контекст / лимит",
+        ):
+            self.assertIn(label, body)
+        self.assertNotIn('"История до"', body)
+        self.assertNotIn("token-metric-card", body)
+        self.assertNotIn("context-limit-card", body)
+        self.assertNotIn("≈", body)
+        self.assertIn("Рост по ходам", body)
+        self.assertIn("История по ходам", body)
+        for header in ("Ход", "Вход", "Выход", "Всего", "Накопленные токены", "Стоимость"):
+            self.assertIn(header, body)
+
+    def test_page_handles_token_chart_edge_cases(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        self.assertIn('id="token-growth-chart"', body)
+        self.assertIn("Данных пока нет", body)
+        self.assertIn("metrics.calls.map(call=>call.promptTokens)", body)
+        self.assertIn("Math.max(values.length-1,1)", body)
+
     def test_agent_chat_feedback_and_send_button_follow_the_selected_agent(self):
         status, body, _ = self.request("GET", "/")
 
@@ -192,7 +228,9 @@ class DeepSeekWebTests(unittest.TestCase):
                 "format": "text",
                 "maxTokens": None,
                 "stop": "",
-            }, "metadata": None}]},
+                "trainingContextLimit": None,
+                "sendOnOverflow": False,
+            }, "metadata": None, "metrics": agent.default_metrics()}]},
         )
 
     def test_server_restart_restores_agent_context(self):
@@ -249,7 +287,9 @@ class DeepSeekWebTests(unittest.TestCase):
             "format": "text",
             "maxTokens": None,
             "stop": "",
-        }, "metadata": None})
+            "trainingContextLimit": None,
+            "sendOnOverflow": False,
+        }, "metadata": None, "metrics": agent.default_metrics()})
 
     def test_delete_agent_removes_its_saved_history_and_returns_id(self):
         _, created, _ = self.json_request("POST", "/api/agents")
@@ -369,7 +409,9 @@ class DeepSeekWebTests(unittest.TestCase):
         status, body, _ = self.json_request("PUT", "/api/agents/agent-1/settings", settings)
 
         self.assertEqual(status, 200)
-        self.assertEqual(body["agent"]["settings"], settings)
+        self.assertEqual(body["agent"]["settings"], {
+            **settings, "trainingContextLimit": None, "sendOnOverflow": False,
+        })
 
     def test_agent_model_and_metadata_are_persisted(self):
         settings = {
@@ -391,9 +433,9 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(self.calls[-1]["payload"]["model"], "deepseek-v4-pro")
         self.assertEqual(body["metadata"]["usage"], {
-            "promptTokens": 100, "completionTokens": 50, "totalTokens": 150,
+            "promptTokens": 100, "completionTokens": 50, "totalTokens": 150, "source": "actual",
         })
-        self.assertEqual(body["metadata"]["cost"], {"kind": "paid", "usd": 0.000165})
+        self.assertEqual(body["metadata"]["cost"], {"kind": "paid", "usd": 0.000165, "source": "actual"})
         self.assertGreaterEqual(body["metadata"]["responseTimeMs"], 0)
         self.assertEqual(agents["agents"][0]["metadata"], body["metadata"])
 
@@ -415,7 +457,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("system prompt", body["error"].lower())
         _, agents, _ = self.json_request("GET", "/api/agents")
-        self.assertEqual(agents["agents"][0]["settings"], valid_settings)
+        self.assertEqual(agents["agents"][0]["settings"], {**valid_settings, "trainingContextLimit": None, "sendOnOverflow": False})
 
     def test_settings_for_unknown_agent_return_404(self):
         status, body, _ = self.json_request(
@@ -452,7 +494,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body, {"error": "Настройки имеют неверный формат."})
         _, agents, _ = self.json_request("GET", "/api/agents")
-        self.assertEqual(agents["agents"][0]["settings"], valid_settings)
+        self.assertEqual(agents["agents"][0]["settings"], {**valid_settings, "trainingContextLimit": None, "sendOnOverflow": False})
 
     def test_message_returns_answer_and_exact_metadata(self):
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "  Привет  "})
@@ -480,8 +522,8 @@ class DeepSeekWebTests(unittest.TestCase):
             "model": agent.MODEL, "messages": expected_messages, "temperature": 1,
         })
         self.assertEqual(body["metadata"]["status"], {"kind": "success", "label": "200 OK"})
-        self.assertIsNone(body["metadata"]["usage"])
-        self.assertIsNone(body["metadata"]["cost"])
+        self.assertEqual(body["metadata"]["usage"]["source"], "estimated")
+        self.assertEqual(body["metadata"]["cost"]["source"], "estimated")
 
     def test_second_message_sends_complete_history(self):
         self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Первый"})

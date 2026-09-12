@@ -17,6 +17,11 @@ MODEL_PRICING = {
     "glm-4.7-flash": None,
     "deepseek-v4-pro": {"input": 0.66, "output": 1.98},
 }
+MODEL_CAPABILITIES = {
+    "deepseek-v4-flash": {"contextLimit": 1_000_000, "maxOutputTokens": 384_000, "safeOutputTokens": 4_096},
+    "deepseek-v4-pro": {"contextLimit": 1_000_000, "maxOutputTokens": 384_000, "safeOutputTokens": 4_096},
+    "glm-4.7-flash": {"contextLimit": 200_000, "maxOutputTokens": 131_072, "safeOutputTokens": 4_096},
+}
 SYSTEM_PROMPT = (
     "Ты AI-помощник. Отвечай ясно, кратко, по-русски. "
     "Возвращай обычный текст без Markdown-разметки."
@@ -29,9 +34,11 @@ DEFAULT_SETTINGS = {
     "format": "text",
     "maxTokens": None,
     "stop": "",
+    "trainingContextLimit": None,
+    "sendOnOverflow": False,
 }
 MAX_BULK_AGENTS = 100
-STATE_VERSION = 1
+STATE_VERSION = 2
 DEFAULT_STATE_PATH = Path(__file__).with_name("data") / "agents.json"
 METADATA_FIELDS = {
     "userPrompt",
@@ -48,8 +55,25 @@ class PersistenceError(Exception):
     pass
 
 
+class ContextOverflowError(ValueError):
+    pass
+
+
+class OverflowProbeError(RuntimeError):
+    pass
+
+
 def default_settings():
     return copy.deepcopy(DEFAULT_SETTINGS)
+
+
+def default_metrics():
+    return {
+        "calls": [],
+        "totals": {"promptTokens": 0, "completionTokens": 0, "totalTokens": 0, "usd": 0},
+        "lastMessage": None,
+        "lastContextAttempt": None,
+    }
 
 
 def _response_content_and_usage(response):
@@ -60,42 +84,77 @@ def _response_content_and_usage(response):
     return None, None
 
 
+def provider_error_message(error):
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        message = body.get("error", {}).get("message") if isinstance(body.get("error"), dict) else None
+        message = message or body.get("message")
+        if isinstance(message, str) and message:
+            return message
+    message = getattr(error, "message", None)
+    return message if isinstance(message, str) and message else str(error)
+
+
 def _usage_value(usage, name):
     value = usage.get(name) if isinstance(usage, dict) else getattr(usage, name, None)
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
-def request_usage_and_cost(model, usage):
+def estimate_text_tokens(text):
+    """A stable, deliberately approximate estimate suitable for local UI feedback."""
+    if not isinstance(text, str) or not text:
+        return 0
+    return max(1, math.ceil(len(text) / 4))
+
+
+def estimate_payload_tokens(payload):
+    messages = payload.get("messages", []) if isinstance(payload, dict) else []
+    message_tokens = sum(
+        4 + estimate_text_tokens(message.get("role", "")) + estimate_text_tokens(message.get("content", ""))
+        for message in messages if isinstance(message, dict)
+    )
+    option_tokens = sum(estimate_text_tokens(str(value)) for key, value in payload.items() if key != "messages") if isinstance(payload, dict) else 0
+    return 3 + message_tokens + option_tokens
+
+
+def request_usage_and_cost(model, usage, estimated_prompt_tokens=None, estimated_completion_tokens=None):
     prompt_tokens = _usage_value(usage, "prompt_tokens")
     completion_tokens = _usage_value(usage, "completion_tokens")
     total_tokens = _usage_value(usage, "total_tokens")
-    if total_tokens is None and prompt_tokens is not None and completion_tokens is not None:
+    actual = prompt_tokens is not None and completion_tokens is not None
+    if actual and total_tokens is None:
         total_tokens = prompt_tokens + completion_tokens
-    details = None if usage is None else {
-        "promptTokens": prompt_tokens,
-        "completionTokens": completion_tokens,
-        "totalTokens": total_tokens,
+    if not actual:
+        prompt_tokens = estimated_prompt_tokens
+        completion_tokens = estimated_completion_tokens
+        total_tokens = (prompt_tokens + completion_tokens
+                        if isinstance(prompt_tokens, int) and isinstance(completion_tokens, int) else None)
+    details = None if total_tokens is None else {
+        "promptTokens": prompt_tokens, "completionTokens": completion_tokens,
+        "totalTokens": total_tokens, "source": "actual" if actual else "estimated",
     }
     pricing = MODEL_PRICING[model]
     if pricing is None:
-        return details, {"kind": "free"}
+        return details, {"kind": "free", "usd": 0, "source": details["source"] if details else "estimated"}
     if prompt_tokens is None or completion_tokens is None:
         return details, None
     return details, {
         "kind": "paid",
-        "usd": round((prompt_tokens * pricing["input"] + completion_tokens * pricing["output"]) / 1_000_000, 12),
+        "usd": (prompt_tokens * pricing["input"] + completion_tokens * pricing["output"]) / 1_000_000,
+        "source": details["source"],
     }
 
 
 class Agent:
-    def __init__(self, agent_id, name, settings, ask_model, messages=None, metadata=None):
+    def __init__(self, agent_id, name, settings, ask_model, messages=None, metadata=None, metrics=None):
         self._lock = threading.RLock()
         self._id = agent_id
         self._name = name
-        self._settings = copy.deepcopy(settings)
+        self._settings = {**default_settings(), **copy.deepcopy(settings)}
         self._ask_model = ask_model
         self._messages = copy.deepcopy(messages) if messages is not None else []
         self._metadata = copy.deepcopy(metadata)
+        self._metrics = copy.deepcopy(metrics) if metrics is not None else default_metrics()
 
     def snapshot(self):
         with self._lock:
@@ -105,11 +164,12 @@ class Agent:
                 "messages": copy.deepcopy(self._messages),
                 "settings": copy.deepcopy(self._settings),
                 "metadata": copy.deepcopy(self._metadata),
+                "metrics": copy.deepcopy(self._metrics),
             }
 
     def update_settings(self, settings):
         with self._lock:
-            self._settings = copy.deepcopy(settings)
+            self._settings = {**default_settings(), **copy.deepcopy(settings)}
             return self.snapshot()
 
     def respond(self, text, temperature=DEFAULT_TEMPERATURE):
@@ -125,7 +185,6 @@ class Agent:
 
         with self._lock:
             text = text.strip()
-            self._messages.append({"role": "user", "content": text})
             system_prompt = self._settings["systemPrompt"]
             options = {}
             if self._settings["format"] == "json":
@@ -137,31 +196,86 @@ class Agent:
                 options["stop"] = self._settings["stop"]
             payload = {
                 "model": self._settings["model"],
-                "messages": [{"role": "system", "content": system_prompt}, *self._messages],
+                "messages": [{"role": "system", "content": system_prompt}, *self._messages, {"role": "user", "content": text}],
                 "temperature": temperature,
             }
+            full_payload = {**payload, **options}
+            estimated_payload = estimate_payload_tokens(full_payload)
+            capability = MODEL_CAPABILITIES[self._settings["model"]]
+            context_limit = self._settings["trainingContextLimit"] or capability["contextLimit"]
+            requested_output = self._settings["maxTokens"] or capability["safeOutputTokens"]
+            context_percent = estimated_payload / context_limit
+            overflow = estimated_payload + requested_output > context_limit
+            if overflow:
+                self._metrics["lastContextAttempt"] = {
+                    "payloadEstimatedTokens": estimated_payload,
+                    "requestedOutputTokens": requested_output,
+                    "contextLimit": context_limit,
+                    "contextPercent": context_percent,
+                    "reason": "История и возможный ответ превышают лимит контекста модели.",
+                    "mode": "probe" if self._settings["sendOnOverflow"] else "blocked",
+                }
+                if not self._settings["sendOnOverflow"]:
+                    raise ContextOverflowError("Сообщение не отправлено: история и возможный ответ превышают лимит контекста модели.")
             metadata = {
                 "userPrompt": text,
                 "systemPrompt": system_prompt,
-                "payload": {**payload, **options},
+                "payload": full_payload,
                 "status": {"kind": "success", "label": "200 OK"},
                 "responseTimeMs": None,
                 "usage": None,
                 "cost": None,
             }
+            commit_user_before_call = not overflow
+            if commit_user_before_call:
+                self._messages.append({"role": "user", "content": text})
             try:
                 started_at = time.monotonic()
                 answer, usage = _response_content_and_usage(self._ask_model(payload, **options))
                 metadata["responseTimeMs"] = round((time.monotonic() - started_at) * 1000)
-                metadata["usage"], metadata["cost"] = request_usage_and_cost(self._settings["model"], usage)
+                estimated_answer = estimate_text_tokens(answer) if isinstance(answer, str) else 0
+                metadata["usage"], metadata["cost"] = request_usage_and_cost(
+                    self._settings["model"], usage, estimated_payload, estimated_answer,
+                )
                 if not isinstance(answer, str) or not answer.strip():
                     raise ValueError("empty API response")
-            except Exception:
+            except Exception as error:
                 metadata["status"] = {"kind": "error", "label": "Ошибка API"}
                 self._metadata = metadata
+                if overflow:
+                    raise OverflowProbeError(provider_error_message(error)) from error
                 raise
+            if overflow:
+                self._messages.append({"role": "user", "content": text})
             self._metadata = metadata
             self._messages.append({"role": "assistant", "content": answer})
+            usage_details = metadata["usage"]
+            totals = self._metrics["totals"]
+            totals["promptTokens"] += usage_details["promptTokens"]
+            totals["completionTokens"] += usage_details["completionTokens"]
+            totals["totalTokens"] += usage_details["totalTokens"]
+            if metadata["cost"]:
+                totals["usd"] += metadata["cost"]["usd"]
+            record = {
+                "messageNumber": len(self._metrics["calls"]) + 1,
+                "messageTokens": estimate_text_tokens(text),
+                "historyBeforeTokens": estimate_payload_tokens({"messages": self._messages[:-2]}),
+                "payloadEstimatedTokens": estimated_payload,
+                "promptTokens": usage_details["promptTokens"],
+                "completionTokens": usage_details["completionTokens"],
+                "totalTokens": usage_details["totalTokens"],
+                "source": usage_details["source"],
+                "historyAfterTokens": estimate_payload_tokens({"messages": self._messages}),
+                "contextLimit": context_limit,
+                "contextPercent": context_percent,
+                "cost": copy.deepcopy(metadata["cost"]),
+                "cumulativePromptTokens": totals["promptTokens"],
+                "cumulativeCompletionTokens": totals["completionTokens"],
+                "cumulativeTotalTokens": totals["totalTokens"],
+                "cumulativeUsd": totals["usd"],
+            }
+            self._metrics["calls"].append(record)
+            self._metrics["lastMessage"] = copy.deepcopy(record)
             return self.snapshot()
 
 
@@ -178,6 +292,7 @@ def _valid_settings(settings):
     if not isinstance(settings, dict) or set(settings) != set(DEFAULT_SETTINGS):
         return False
     max_tokens = settings["maxTokens"]
+    training_limit = settings["trainingContextLimit"]
     return (
         settings["model"] in MODELS
         and isinstance(settings["systemPrompt"], str)
@@ -185,9 +300,12 @@ def _valid_settings(settings):
         and settings["format"] in {"text", "json"}
         and (
             max_tokens is None
-            or (isinstance(max_tokens, int) and not isinstance(max_tokens, bool) and max_tokens > 0)
+            or (isinstance(max_tokens, int) and not isinstance(max_tokens, bool)
+                and 0 < max_tokens <= MODEL_CAPABILITIES[settings["model"]]["maxOutputTokens"])
         )
         and isinstance(settings["stop"], str)
+        and (training_limit is None or (isinstance(training_limit, int) and not isinstance(training_limit, bool) and training_limit > 0))
+        and isinstance(settings["sendOnOverflow"], bool)
     )
 
 
@@ -228,7 +346,7 @@ def _valid_metadata(metadata):
 def _valid_agent_snapshot(snapshot):
     return (
         isinstance(snapshot, dict)
-        and set(snapshot) == {"id", "name", "messages", "settings", "metadata"}
+        and set(snapshot) == {"id", "name", "messages", "settings", "metadata", "metrics"}
         and _agent_number(snapshot["id"]) is not None
         and isinstance(snapshot["name"], str)
         and bool(snapshot["name"].strip())
@@ -236,6 +354,7 @@ def _valid_agent_snapshot(snapshot):
         and all(_valid_message(message) for message in snapshot["messages"])
         and _valid_settings(snapshot["settings"])
         and _valid_metadata(snapshot["metadata"])
+        and isinstance(snapshot["metrics"], dict)
     )
 
 
@@ -363,6 +482,15 @@ class AgentRegistry:
             state = json.loads(self._state_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, UnicodeDecodeError):
             return None
+        if isinstance(state, dict) and state.get("version") == 1 and isinstance(state.get("agents"), list):
+            for snapshot in state["agents"]:
+                if isinstance(snapshot, dict):
+                    settings = snapshot.get("settings")
+                    if isinstance(settings, dict):
+                        settings.setdefault("trainingContextLimit", None)
+                        settings.setdefault("sendOnOverflow", False)
+                    snapshot.setdefault("metrics", default_metrics())
+            state["version"] = STATE_VERSION
         if (
             not isinstance(state, dict)
             or set(state) != {"version", "nextId", "agents"}
@@ -386,6 +514,7 @@ class AgentRegistry:
                 self._ask_model,
                 snapshot["messages"],
                 snapshot["metadata"],
+                snapshot["metrics"],
             )
             for snapshot in state["agents"]
         }, state["nextId"]
