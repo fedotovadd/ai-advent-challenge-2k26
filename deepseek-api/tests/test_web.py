@@ -175,6 +175,15 @@ class DeepSeekWebTests(unittest.TestCase):
         for header in ("Ход", "Вход", "Выход", "Всего", "Накопленные токены", "Стоимость"):
             self.assertIn(header, body)
 
+    def test_page_handles_token_chart_edge_cases(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        self.assertIn('id="token-growth-chart"', body)
+        self.assertIn("Данных пока нет", body)
+        self.assertIn("metrics.calls.map(call=>call.promptTokens)", body)
+        self.assertIn("Math.max(values.length-1,1)", body)
+
     def test_agent_chat_feedback_and_send_button_follow_the_selected_agent(self):
         status, body, _ = self.request("GET", "/")
 
