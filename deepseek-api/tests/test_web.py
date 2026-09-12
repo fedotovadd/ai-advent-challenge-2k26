@@ -156,6 +156,25 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("Токены", body)
         self.assertIn("Стоимость запроса", body)
 
+    def test_page_contains_structured_token_metrics(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        for marker in (
+            'id="token-summary"', 'id="last-step-metrics"',
+            'token-metric-card', 'id="context-attempt-card"',
+            'id="token-history-scroll"', 'id="token-history-table"',
+            'context-demo-row',
+        ):
+            self.assertIn(marker, body)
+        for label in (
+            "Новое сообщение", "История до", "Вход API", "Ответ API",
+            "История после", "Контекст / лимит",
+        ):
+            self.assertIn(label, body)
+        for header in ("Ход", "Вход", "Выход", "Всего", "Накопленные токены", "Стоимость"):
+            self.assertIn(header, body)
+
     def test_agent_chat_feedback_and_send_button_follow_the_selected_agent(self):
         status, body, _ = self.request("GET", "/")
 
