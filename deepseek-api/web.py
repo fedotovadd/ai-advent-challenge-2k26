@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from agent import AgentRegistry, ContextOverflowError, DEFAULT_TEMPERATURE, MODELS, MODEL_CAPABILITIES, OverflowProbeError, PersistenceError
+from agent import AgentRegistry, ContextOverflowError, ContextSummaryError, DEFAULT_TEMPERATURE, MODELS, MODEL_CAPABILITIES, OverflowProbeError, PersistenceError
 from day_three import (
     DAY_THREE_TASKS,
     MAX_DAY_THREE_REQUEST_BYTES,
@@ -222,6 +222,14 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         except OverflowProbeError as error:
             snapshot = agent.snapshot()
             self._send_json(422, {"agent": snapshot, "error": str(error), "metadata": snapshot["metadata"], "probe": True})
+            return
+        except ContextSummaryError:
+            snapshot = agent.snapshot()
+            self._send_json(502, {
+                "agent": snapshot,
+                "error": "Не удалось обновить сводку истории.",
+                "metadata": snapshot["metadata"],
+            })
             return
         except ValueError as error:
             if str(error) in {"Пустое сообщение.", "Поле temperature должно быть числом от 0 до 2."}:

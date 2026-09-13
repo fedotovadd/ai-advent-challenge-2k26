@@ -690,6 +690,25 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(body["error"], "Не удалось получить ответ DeepSeek.")
         self.assertEqual(body["agent"]["messages"], [{"role": "user", "content": "Привет"}])
 
+    def test_summary_failure_returns_safe_502(self):
+        for number in range(1, 6):
+            self.json_request("POST", "/api/agents/agent-1/messages", {"text": f"Вопрос {number}"})
+        agent_instance = self.server.registry.get("agent-1")
+        before = agent_instance.snapshot()
+
+        def summary_failure(payload, **options):
+            if payload["temperature"] == 0:
+                raise RuntimeError("summary provider failure")
+            return "Обычный ответ"
+
+        agent_instance._ask_model = summary_failure
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Вопрос 6"})
+
+        self.assertEqual(status, 502)
+        self.assertEqual(body["error"], "Не удалось обновить сводку истории.")
+        self.assertEqual(body["agent"], before)
+        self.assertNotIn("summary provider failure", json.dumps(body, ensure_ascii=False))
+
     def test_missing_key_returns_503_after_saving_message(self):
         self.model_error = errors.MissingApiKeyError("DEEPSEEK_API_KEY")
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Привет"})

@@ -71,6 +71,10 @@ class OverflowProbeError(RuntimeError):
     pass
 
 
+class ContextSummaryError(RuntimeError):
+    pass
+
+
 def default_settings():
     return copy.deepcopy(DEFAULT_SETTINGS)
 
@@ -108,6 +112,20 @@ def default_context():
             "last": None,
         },
     }
+
+
+def _backfill_compression_metric_record(record):
+    if not isinstance(record, dict):
+        return
+    payload_estimate = record.get("payloadEstimatedTokens")
+    record.setdefault("fullPayloadEstimatedTokens", payload_estimate)
+    record.setdefault("compressedPayloadEstimatedTokens", payload_estimate)
+    record.setdefault("compressionGrossSavedTokens", 0)
+    record.setdefault("summaryCallTokens", 0)
+    record.setdefault("compressionNetSavedTokens", 0)
+    record.setdefault("grossInputSavingsUsd", 0)
+    record.setdefault("summaryCostUsd", 0)
+    record.setdefault("netSavingsUsd", 0)
 
 
 def _response_content_and_usage(response):
@@ -212,7 +230,7 @@ class Agent:
         target = max(0, len(self._messages) - (RECENT_MESSAGES_LIMIT - 2))
         candidate = copy.deepcopy(self._context)
         if target <= candidate["compressedMessageCount"]:
-            return candidate, target
+            return candidate, target, None
 
         new_messages = self._messages[candidate["compressedMessageCount"]:target]
         labelled_messages = "\n".join(
@@ -232,12 +250,38 @@ class Agent:
             "temperature": 0,
             "max_tokens": SUMMARY_MAX_TOKENS,
         }
-        summary, _ = _response_content_and_usage(self._ask_model(summary_payload))
-        if not isinstance(summary, str) or not summary.strip():
-            raise ValueError("empty summary response")
+        summary_estimate = estimate_payload_tokens(summary_payload)
+        real_context_limit = MODEL_CAPABILITIES[self._settings["model"]]["contextLimit"]
+        if summary_estimate + SUMMARY_MAX_TOKENS > real_context_limit:
+            raise ContextSummaryError("summary payload exceeds the model context limit")
+        try:
+            summary, provider_usage = _response_content_and_usage(self._ask_model(summary_payload))
+            if not isinstance(summary, str) or not summary.strip():
+                raise ValueError("empty summary response")
+        except Exception as error:
+            raise ContextSummaryError("summary request failed") from error
+        usage, cost = request_usage_and_cost(
+            self._settings["model"], provider_usage, summary_estimate, estimate_text_tokens(summary),
+        )
+        if usage is None:
+            raise ContextSummaryError("summary usage could not be determined")
         candidate["summary"] = summary.strip()
         candidate["compressedMessageCount"] = target
-        return candidate, target
+        summary_usage = candidate["summaryUsage"]
+        summary_usage["calls"] += 1
+        summary_usage["promptTokens"] += usage["promptTokens"]
+        summary_usage["completionTokens"] += usage["completionTokens"]
+        summary_usage["totalTokens"] += usage["totalTokens"]
+        if cost is not None:
+            summary_usage["usd"] += cost["usd"]
+        summary_usage["last"] = {
+            "promptTokens": usage["promptTokens"],
+            "completionTokens": usage["completionTokens"],
+            "totalTokens": usage["totalTokens"],
+            "source": usage["source"],
+            "cost": copy.deepcopy(cost),
+        }
+        return candidate, target, {"usage": usage, "cost": cost}
 
     def _context_messages(self, text, context, target):
         summary = context["summary"]
@@ -273,18 +317,30 @@ class Agent:
             if self._settings["stop"]:
                 options["stop"] = self._settings["stop"]
             if self._settings["contextCompressionEnabled"]:
-                candidate_context, target = self._summary_candidate()
+                candidate_context, target, summary_call = self._summary_candidate()
                 messages = self._context_messages(text, candidate_context, target)
             else:
                 candidate_context = self._context
+                summary_call = None
                 messages = [{"role": "system", "content": system_prompt}, *self._messages, {"role": "user", "content": text}]
             payload = {
                 "model": self._settings["model"],
                 "messages": messages,
                 "temperature": temperature,
             }
-            full_payload = {**payload, **options}
-            estimated_payload = estimate_payload_tokens(full_payload)
+            primary_payload = {**payload, **options}
+            estimated_payload = estimate_payload_tokens(primary_payload)
+            full_history_payload = {
+                "model": self._settings["model"],
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    *self._messages,
+                    {"role": "user", "content": text},
+                ],
+                "temperature": temperature,
+                **options,
+            }
+            full_payload_estimate = estimate_payload_tokens(full_history_payload)
             capability = MODEL_CAPABILITIES[self._settings["model"]]
             context_limit = self._settings["trainingContextLimit"] or capability["contextLimit"]
             requested_output = self._settings["maxTokens"] or capability["safeOutputTokens"]
@@ -304,7 +360,7 @@ class Agent:
             metadata = {
                 "userPrompt": text,
                 "systemPrompt": system_prompt,
-                "payload": full_payload,
+                "payload": primary_payload,
                 "status": {"kind": "success", "label": "200 OK"},
                 "responseTimeMs": None,
                 "usage": None,
@@ -342,11 +398,35 @@ class Agent:
             totals["totalTokens"] += usage_details["totalTokens"]
             if metadata["cost"]:
                 totals["usd"] += metadata["cost"]["usd"]
+            compression_gross_saved_tokens = full_payload_estimate - estimated_payload
+            summary_call_tokens = summary_call["usage"]["totalTokens"] if summary_call else 0
+            compression_net_saved_tokens = compression_gross_saved_tokens - summary_call_tokens
+            pricing = MODEL_PRICING[self._settings["model"]]
+            gross_input_savings_usd = (
+                compression_gross_saved_tokens * pricing["input"] / 1_000_000
+                if pricing is not None else 0
+            )
+            summary_cost_usd = summary_call["cost"]["usd"] if summary_call and summary_call["cost"] else 0
+            net_savings_usd = gross_input_savings_usd - summary_cost_usd
+            totals["compressionGrossSavedTokens"] += compression_gross_saved_tokens
+            totals["summaryCallTokens"] += summary_call_tokens
+            totals["compressionNetSavedTokens"] += compression_net_saved_tokens
+            totals["grossInputSavingsUsd"] += gross_input_savings_usd
+            totals["summaryCostUsd"] += summary_cost_usd
+            totals["netSavingsUsd"] += net_savings_usd
             record = {
                 "messageNumber": len(self._metrics["calls"]) + 1,
                 "messageTokens": estimate_text_tokens(text),
                 "historyBeforeTokens": estimate_payload_tokens({"messages": self._messages[:-2]}),
                 "payloadEstimatedTokens": estimated_payload,
+                "fullPayloadEstimatedTokens": full_payload_estimate,
+                "compressedPayloadEstimatedTokens": estimated_payload,
+                "compressionGrossSavedTokens": compression_gross_saved_tokens,
+                "summaryCallTokens": summary_call_tokens,
+                "compressionNetSavedTokens": compression_net_saved_tokens,
+                "grossInputSavingsUsd": gross_input_savings_usd,
+                "summaryCostUsd": summary_cost_usd,
+                "netSavingsUsd": net_savings_usd,
                 "promptTokens": usage_details["promptTokens"],
                 "completionTokens": usage_details["completionTokens"],
                 "totalTokens": usage_details["totalTokens"],
@@ -501,6 +581,8 @@ def _valid_message(message):
 def _valid_metric_record(record):
     expected_fields = {
         "messageNumber", "messageTokens", "historyBeforeTokens", "payloadEstimatedTokens",
+        "fullPayloadEstimatedTokens", "compressedPayloadEstimatedTokens", "compressionGrossSavedTokens",
+        "summaryCallTokens", "compressionNetSavedTokens", "grossInputSavingsUsd", "summaryCostUsd", "netSavingsUsd",
         "promptTokens", "completionTokens", "totalTokens", "source", "historyAfterTokens",
         "contextLimit", "contextPercent", "cost", "cumulativePromptTokens",
         "cumulativeCompletionTokens", "cumulativeTotalTokens", "cumulativeUsd",
@@ -512,12 +594,18 @@ def _valid_metric_record(record):
         and record["source"] in {"actual", "estimated"}
         and all(_valid_nonnegative_int(record[field]) for field in (
             "messageNumber", "messageTokens", "historyBeforeTokens", "payloadEstimatedTokens",
-            "promptTokens", "completionTokens", "totalTokens", "historyAfterTokens", "contextLimit",
+            "fullPayloadEstimatedTokens", "compressedPayloadEstimatedTokens",
+            "summaryCallTokens", "promptTokens", "completionTokens", "totalTokens", "historyAfterTokens", "contextLimit",
             "cumulativePromptTokens", "cumulativeCompletionTokens", "cumulativeTotalTokens",
         ))
+        and _valid_int(record["compressionGrossSavedTokens"])
+        and _valid_int(record["compressionNetSavedTokens"])
         and _valid_nonnegative_number(record["contextPercent"])
         and _valid_cost(record["cost"])
         and _valid_nonnegative_number(record["cumulativeUsd"])
+        and _valid_number(record["grossInputSavingsUsd"])
+        and _valid_nonnegative_number(record["summaryCostUsd"])
+        and _valid_number(record["netSavingsUsd"])
     )
 
 
@@ -553,11 +641,12 @@ def _valid_metrics(metrics):
         and isinstance(totals, dict)
         and set(totals) == expected_totals
         and all(_valid_nonnegative_int(totals[field]) for field in (
-            "promptTokens", "completionTokens", "totalTokens", "compressionGrossSavedTokens", "summaryCallTokens",
+            "promptTokens", "completionTokens", "totalTokens", "summaryCallTokens",
         ))
+        and _valid_int(totals["compressionGrossSavedTokens"])
         and _valid_int(totals["compressionNetSavedTokens"])
         and _valid_nonnegative_number(totals["usd"])
-        and _valid_nonnegative_number(totals["grossInputSavingsUsd"])
+        and _valid_number(totals["grossInputSavingsUsd"])
         and _valid_nonnegative_number(totals["summaryCostUsd"])
         and _valid_number(totals["netSavingsUsd"])
     )
@@ -748,6 +837,15 @@ class AgentRegistry:
                                 totals.setdefault(key, value)
                     snapshot.setdefault("context", default_context())
             state["version"] = STATE_VERSION
+        if isinstance(state, dict) and state.get("version") == STATE_VERSION and isinstance(state.get("agents"), list):
+            for snapshot in state["agents"]:
+                metrics = snapshot.get("metrics") if isinstance(snapshot, dict) else None
+                if isinstance(metrics, dict):
+                    calls = metrics.get("calls")
+                    if isinstance(calls, list):
+                        for record in calls:
+                            _backfill_compression_metric_record(record)
+                    _backfill_compression_metric_record(metrics.get("lastMessage"))
         if (
             not isinstance(state, dict)
             or set(state) != {"version", "nextId", "agents"}
