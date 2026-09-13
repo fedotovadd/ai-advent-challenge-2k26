@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from agent import AgentRegistry, ContextOverflowError, DEFAULT_TEMPERATURE, MODELS, MODEL_CAPABILITIES, OverflowProbeError, PersistenceError
+from agent import AgentRegistry, ContextOverflowError, ContextSummaryError, DEFAULT_TEMPERATURE, MODELS, MODEL_CAPABILITIES, OverflowProbeError, PersistenceError
 from day_three import (
     DAY_THREE_TASKS,
     MAX_DAY_THREE_REQUEST_BYTES,
@@ -223,6 +223,14 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             snapshot = agent.snapshot()
             self._send_json(422, {"agent": snapshot, "error": str(error), "metadata": snapshot["metadata"], "probe": True})
             return
+        except ContextSummaryError:
+            snapshot = agent.snapshot()
+            self._send_json(502, {
+                "agent": snapshot,
+                "error": "Не удалось обновить сводку истории.",
+                "metadata": snapshot["metadata"],
+            })
+            return
         except ValueError as error:
             if str(error) in {"Пустое сообщение.", "Поле temperature должно быть числом от 0 до 2."}:
                 self._send_json(400, {"error": str(error)})
@@ -274,10 +282,22 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
 
     def _validate_settings(self, data):
         legacy_fields = {"model", "systemPrompt", "format", "maxTokens", "stop"}
-        expected_fields = legacy_fields | {"trainingContextLimit", "sendOnOverflow"}
-        if not isinstance(data, dict) or (set(data) != legacy_fields and set(data) != expected_fields):
+        day_eight_fields = legacy_fields | {"trainingContextLimit", "sendOnOverflow"}
+        compression_fields = {"contextCompressionEnabled"}
+        allowed_fields = {
+            frozenset(legacy_fields),
+            frozenset(day_eight_fields),
+            frozenset(legacy_fields | compression_fields),
+            frozenset(day_eight_fields | compression_fields),
+        }
+        if not isinstance(data, dict) or frozenset(data) not in allowed_fields:
             return None, "Настройки имеют неверный формат."
-        data = {"trainingContextLimit": None, "sendOnOverflow": False, **data}
+        data = {
+            "trainingContextLimit": None,
+            "sendOnOverflow": False,
+            "contextCompressionEnabled": True,
+            **data,
+        }
         system_prompt = data["systemPrompt"]
         model = data["model"]
         response_format = data["format"]
@@ -285,6 +305,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         stop = data["stop"]
         training_limit = data["trainingContextLimit"]
         send_on_overflow = data["sendOnOverflow"]
+        compression_enabled = data["contextCompressionEnabled"]
         if not isinstance(system_prompt, str) or not system_prompt.strip():
             return None, "System prompt не может быть пустым."
         if model not in MODELS:
@@ -299,6 +320,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return None, "Учебный лимит контекста должен быть положительным целым числом."
         if not isinstance(send_on_overflow, bool):
             return None, "Флаг демонстрации переполнения должен быть логическим значением."
+        if not isinstance(compression_enabled, bool):
+            return None, "Флаг сжатия контекста должен быть логическим значением."
         return {
             "model": model,
             "systemPrompt": system_prompt.strip(),
@@ -307,6 +330,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             "stop": stop.strip(),
             "trainingContextLimit": training_limit,
             "sendOnOverflow": send_on_overflow,
+            "contextCompressionEnabled": compression_enabled,
         }, None
 
     def _send_json(self, status, body):

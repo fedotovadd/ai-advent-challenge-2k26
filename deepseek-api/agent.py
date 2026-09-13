@@ -28,6 +28,14 @@ SYSTEM_PROMPT = (
 )
 JSON_OUTPUT_INSTRUCTION = "Верни только валидный JSON без Markdown-разметки."
 DEFAULT_TEMPERATURE = 1
+RECENT_MESSAGES_LIMIT = 10
+SUMMARY_BATCH_MESSAGES = 10
+SUMMARY_MAX_TOKENS = 512
+SUMMARY_SYSTEM_PROMPT = (
+    "Составь краткую сводку предыдущего диалога. Сохрани факты, решения, "
+    "ограничения, предпочтения и открытые вопросы; не пересказывай переписку дословно."
+)
+SUMMARY_CONTEXT_PREFIX = "Сжатый контекст предыдущего диалога:\n"
 DEFAULT_SETTINGS = {
     "model": MODEL,
     "systemPrompt": SYSTEM_PROMPT,
@@ -36,9 +44,10 @@ DEFAULT_SETTINGS = {
     "stop": "",
     "trainingContextLimit": None,
     "sendOnOverflow": False,
+    "contextCompressionEnabled": True,
 }
 MAX_BULK_AGENTS = 100
-STATE_VERSION = 2
+STATE_VERSION = 3
 DEFAULT_STATE_PATH = Path(__file__).with_name("data") / "agents.json"
 METADATA_FIELDS = {
     "userPrompt",
@@ -63,6 +72,10 @@ class OverflowProbeError(RuntimeError):
     pass
 
 
+class ContextSummaryError(RuntimeError):
+    pass
+
+
 def default_settings():
     return copy.deepcopy(DEFAULT_SETTINGS)
 
@@ -70,10 +83,50 @@ def default_settings():
 def default_metrics():
     return {
         "calls": [],
-        "totals": {"promptTokens": 0, "completionTokens": 0, "totalTokens": 0, "usd": 0},
+        "totals": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "totalTokens": 0,
+            "usd": 0,
+            "compressionGrossSavedTokens": 0,
+            "summaryCallTokens": 0,
+            "compressionNetSavedTokens": 0,
+            "grossInputSavingsUsd": 0,
+            "summaryCostUsd": 0,
+            "netSavingsUsd": 0,
+        },
         "lastMessage": None,
         "lastContextAttempt": None,
     }
+
+
+def default_context():
+    return {
+        "summary": None,
+        "compressedMessageCount": 0,
+        "summaryUsage": {
+            "calls": 0,
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "totalTokens": 0,
+            "usd": 0,
+            "last": None,
+        },
+    }
+
+
+def _backfill_compression_metric_record(record):
+    if not isinstance(record, dict):
+        return
+    payload_estimate = record.get("payloadEstimatedTokens")
+    record.setdefault("fullPayloadEstimatedTokens", payload_estimate)
+    record.setdefault("compressedPayloadEstimatedTokens", payload_estimate)
+    record.setdefault("compressionGrossSavedTokens", 0)
+    record.setdefault("summaryCallTokens", 0)
+    record.setdefault("compressionNetSavedTokens", 0)
+    record.setdefault("grossInputSavingsUsd", 0)
+    record.setdefault("summaryCostUsd", 0)
+    record.setdefault("netSavingsUsd", 0)
 
 
 def _response_content_and_usage(response):
@@ -146,7 +199,7 @@ def request_usage_and_cost(model, usage, estimated_prompt_tokens=None, estimated
 
 
 class Agent:
-    def __init__(self, agent_id, name, settings, ask_model, messages=None, metadata=None, metrics=None):
+    def __init__(self, agent_id, name, settings, ask_model, messages=None, metadata=None, metrics=None, context=None):
         self._lock = threading.RLock()
         self._id = agent_id
         self._name = name
@@ -155,6 +208,7 @@ class Agent:
         self._messages = copy.deepcopy(messages) if messages is not None else []
         self._metadata = copy.deepcopy(metadata)
         self._metrics = copy.deepcopy(metrics) if metrics is not None else default_metrics()
+        self._context = copy.deepcopy(context) if context is not None else default_context()
 
     def snapshot(self):
         with self._lock:
@@ -165,12 +219,82 @@ class Agent:
                 "settings": copy.deepcopy(self._settings),
                 "metadata": copy.deepcopy(self._metadata),
                 "metrics": copy.deepcopy(self._metrics),
+                "context": copy.deepcopy(self._context),
             }
 
     def update_settings(self, settings):
         with self._lock:
             self._settings = {**default_settings(), **copy.deepcopy(settings)}
             return self.snapshot()
+
+    def _summary_candidate(self):
+        candidate = copy.deepcopy(self._context)
+        target = max(0, len(self._messages) - RECENT_MESSAGES_LIMIT)
+        pending_messages = target - candidate["compressedMessageCount"]
+        if pending_messages < SUMMARY_BATCH_MESSAGES:
+            return candidate, candidate["compressedMessageCount"], None
+
+        new_messages = self._messages[candidate["compressedMessageCount"]:target]
+        labelled_messages = "\n".join(
+            f"{'USER' if message['role'] == 'user' else 'ASSISTANT'}: {message['content']}"
+            for message in new_messages
+        )
+        previous_summary = candidate["summary"]
+        summary_input = (
+            f"Предыдущая сводка:\n{previous_summary}\n\n" if previous_summary else ""
+        ) + f"Новые сообщения:\n{labelled_messages}"
+        summary_payload = {
+            "model": self._settings["model"],
+            "messages": [
+                {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+                {"role": "user", "content": summary_input},
+            ],
+            "temperature": 0,
+            "max_tokens": SUMMARY_MAX_TOKENS,
+        }
+        summary_estimate = estimate_payload_tokens(summary_payload)
+        real_context_limit = MODEL_CAPABILITIES[self._settings["model"]]["contextLimit"]
+        if summary_estimate + SUMMARY_MAX_TOKENS > real_context_limit:
+            raise ContextSummaryError("summary payload exceeds the model context limit")
+        try:
+            summary, provider_usage = _response_content_and_usage(self._ask_model(summary_payload))
+            if not isinstance(summary, str) or not summary.strip():
+                raise ValueError("empty summary response")
+        except Exception as error:
+            raise ContextSummaryError("summary request failed") from error
+        usage, cost = request_usage_and_cost(
+            self._settings["model"], provider_usage, summary_estimate, estimate_text_tokens(summary),
+        )
+        if usage is None:
+            raise ContextSummaryError("summary usage could not be determined")
+        candidate["summary"] = summary.strip()
+        candidate["compressedMessageCount"] = target
+        summary_usage = candidate["summaryUsage"]
+        summary_usage["calls"] += 1
+        summary_usage["promptTokens"] += usage["promptTokens"]
+        summary_usage["completionTokens"] += usage["completionTokens"]
+        summary_usage["totalTokens"] += usage["totalTokens"]
+        if cost is not None:
+            summary_usage["usd"] += cost["usd"]
+        summary_usage["last"] = {
+            "promptTokens": usage["promptTokens"],
+            "completionTokens": usage["completionTokens"],
+            "totalTokens": usage["totalTokens"],
+            "source": usage["source"],
+            "cost": copy.deepcopy(cost),
+        }
+        return candidate, target, {"usage": usage, "cost": cost}
+
+    def _context_messages(self, text, context, target):
+        summary = context["summary"]
+        messages = [{"role": "system", "content": self._settings["systemPrompt"]}]
+        if self._settings["format"] == "json":
+            messages[0]["content"] = f"{messages[0]['content']}\n\n{JSON_OUTPUT_INSTRUCTION}"
+        if summary:
+            messages.append({"role": "system", "content": f"{SUMMARY_CONTEXT_PREFIX}{summary}"})
+        messages.extend(self._messages[target:])
+        messages.append({"role": "user", "content": text})
+        return messages
 
     def respond(self, text, temperature=DEFAULT_TEMPERATURE):
         if not isinstance(text, str) or not text.strip():
@@ -194,13 +318,31 @@ class Agent:
                 options["max_tokens"] = self._settings["maxTokens"]
             if self._settings["stop"]:
                 options["stop"] = self._settings["stop"]
+            if self._settings["contextCompressionEnabled"]:
+                candidate_context, target, summary_call = self._summary_candidate()
+                messages = self._context_messages(text, candidate_context, target)
+            else:
+                candidate_context = self._context
+                summary_call = None
+                messages = [{"role": "system", "content": system_prompt}, *self._messages, {"role": "user", "content": text}]
             payload = {
                 "model": self._settings["model"],
-                "messages": [{"role": "system", "content": system_prompt}, *self._messages, {"role": "user", "content": text}],
+                "messages": messages,
                 "temperature": temperature,
             }
-            full_payload = {**payload, **options}
-            estimated_payload = estimate_payload_tokens(full_payload)
+            primary_payload = {**payload, **options}
+            estimated_payload = estimate_payload_tokens(primary_payload)
+            full_history_payload = {
+                "model": self._settings["model"],
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    *self._messages,
+                    {"role": "user", "content": text},
+                ],
+                "temperature": temperature,
+                **options,
+            }
+            full_payload_estimate = estimate_payload_tokens(full_history_payload)
             capability = MODEL_CAPABILITIES[self._settings["model"]]
             context_limit = self._settings["trainingContextLimit"] or capability["contextLimit"]
             requested_output = self._settings["maxTokens"] or capability["safeOutputTokens"]
@@ -220,7 +362,7 @@ class Agent:
             metadata = {
                 "userPrompt": text,
                 "systemPrompt": system_prompt,
-                "payload": full_payload,
+                "payload": primary_payload,
                 "status": {"kind": "success", "label": "200 OK"},
                 "responseTimeMs": None,
                 "usage": None,
@@ -249,6 +391,8 @@ class Agent:
                 self._messages.append({"role": "user", "content": text})
             self._metadata = metadata
             self._messages.append({"role": "assistant", "content": answer})
+            if self._settings["contextCompressionEnabled"]:
+                self._context = candidate_context
             usage_details = metadata["usage"]
             totals = self._metrics["totals"]
             totals["promptTokens"] += usage_details["promptTokens"]
@@ -256,11 +400,35 @@ class Agent:
             totals["totalTokens"] += usage_details["totalTokens"]
             if metadata["cost"]:
                 totals["usd"] += metadata["cost"]["usd"]
+            compression_gross_saved_tokens = full_payload_estimate - estimated_payload
+            summary_call_tokens = summary_call["usage"]["totalTokens"] if summary_call else 0
+            compression_net_saved_tokens = compression_gross_saved_tokens - summary_call_tokens
+            pricing = MODEL_PRICING[self._settings["model"]]
+            gross_input_savings_usd = (
+                compression_gross_saved_tokens * pricing["input"] / 1_000_000
+                if pricing is not None else 0
+            )
+            summary_cost_usd = summary_call["cost"]["usd"] if summary_call and summary_call["cost"] else 0
+            net_savings_usd = gross_input_savings_usd - summary_cost_usd
+            totals["compressionGrossSavedTokens"] += compression_gross_saved_tokens
+            totals["summaryCallTokens"] += summary_call_tokens
+            totals["compressionNetSavedTokens"] += compression_net_saved_tokens
+            totals["grossInputSavingsUsd"] += gross_input_savings_usd
+            totals["summaryCostUsd"] += summary_cost_usd
+            totals["netSavingsUsd"] += net_savings_usd
             record = {
                 "messageNumber": len(self._metrics["calls"]) + 1,
                 "messageTokens": estimate_text_tokens(text),
                 "historyBeforeTokens": estimate_payload_tokens({"messages": self._messages[:-2]}),
                 "payloadEstimatedTokens": estimated_payload,
+                "fullPayloadEstimatedTokens": full_payload_estimate,
+                "compressedPayloadEstimatedTokens": estimated_payload,
+                "compressionGrossSavedTokens": compression_gross_saved_tokens,
+                "summaryCallTokens": summary_call_tokens,
+                "compressionNetSavedTokens": compression_net_saved_tokens,
+                "grossInputSavingsUsd": gross_input_savings_usd,
+                "summaryCostUsd": summary_cost_usd,
+                "netSavingsUsd": net_savings_usd,
                 "promptTokens": usage_details["promptTokens"],
                 "completionTokens": usage_details["completionTokens"],
                 "totalTokens": usage_details["totalTokens"],
@@ -283,29 +451,121 @@ def _agent_number(agent_id):
     if not isinstance(agent_id, str) or not agent_id.startswith("agent-"):
         return None
     number = agent_id[6:]
-    if not number.isascii() or not number.isdigit() or number.startswith("0"):
+    if (
+        not number.isascii()
+        or not number.isdigit()
+        or number.startswith("0")
+        or len(number) > MAX_PERSISTED_INTEGER_DECIMAL_DIGITS
+    ):
         return None
-    return int(number) if int(number) > 0 else None
+    parsed_number = int(number)
+    return parsed_number if _valid_positive_int(parsed_number) else None
 
 
 def _valid_settings(settings):
     if not isinstance(settings, dict) or set(settings) != set(DEFAULT_SETTINGS):
         return False
+    model = settings["model"]
+    response_format = settings["format"]
     max_tokens = settings["maxTokens"]
     training_limit = settings["trainingContextLimit"]
     return (
-        settings["model"] in MODELS
+        isinstance(model, str)
+        and model in MODELS
         and isinstance(settings["systemPrompt"], str)
         and bool(settings["systemPrompt"].strip())
-        and settings["format"] in {"text", "json"}
+        and isinstance(response_format, str)
+        and response_format in {"text", "json"}
         and (
             max_tokens is None
             or (isinstance(max_tokens, int) and not isinstance(max_tokens, bool)
-                and 0 < max_tokens <= MODEL_CAPABILITIES[settings["model"]]["maxOutputTokens"])
+                and 0 < max_tokens <= MODEL_CAPABILITIES[model]["maxOutputTokens"])
         )
         and isinstance(settings["stop"], str)
         and (training_limit is None or (isinstance(training_limit, int) and not isinstance(training_limit, bool) and training_limit > 0))
         and isinstance(settings["sendOnOverflow"], bool)
+        and isinstance(settings["contextCompressionEnabled"], bool)
+    )
+
+
+MAX_PERSISTED_INTEGER_BITS = 1024
+MAX_PERSISTED_INTEGER_DECIMAL_DIGITS = 309
+
+
+def _valid_int(value):
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value.bit_length() <= MAX_PERSISTED_INTEGER_BITS
+    )
+
+
+def _valid_nonnegative_int(value):
+    return _valid_int(value) and value >= 0
+
+
+def _valid_positive_int(value):
+    return _valid_int(value) and value > 0
+
+
+def _valid_nonnegative_number(value):
+    return _valid_number(value) and value >= 0
+
+
+def _valid_number(value):
+    if isinstance(value, int) and not isinstance(value, bool):
+        return _valid_int(value)
+    return isinstance(value, float) and math.isfinite(value)
+
+
+def _valid_cost(cost):
+    return (
+        cost is None
+        or (
+            isinstance(cost, dict)
+            and set(cost) == {"kind", "usd", "source"}
+            and isinstance(cost["kind"], str)
+            and cost["kind"] in {"free", "paid"}
+            and _valid_nonnegative_number(cost["usd"])
+            and isinstance(cost["source"], str)
+            and cost["source"] in {"actual", "estimated"}
+        )
+    )
+
+
+def _valid_summary_last(last):
+    if last is None:
+        return True
+    if not isinstance(last, dict) or set(last) != {"promptTokens", "completionTokens", "totalTokens", "source", "cost"}:
+        return False
+    cost = last["cost"]
+    return (
+        _valid_nonnegative_int(last["promptTokens"])
+        and _valid_nonnegative_int(last["completionTokens"])
+        and _valid_nonnegative_int(last["totalTokens"])
+        and isinstance(last["source"], str)
+        and last["source"] in {"actual", "estimated"}
+        and _valid_cost(cost)
+    )
+
+
+def _valid_context(context):
+    if not isinstance(context, dict) or set(context) != {"summary", "compressedMessageCount", "summaryUsage"}:
+        return False
+    summary = context["summary"]
+    usage = context["summaryUsage"]
+    return (
+        (summary is None or (isinstance(summary, str) and bool(summary.strip())))
+        and _valid_nonnegative_int(context["compressedMessageCount"])
+        and ((summary is None) == (context["compressedMessageCount"] == 0))
+        and isinstance(usage, dict)
+        and set(usage) == {"calls", "promptTokens", "completionTokens", "totalTokens", "usd", "last"}
+        and _valid_nonnegative_int(usage["calls"])
+        and _valid_nonnegative_int(usage["promptTokens"])
+        and _valid_nonnegative_int(usage["completionTokens"])
+        and _valid_nonnegative_int(usage["totalTokens"])
+        and _valid_nonnegative_number(usage["usd"])
+        and _valid_summary_last(usage["last"])
     )
 
 
@@ -313,9 +573,84 @@ def _valid_message(message):
     return (
         isinstance(message, dict)
         and set(message) == {"role", "content"}
+        and isinstance(message["role"], str)
         and message["role"] in {"user", "assistant"}
         and isinstance(message["content"], str)
         and bool(message["content"].strip())
+    )
+
+
+def _valid_metric_record(record):
+    expected_fields = {
+        "messageNumber", "messageTokens", "historyBeforeTokens", "payloadEstimatedTokens",
+        "fullPayloadEstimatedTokens", "compressedPayloadEstimatedTokens", "compressionGrossSavedTokens",
+        "summaryCallTokens", "compressionNetSavedTokens", "grossInputSavingsUsd", "summaryCostUsd", "netSavingsUsd",
+        "promptTokens", "completionTokens", "totalTokens", "source", "historyAfterTokens",
+        "contextLimit", "contextPercent", "cost", "cumulativePromptTokens",
+        "cumulativeCompletionTokens", "cumulativeTotalTokens", "cumulativeUsd",
+    }
+    if not isinstance(record, dict) or set(record) != expected_fields:
+        return False
+    return (
+        isinstance(record["source"], str)
+        and record["source"] in {"actual", "estimated"}
+        and all(_valid_nonnegative_int(record[field]) for field in (
+            "messageNumber", "messageTokens", "historyBeforeTokens", "payloadEstimatedTokens",
+            "fullPayloadEstimatedTokens", "compressedPayloadEstimatedTokens",
+            "summaryCallTokens", "promptTokens", "completionTokens", "totalTokens", "historyAfterTokens", "contextLimit",
+            "cumulativePromptTokens", "cumulativeCompletionTokens", "cumulativeTotalTokens",
+        ))
+        and _valid_int(record["compressionGrossSavedTokens"])
+        and _valid_int(record["compressionNetSavedTokens"])
+        and _valid_nonnegative_number(record["contextPercent"])
+        and _valid_cost(record["cost"])
+        and _valid_nonnegative_number(record["cumulativeUsd"])
+        and _valid_number(record["grossInputSavingsUsd"])
+        and _valid_nonnegative_number(record["summaryCostUsd"])
+        and _valid_number(record["netSavingsUsd"])
+    )
+
+
+def _valid_context_attempt(attempt):
+    if attempt is None:
+        return True
+    return (
+        isinstance(attempt, dict)
+        and set(attempt) == {
+            "payloadEstimatedTokens", "requestedOutputTokens", "contextLimit", "contextPercent", "reason", "mode",
+        }
+        and _valid_nonnegative_int(attempt["payloadEstimatedTokens"])
+        and _valid_nonnegative_int(attempt["requestedOutputTokens"])
+        and _valid_nonnegative_int(attempt["contextLimit"])
+        and _valid_nonnegative_number(attempt["contextPercent"])
+        and isinstance(attempt["reason"], str)
+        and isinstance(attempt["mode"], str)
+        and attempt["mode"] in {"probe", "blocked"}
+    )
+
+
+def _valid_metrics(metrics):
+    expected_fields = {"calls", "totals", "lastMessage", "lastContextAttempt"}
+    expected_totals = set(default_metrics()["totals"])
+    if not isinstance(metrics, dict) or set(metrics) != expected_fields:
+        return False
+    totals = metrics["totals"]
+    return (
+        isinstance(metrics["calls"], list)
+        and all(_valid_metric_record(record) for record in metrics["calls"])
+        and (metrics["lastMessage"] is None or _valid_metric_record(metrics["lastMessage"]))
+        and _valid_context_attempt(metrics["lastContextAttempt"])
+        and isinstance(totals, dict)
+        and set(totals) == expected_totals
+        and all(_valid_nonnegative_int(totals[field]) for field in (
+            "promptTokens", "completionTokens", "totalTokens", "summaryCallTokens",
+        ))
+        and _valid_int(totals["compressionGrossSavedTokens"])
+        and _valid_int(totals["compressionNetSavedTokens"])
+        and _valid_nonnegative_number(totals["usd"])
+        and _valid_number(totals["grossInputSavingsUsd"])
+        and _valid_nonnegative_number(totals["summaryCostUsd"])
+        and _valid_number(totals["netSavingsUsd"])
     )
 
 
@@ -346,7 +681,7 @@ def _valid_metadata(metadata):
 def _valid_agent_snapshot(snapshot):
     return (
         isinstance(snapshot, dict)
-        and set(snapshot) == {"id", "name", "messages", "settings", "metadata", "metrics"}
+        and set(snapshot) == {"id", "name", "messages", "settings", "metadata", "metrics", "context"}
         and _agent_number(snapshot["id"]) is not None
         and isinstance(snapshot["name"], str)
         and bool(snapshot["name"].strip())
@@ -354,7 +689,9 @@ def _valid_agent_snapshot(snapshot):
         and all(_valid_message(message) for message in snapshot["messages"])
         and _valid_settings(snapshot["settings"])
         and _valid_metadata(snapshot["metadata"])
-        and isinstance(snapshot["metrics"], dict)
+        and _valid_metrics(snapshot["metrics"])
+        and _valid_context(snapshot["context"])
+        and snapshot["context"]["compressedMessageCount"] <= len(snapshot["messages"])
     )
 
 
@@ -480,24 +817,42 @@ class AgentRegistry:
     def _load(self):
         try:
             state = json.loads(self._state_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        except (OSError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
             return None
-        if isinstance(state, dict) and state.get("version") == 1 and isinstance(state.get("agents"), list):
+        version = state.get("version") if isinstance(state, dict) else None
+        if isinstance(version, int) and not isinstance(version, bool) and version in {1, 2} and isinstance(state.get("agents"), list):
             for snapshot in state["agents"]:
                 if isinstance(snapshot, dict):
                     settings = snapshot.get("settings")
                     if isinstance(settings, dict):
                         settings.setdefault("trainingContextLimit", None)
                         settings.setdefault("sendOnOverflow", False)
+                        settings.setdefault("contextCompressionEnabled", True)
                     snapshot.setdefault("metrics", default_metrics())
+                    metrics = snapshot.get("metrics")
+                    if isinstance(metrics, dict):
+                        totals = metrics.get("totals")
+                        if not isinstance(totals, dict):
+                            metrics["totals"] = default_metrics()["totals"]
+                        else:
+                            for key, value in default_metrics()["totals"].items():
+                                totals.setdefault(key, value)
+                    snapshot.setdefault("context", default_context())
             state["version"] = STATE_VERSION
+        if isinstance(state, dict) and state.get("version") == STATE_VERSION and isinstance(state.get("agents"), list):
+            for snapshot in state["agents"]:
+                metrics = snapshot.get("metrics") if isinstance(snapshot, dict) else None
+                if isinstance(metrics, dict):
+                    calls = metrics.get("calls")
+                    if isinstance(calls, list):
+                        for record in calls:
+                            _backfill_compression_metric_record(record)
+                    _backfill_compression_metric_record(metrics.get("lastMessage"))
         if (
             not isinstance(state, dict)
             or set(state) != {"version", "nextId", "agents"}
             or state["version"] != STATE_VERSION
-            or not isinstance(state["nextId"], int)
-            or isinstance(state["nextId"], bool)
-            or state["nextId"] < 1
+            or not _valid_positive_int(state["nextId"])
             or not isinstance(state["agents"], list)
             or not all(_valid_agent_snapshot(snapshot) for snapshot in state["agents"])
         ):
@@ -515,6 +870,7 @@ class AgentRegistry:
                 snapshot["messages"],
                 snapshot["metadata"],
                 snapshot["metrics"],
+                snapshot["context"],
             )
             for snapshot in state["agents"]
         }, state["nextId"]

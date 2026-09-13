@@ -9,6 +9,23 @@ from agent import Agent, AgentRegistry, MAX_BULK_AGENTS, PersistenceError, defau
 
 
 class AgentTests(unittest.TestCase):
+    def test_new_agent_snapshot_has_enabled_compression_and_empty_context(self):
+        snapshot = Agent("agent-1", "Первый", default_settings(), lambda payload, **options: "Ответ").snapshot()
+
+        self.assertIs(snapshot["settings"]["contextCompressionEnabled"], True)
+        self.assertEqual(snapshot["context"], {
+            "summary": None,
+            "compressedMessageCount": 0,
+            "summaryUsage": {
+                "calls": 0,
+                "promptTokens": 0,
+                "completionTokens": 0,
+                "totalTokens": 0,
+                "usd": 0,
+                "last": None,
+            },
+        })
+
     def test_estimate_payload_counts_system_messages_and_request_options(self):
         request = {
             "model": "deepseek-v4-flash",
@@ -201,6 +218,255 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(result["messages"], [{"role": "user", "content": "Привет"}])
         self.assertEqual(result["metadata"]["status"], {"kind": "error", "label": "Ошибка API"})
 
+    def test_compression_replaces_old_messages_with_summary(self):
+        calls = []
+
+        def ask_model(payload, **options):
+            calls.append({"payload": payload, "options": options})
+            return "Новая сводка" if payload["temperature"] == 0 else "Обычный ответ"
+
+        agent_instance = Agent("agent-1", "Первый", default_settings(), ask_model)
+        for number in range(1, 6):
+            agent_instance.respond(f"Вопрос {number}")
+        self.assertEqual(len(agent_instance.snapshot()["messages"]), 10)
+        calls.clear()
+
+        result = agent_instance.respond("Вопрос 6")
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["options"], {})
+        self.assertEqual(calls[0]["payload"]["model"], default_settings()["model"])
+        self.assertEqual(calls[0]["payload"]["temperature"], 0)
+        self.assertEqual(calls[0]["payload"]["max_tokens"], 512)
+        self.assertEqual(calls[0]["payload"]["messages"][-1]["role"], "user")
+        self.assertIn("USER: Вопрос 1\nASSISTANT: Обычный ответ", calls[0]["payload"]["messages"][-1]["content"])
+        self.assertEqual(calls[1]["payload"]["messages"], [
+            {"role": "system", "content": default_settings()["systemPrompt"]},
+            {"role": "system", "content": "Сжатый контекст предыдущего диалога:\nНовая сводка"},
+            *result["messages"][2:10],
+            {"role": "user", "content": "Вопрос 6"},
+        ])
+        self.assertEqual(len(result["messages"]), 12)
+        self.assertEqual(result["context"]["compressedMessageCount"], 2)
+        self.assertEqual(len(result["messages"][2:]), 10)
+
+    def test_compression_updates_only_newly_displaced_messages(self):
+        calls = []
+        answers = iter(["Ответ 1", "Ответ 2", "Ответ 3", "Ответ 4", "Ответ 5", "Сводка 1", "Ответ 6", "Сводка 2", "Ответ 7"])
+
+        def ask_model(payload, **options):
+            calls.append({"payload": payload, "options": options})
+            return next(answers)
+
+        agent_instance = Agent("agent-1", "Первый", default_settings(), ask_model)
+        for number in range(1, 7):
+            agent_instance.respond(f"Вопрос {number}")
+        calls.clear()
+
+        result = agent_instance.respond("Вопрос 7")
+
+        self.assertEqual(len(calls), 2)
+        summary_prompt = calls[0]["payload"]["messages"][-1]["content"]
+        self.assertIn("Сводка 1", summary_prompt)
+        self.assertIn("USER: Вопрос 2\nASSISTANT: Ответ 2", summary_prompt)
+        self.assertNotIn("Вопрос 1", summary_prompt)
+        self.assertEqual(calls[1]["payload"]["messages"], [
+            {"role": "system", "content": default_settings()["systemPrompt"]},
+            {"role": "system", "content": "Сжатый контекст предыдущего диалога:\nСводка 2"},
+            *result["messages"][4:12],
+            {"role": "user", "content": "Вопрос 7"},
+        ])
+        self.assertEqual(result["context"]["summary"], "Сводка 2")
+        self.assertEqual(result["context"]["compressedMessageCount"], 4)
+
+    def test_disabled_compression_sends_full_history_then_summarizes_backlog(self):
+        calls = []
+        answers = iter(["Ответ 1", "Ответ 2", "Ответ 3", "Ответ 4", "Ответ 5", "Ответ 6", "Сводка", "Ответ 7"])
+
+        def ask_model(payload, **options):
+            calls.append({"payload": payload, "options": options})
+            return next(answers)
+
+        settings = default_settings()
+        settings["contextCompressionEnabled"] = False
+        agent_instance = Agent("agent-1", "Первый", settings, ask_model)
+        for number in range(1, 7):
+            agent_instance.respond(f"Вопрос {number}")
+
+        self.assertEqual(len(calls), 6)
+        self.assertEqual(calls[-1]["payload"]["messages"], [
+            {"role": "system", "content": default_settings()["systemPrompt"]},
+            *agent_instance.snapshot()["messages"][:10],
+            {"role": "user", "content": "Вопрос 6"},
+        ])
+
+        enabled_settings = default_settings()
+        agent_instance.update_settings(enabled_settings)
+        calls.clear()
+        result = agent_instance.respond("Вопрос 7")
+
+        self.assertEqual(len(calls), 2)
+        self.assertIn("USER: Вопрос 1\nASSISTANT: Ответ 1", calls[0]["payload"]["messages"][-1]["content"])
+        self.assertIn("USER: Вопрос 2\nASSISTANT: Ответ 2", calls[0]["payload"]["messages"][-1]["content"])
+        self.assertEqual(calls[1]["payload"]["messages"], [
+            {"role": "system", "content": default_settings()["systemPrompt"]},
+            {"role": "system", "content": "Сжатый контекст предыдущего диалога:\nСводка"},
+            *result["messages"][4:12],
+            {"role": "user", "content": "Вопрос 7"},
+        ])
+        self.assertEqual(result["context"]["compressedMessageCount"], 4)
+
+    def test_summary_failure_does_not_change_agent(self):
+        for failing_summary in (
+            RuntimeError("summary network failure"),
+            "   ",
+            42,
+        ):
+            with self.subTest(summary=failing_summary):
+                calls = []
+
+                def ask_model(payload, **options):
+                    calls.append({"payload": payload, "options": options})
+                    if payload["temperature"] == 0:
+                        if isinstance(failing_summary, Exception):
+                            raise failing_summary
+                        return failing_summary
+                    return "Обычный ответ"
+
+                agent_instance = Agent("agent-1", "Первый", default_settings(), ask_model)
+                for number in range(1, 6):
+                    agent_instance.respond(f"Вопрос {number}")
+                before = agent_instance.snapshot()
+                calls.clear()
+
+                with self.assertRaises(agent.ContextSummaryError):
+                    agent_instance.respond("Вопрос 6")
+
+                after = agent_instance.snapshot()
+                for field in ("messages", "context", "metadata", "metrics"):
+                    self.assertEqual(after[field], before[field])
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(calls[0]["payload"]["temperature"], 0)
+
+    def test_summary_preflight_uses_real_limit_and_is_atomic(self):
+        calls = []
+
+        def ask_model(payload, **options):
+            calls.append({"payload": payload, "options": options})
+            return "Обычный ответ"
+
+        settings = default_settings()
+        agent_instance = Agent("agent-1", "Первый", settings, ask_model)
+        for number in range(1, 6):
+            agent_instance.respond(f"Вопрос {number}")
+        before = agent_instance.snapshot()
+        calls.clear()
+        original_limit = agent.MODEL_CAPABILITIES[settings["model"]]["contextLimit"]
+        agent.MODEL_CAPABILITIES[settings["model"]]["contextLimit"] = 1
+        self.addCleanup(lambda: agent.MODEL_CAPABILITIES[settings["model"]].__setitem__("contextLimit", original_limit))
+        settings.update({"trainingContextLimit": 1_000_000, "sendOnOverflow": True})
+        agent_instance.update_settings(settings)
+
+        with self.assertRaises(agent.ContextSummaryError):
+            agent_instance.respond("Вопрос 6")
+
+        after = agent_instance.snapshot()
+        for field in ("messages", "context", "metadata", "metrics"):
+            self.assertEqual(after[field], before[field])
+        self.assertEqual(calls, [])
+
+    def test_primary_failure_discards_summary_candidate_but_keeps_primary_error(self):
+        calls = []
+
+        def ask_model(payload, **options):
+            calls.append({"payload": payload, "options": options})
+            if payload["temperature"] == 0:
+                return {"content": "Новая сводка", "usage": {"prompt_tokens": 13, "completion_tokens": 4, "total_tokens": 17}}
+            if len(calls) > 6:
+                raise RuntimeError("primary network failure")
+            return "Обычный ответ"
+
+        agent_instance = Agent("agent-1", "Первый", default_settings(), ask_model)
+        for number in range(1, 6):
+            agent_instance.respond(f"Вопрос {number}")
+        before = agent_instance.snapshot()
+
+        with self.assertRaisesRegex(RuntimeError, "primary network failure"):
+            agent_instance.respond("Вопрос 6")
+
+        after = agent_instance.snapshot()
+        self.assertEqual(after["messages"], [*before["messages"], {"role": "user", "content": "Вопрос 6"}])
+        self.assertEqual(after["context"], before["context"])
+        self.assertEqual(after["metrics"], before["metrics"])
+        self.assertEqual(after["metadata"]["status"], {"kind": "error", "label": "Ошибка API"})
+        self.assertEqual(after["metadata"]["payload"]["messages"][0]["content"], default_settings()["systemPrompt"])
+        self.assertNotIn(agent.SUMMARY_SYSTEM_PROMPT, str(after["metadata"]))
+
+    def test_compression_records_net_token_and_cost_savings(self):
+        calls = []
+
+        def ask_model(payload, **options):
+            calls.append({"payload": payload, "options": options})
+            if payload["temperature"] == 0:
+                return {"content": "Краткая сводка", "usage": {"prompt_tokens": 13, "completion_tokens": 4, "total_tokens": 17}}
+            return {"content": "Обычный ответ", "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110}}
+
+        agent_instance = Agent("agent-1", "Первый", default_settings(), ask_model)
+        for number in range(1, 6):
+            agent_instance.respond(f"Вопрос {number}")
+
+        result = agent_instance.respond("Вопрос 6")
+
+        summary_usage = result["context"]["summaryUsage"]
+        self.assertEqual(summary_usage, {
+            "calls": 1, "promptTokens": 13, "completionTokens": 4, "totalTokens": 17,
+            "usd": 0.0000055,
+            "last": {"promptTokens": 13, "completionTokens": 4, "totalTokens": 17, "source": "actual", "cost": {"kind": "paid", "usd": 0.0000055, "source": "actual"}},
+        })
+        record = result["metrics"]["calls"][-1]
+        self.assertEqual(record["fullPayloadEstimatedTokens"], agent.estimate_payload_tokens({
+            "model": default_settings()["model"],
+            "messages": [{"role": "system", "content": default_settings()["systemPrompt"]}, *result["messages"][:10], {"role": "user", "content": "Вопрос 6"}],
+            "temperature": 1,
+        }))
+        self.assertEqual(record["compressedPayloadEstimatedTokens"], record["payloadEstimatedTokens"])
+        self.assertEqual(record["compressionGrossSavedTokens"], record["fullPayloadEstimatedTokens"] - record["compressedPayloadEstimatedTokens"])
+        self.assertEqual(record["summaryCallTokens"], 17)
+        self.assertEqual(record["compressionNetSavedTokens"], record["compressionGrossSavedTokens"] - 17)
+        self.assertEqual(record["grossInputSavingsUsd"], record["compressionGrossSavedTokens"] * agent.MODEL_PRICING[default_settings()["model"]]["input"] / 1_000_000)
+        self.assertEqual(record["summaryCostUsd"], 0.0000055)
+        self.assertEqual(record["netSavingsUsd"], record["grossInputSavingsUsd"] - record["summaryCostUsd"])
+        self.assertNotIn(agent.SUMMARY_SYSTEM_PROMPT, str(result["metadata"]))
+        self.assertEqual(result["metadata"]["usage"]["totalTokens"], 110)
+        for field in ("compressionGrossSavedTokens", "summaryCallTokens", "compressionNetSavedTokens", "grossInputSavingsUsd", "summaryCostUsd", "netSavingsUsd"):
+            self.assertEqual(result["metrics"]["totals"][field], record[field])
+
+        second_result = agent_instance.respond("Вопрос 7")
+        second_record = second_result["metrics"]["calls"][-1]
+        for field in ("compressionGrossSavedTokens", "summaryCallTokens", "compressionNetSavedTokens", "grossInputSavingsUsd", "summaryCostUsd", "netSavingsUsd"):
+            self.assertEqual(second_result["metrics"]["totals"][field], record[field] + second_record[field])
+
+    def test_free_model_compression_savings_have_zero_usd(self):
+        def ask_model(payload, **options):
+            if payload["temperature"] == 0:
+                return {"content": "Краткая сводка", "usage": {"prompt_tokens": 13, "completion_tokens": 4, "total_tokens": 17}}
+            return {"content": "Обычный ответ", "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110}}
+
+        settings = default_settings()
+        settings["model"] = "glm-4.7-flash"
+        agent_instance = Agent("agent-1", "Первый", settings, ask_model)
+        for number in range(1, 6):
+            agent_instance.respond(f"Вопрос {number}")
+        result = agent_instance.respond("Вопрос 6")
+
+        record = result["metrics"]["calls"][-1]
+        self.assertEqual(record["grossInputSavingsUsd"], 0)
+        self.assertEqual(record["summaryCostUsd"], 0)
+        self.assertEqual(record["netSavingsUsd"], 0)
+        self.assertEqual(result["metrics"]["totals"]["grossInputSavingsUsd"], 0)
+        self.assertEqual(result["metrics"]["totals"]["summaryCostUsd"], 0)
+        self.assertEqual(result["metrics"]["totals"]["netSavingsUsd"], 0)
+
 
 class AgentRegistryTests(unittest.TestCase):
     def setUp(self):
@@ -271,7 +537,314 @@ class AgentRegistryTests(unittest.TestCase):
             "settings": default_settings(),
             "metadata": None,
             "metrics": agent.default_metrics(),
+            "context": agent.default_context(),
         }])
+
+    def test_registry_ignores_non_object_saved_state_after_metric_migration(self):
+        self.state_path.write_text("[]", encoding="utf-8")
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents()[0]["name"], "Агент 1")
+
+    def test_registry_migrates_v1_and_v2_compression_schema_without_losing_metrics(self):
+        legacy_totals = {
+            "promptTokens": 11,
+            "completionTokens": 7,
+            "totalTokens": 18,
+            "usd": 0.000012,
+        }
+        expected_context = {
+            "summary": None,
+            "compressedMessageCount": 0,
+            "summaryUsage": {
+                "calls": 0,
+                "promptTokens": 0,
+                "completionTokens": 0,
+                "totalTokens": 0,
+                "usd": 0,
+                "last": None,
+            },
+        }
+        compression_totals = {
+            "compressionGrossSavedTokens": 0,
+            "summaryCallTokens": 0,
+            "compressionNetSavedTokens": 0,
+            "grossInputSavingsUsd": 0,
+            "summaryCostUsd": 0,
+            "netSavingsUsd": 0,
+        }
+        v1_settings = {
+            "model": agent.MODEL,
+            "systemPrompt": agent.SYSTEM_PROMPT,
+            "format": "text",
+            "maxTokens": None,
+            "stop": "",
+        }
+        v2_settings = {**v1_settings, "trainingContextLimit": None, "sendOnOverflow": False}
+
+        for version, settings, metrics in (
+            (1, v1_settings, None),
+            (2, v2_settings, {**agent.default_metrics(), "totals": legacy_totals}),
+        ):
+            with self.subTest(version=version):
+                self.state_path.write_text(json.dumps({
+                    "version": version,
+                    "nextId": 2,
+                    "agents": [{
+                        "id": "agent-1",
+                        "name": "Сохранённый агент",
+                        "messages": [{"role": "user", "content": "Старое сообщение"}],
+                        "settings": settings,
+                        "metadata": None,
+                        **({"metrics": metrics} if metrics is not None else {}),
+                    }],
+                }), encoding="utf-8")
+
+                registry = AgentRegistry(lambda payload, **options: "Новый ответ", self.state_path)
+                restored = registry.get("agent-1").snapshot()
+
+                self.assertEqual(restored["messages"], [{"role": "user", "content": "Старое сообщение"}])
+                self.assertIs(restored["settings"]["contextCompressionEnabled"], True)
+                self.assertEqual(restored["context"], expected_context)
+                self.assertEqual(restored["metrics"]["totals"], {
+                    **(legacy_totals if version == 2 else agent.default_metrics()["totals"]),
+                    **compression_totals,
+                })
+
+                registry.respond("agent-1", "Следующее сообщение")
+                after_response = registry.get("agent-1").snapshot()["metrics"]["totals"]
+                if version == 2:
+                    for key, value in legacy_totals.items():
+                        self.assertGreaterEqual(after_response[key], value)
+                self.assertTrue(all(key in after_response for key in compression_totals))
+
+    def test_registry_migrates_v2_metric_calls_with_new_compression_fields(self):
+        source = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ")
+        source.respond("Привет")
+        snapshot = source.snapshot()
+        new_fields = {
+            "fullPayloadEstimatedTokens", "compressedPayloadEstimatedTokens", "compressionGrossSavedTokens",
+            "summaryCallTokens", "compressionNetSavedTokens", "grossInputSavingsUsd", "summaryCostUsd", "netSavingsUsd",
+        }
+        legacy_record = {key: value for key, value in snapshot["metrics"]["calls"][0].items() if key not in new_fields}
+        snapshot["settings"].pop("contextCompressionEnabled")
+        snapshot.pop("context")
+        snapshot["metrics"] = {
+            "calls": [legacy_record],
+            "totals": {key: value for key, value in snapshot["metrics"]["totals"].items() if key not in {
+                "compressionGrossSavedTokens", "summaryCallTokens", "compressionNetSavedTokens",
+                "grossInputSavingsUsd", "summaryCostUsd", "netSavingsUsd",
+            }},
+            "lastMessage": legacy_record,
+            "lastContextAttempt": None,
+        }
+        self.state_path.write_text(
+            json.dumps({"version": 2, "nextId": 2, "agents": [snapshot]}),
+            encoding="utf-8",
+        )
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        restored = registry.agents()[0]
+        self.assertEqual(restored["name"], "Сохранённый агент")
+        self.assertEqual(restored["metrics"]["calls"][0], {
+            **legacy_record,
+            "fullPayloadEstimatedTokens": legacy_record["payloadEstimatedTokens"],
+            "compressedPayloadEstimatedTokens": legacy_record["payloadEstimatedTokens"],
+            "compressionGrossSavedTokens": 0,
+            "summaryCallTokens": 0,
+            "compressionNetSavedTokens": 0,
+            "grossInputSavingsUsd": 0,
+            "summaryCostUsd": 0,
+            "netSavingsUsd": 0,
+        })
+
+    def test_registry_ignores_summary_usage_with_non_scalar_type_fields(self):
+        valid_summary_last = {
+            "promptTokens": 1,
+            "completionTokens": 1,
+            "totalTokens": 2,
+            "source": "actual",
+            "cost": None,
+        }
+        invalid_values = (
+            ("source", ["actual"]),
+            ("cost.kind", ["paid"]),
+            ("cost.source", ["actual"]),
+        )
+
+        for field, value in invalid_values:
+            with self.subTest(field=field):
+                summary_last = json.loads(json.dumps(valid_summary_last))
+                if field == "source":
+                    summary_last["source"] = value
+                else:
+                    summary_last["cost"] = {"kind": "paid", "usd": 0, "source": "actual"}
+                    summary_last["cost"][field.split(".")[1]] = value
+                snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+                snapshot["messages"] = [{"role": "user", "content": "Старое сообщение"}]
+                snapshot["context"] = {
+                    "summary": "Краткая сводка.",
+                    "compressedMessageCount": 1,
+                    "summaryUsage": {**agent.default_context()["summaryUsage"], "last": summary_last},
+                }
+                self.state_path.write_text(json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]}), encoding="utf-8")
+
+                registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+                self.assertEqual(registry.agents()[0]["name"], "Агент 1")
+
+    def test_registry_ignores_context_with_inconsistent_summary_and_count(self):
+        for summary, count in ((None, 1), ("Краткая сводка.", 0)):
+            with self.subTest(summary=summary, count=count):
+                snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+                snapshot["messages"] = [{"role": "user", "content": "Старое сообщение"}]
+                snapshot["context"] = {
+                    "summary": summary,
+                    "compressedMessageCount": count,
+                    "summaryUsage": agent.default_context()["summaryUsage"],
+                }
+                self.state_path.write_text(json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]}), encoding="utf-8")
+
+                registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+                self.assertEqual(registry.agents()[0]["name"], "Агент 1")
+
+    def test_registry_ignores_context_count_larger_than_saved_history(self):
+        snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+        snapshot["messages"] = [{"role": "user", "content": "Старое сообщение"}]
+        snapshot["context"] = {
+            "summary": "Краткая сводка.",
+            "compressedMessageCount": 2,
+            "summaryUsage": agent.default_context()["summaryUsage"],
+        }
+        self.state_path.write_text(json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]}), encoding="utf-8")
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents()[0]["name"], "Агент 1")
+
+    def test_registry_safely_rejects_malformed_state_scalars_and_metrics(self):
+        snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+        state = {"version": 3, "nextId": 2, "agents": [snapshot]}
+        cases = (
+            ("version", [], lambda current: current.__setitem__("version", [])),
+            ("settings.format", {}, lambda current: current["agents"][0]["settings"].__setitem__("format", {})),
+            ("messages[0].role", [], lambda current: current["agents"][0].__setitem__(
+                "messages", [{"role": [], "content": "Сообщение"}],
+            )),
+            ("metrics", {}, lambda current: current["agents"][0].__setitem__("metrics", {})),
+            ("metrics.totals.promptTokens", "bad", lambda current: current["agents"][0]["metrics"]["totals"].__setitem__(
+                "promptTokens", "bad",
+            )),
+        )
+
+        for field, value, mutate in cases:
+            with self.subTest(field=field, value=value):
+                malformed = json.loads(json.dumps(state))
+                mutate(malformed)
+                self.state_path.write_text(json.dumps(malformed), encoding="utf-8")
+
+                registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+                self.assertEqual(registry.agents(), [
+                    Agent("agent-1", "Агент 1", default_settings(), lambda payload, **options: "Ответ").snapshot(),
+                ])
+
+    def test_registry_ignores_state_with_oversized_json_integer(self):
+        self.state_path.write_text(
+            '{"version":' + ("9" * 5_000) + ',"nextId":2,"agents":[]}',
+            encoding="utf-8",
+        )
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents(), [
+            Agent("agent-1", "Агент 1", default_settings(), lambda payload, **options: "Ответ").snapshot(),
+        ])
+
+    def test_registry_ignores_state_with_oversized_metric_integer(self):
+        snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+        state = json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]})
+        oversized_usd = "9" * 4_000
+        state = state.replace('"usd": 0, "compressionGrossSavedTokens"', f'"usd": {oversized_usd}, "compressionGrossSavedTokens"')
+        self.state_path.write_text(state, encoding="utf-8")
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents(), [
+            Agent("agent-1", "Агент 1", default_settings(), lambda payload, **options: "Ответ").snapshot(),
+        ])
+
+    def test_registry_ignores_state_with_oversized_signed_net_savings(self):
+        snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+        state = json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]})
+        oversized_net_savings = "-" + ("9" * 3_001)
+        state = state.replace('"compressionNetSavedTokens": 0', f'"compressionNetSavedTokens": {oversized_net_savings}')
+        self.state_path.write_text(state, encoding="utf-8")
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents(), [
+            Agent("agent-1", "Агент 1", default_settings(), lambda payload, **options: "Ответ").snapshot(),
+        ])
+
+    def test_registry_ignores_state_with_oversized_agent_number(self):
+        snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+        snapshot["id"] = "agent-" + ("9" * 5_000)
+        self.state_path.write_text(
+            json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]}),
+            encoding="utf-8",
+        )
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents(), [
+            Agent("agent-1", "Агент 1", default_settings(), lambda payload, **options: "Ответ").snapshot(),
+        ])
+
+    def test_registry_ignores_state_with_oversized_next_id(self):
+        snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+        state = json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]})
+        state = state.replace('"nextId": 2', '"nextId": ' + ("9" * 3_000))
+        self.state_path.write_text(state, encoding="utf-8")
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents(), [
+            Agent("agent-1", "Агент 1", default_settings(), lambda payload, **options: "Ответ").snapshot(),
+        ])
+
+    def test_registry_restores_ordinary_negative_net_savings(self):
+        snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+        snapshot["metrics"]["totals"]["compressionNetSavedTokens"] = -10
+        self.state_path.write_text(
+            json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]}),
+            encoding="utf-8",
+        )
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents()[0]["name"], "Сохранённый агент")
+        self.assertEqual(registry.agents()[0]["metrics"]["totals"]["compressionNetSavedTokens"], -10)
+
+    def test_registry_restores_negative_gross_savings_when_a_summary_is_larger(self):
+        snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+        snapshot["metrics"]["totals"].update({
+            "compressionGrossSavedTokens": -10,
+            "grossInputSavingsUsd": -0.000001,
+            "netSavingsUsd": -0.000001,
+        })
+        self.state_path.write_text(
+            json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]}),
+            encoding="utf-8",
+        )
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents()[0]["metrics"]["totals"]["compressionGrossSavedTokens"], -10)
+        self.assertEqual(registry.agents()[0]["metrics"]["totals"]["grossInputSavingsUsd"], -0.000001)
 
     def test_create_many_adds_requested_agents_with_default_configuration(self):
         registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)

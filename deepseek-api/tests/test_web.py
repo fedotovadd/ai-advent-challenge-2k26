@@ -147,6 +147,28 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertNotIn("Инструкция свободного формата", body)
         self.assertIn("Метаданные", body)
 
+    def test_page_shows_history_compression_controls_and_metrics(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        self.assertIn('id="context-compression-enabled"', body)
+        self.assertIn('for="context-compression-enabled"', body)
+        self.assertIn('type="checkbox"', body)
+        self.assertIn(
+            "elements.contextCompressionEnabled.checked=settings.contextCompressionEnabled",
+            body,
+        )
+        self.assertIn("contextCompressionEnabled:elements.contextCompressionEnabled.checked", body)
+        self.assertIn("elements.contextCompressionEnabled.addEventListener(\"change\",()=>scheduleSettingsSave(0))", body)
+        for label in (
+            "Сжато сообщений",
+            "Размер summary",
+            "Токены: полная / сжатая история",
+            "Экономия после summary",
+            "Стоимость summary",
+        ):
+            self.assertIn(label, body)
+
     def test_page_contains_model_and_usage_metadata(self):
         status, body, _ = self.request("GET", "/")
 
@@ -230,7 +252,8 @@ class DeepSeekWebTests(unittest.TestCase):
                 "stop": "",
                 "trainingContextLimit": None,
                 "sendOnOverflow": False,
-            }, "metadata": None, "metrics": agent.default_metrics()}]},
+                "contextCompressionEnabled": True,
+            }, "metadata": None, "metrics": agent.default_metrics(), "context": agent.default_context()}]},
         )
 
     def test_server_restart_restores_agent_context(self):
@@ -289,7 +312,8 @@ class DeepSeekWebTests(unittest.TestCase):
             "stop": "",
             "trainingContextLimit": None,
             "sendOnOverflow": False,
-        }, "metadata": None, "metrics": agent.default_metrics()})
+            "contextCompressionEnabled": True,
+        }, "metadata": None, "metrics": agent.default_metrics(), "context": agent.default_context()})
 
     def test_delete_agent_removes_its_saved_history_and_returns_id(self):
         _, created, _ = self.json_request("POST", "/api/agents")
@@ -411,6 +435,52 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body["agent"]["settings"], {
             **settings, "trainingContextLimit": None, "sendOnOverflow": False,
+            "contextCompressionEnabled": True,
+        })
+
+    def test_settings_accept_all_legacy_shapes_and_normalize_compression_flag(self):
+        legacy = {
+            "model": agent.MODEL,
+            "systemPrompt": "Отвечай кратко.",
+            "format": "text",
+            "maxTokens": None,
+            "stop": "",
+        }
+        day_eight = {**legacy, "trainingContextLimit": 1234, "sendOnOverflow": True}
+
+        for payload, expected in (
+            (legacy, {**legacy, "trainingContextLimit": None, "sendOnOverflow": False, "contextCompressionEnabled": True}),
+            (day_eight, {**day_eight, "contextCompressionEnabled": True}),
+            ({**legacy, "contextCompressionEnabled": False}, {**legacy, "trainingContextLimit": None, "sendOnOverflow": False, "contextCompressionEnabled": False}),
+            ({**day_eight, "contextCompressionEnabled": False}, {**day_eight, "contextCompressionEnabled": False}),
+        ):
+            with self.subTest(fields=len(payload)):
+                status, body, _ = self.json_request("PUT", "/api/agents/agent-1/settings", payload)
+                self.assertEqual(status, 200)
+                self.assertEqual(body["agent"]["settings"], expected)
+
+    def test_invalid_compression_flag_does_not_replace_saved_settings(self):
+        saved_settings = {
+            "model": agent.MODEL,
+            "systemPrompt": "Сохранённая настройка.",
+            "format": "text",
+            "maxTokens": None,
+            "stop": "",
+            "contextCompressionEnabled": False,
+        }
+        status, _, _ = self.json_request("PUT", "/api/agents/agent-1/settings", saved_settings)
+        self.assertEqual(status, 200)
+
+        invalid = {**saved_settings, "contextCompressionEnabled": "false"}
+        status, body, _ = self.json_request("PUT", "/api/agents/agent-1/settings", invalid)
+
+        self.assertEqual(status, 400)
+        self.assertIn("логическим", body["error"])
+        _, agents, _ = self.json_request("GET", "/api/agents")
+        self.assertEqual(agents["agents"][0]["settings"], {
+            **saved_settings,
+            "trainingContextLimit": None,
+            "sendOnOverflow": False,
         })
 
     def test_agent_model_and_metadata_are_persisted(self):
@@ -457,7 +527,10 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("system prompt", body["error"].lower())
         _, agents, _ = self.json_request("GET", "/api/agents")
-        self.assertEqual(agents["agents"][0]["settings"], {**valid_settings, "trainingContextLimit": None, "sendOnOverflow": False})
+        self.assertEqual(agents["agents"][0]["settings"], {
+            **valid_settings, "trainingContextLimit": None, "sendOnOverflow": False,
+            "contextCompressionEnabled": True,
+        })
 
     def test_settings_for_unknown_agent_return_404(self):
         status, body, _ = self.json_request(
@@ -494,7 +567,10 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body, {"error": "Настройки имеют неверный формат."})
         _, agents, _ = self.json_request("GET", "/api/agents")
-        self.assertEqual(agents["agents"][0]["settings"], {**valid_settings, "trainingContextLimit": None, "sendOnOverflow": False})
+        self.assertEqual(agents["agents"][0]["settings"], {
+            **valid_settings, "trainingContextLimit": None, "sendOnOverflow": False,
+            "contextCompressionEnabled": True,
+        })
 
     def test_message_returns_answer_and_exact_metadata(self):
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "  Привет  "})
@@ -635,6 +711,25 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 502)
         self.assertEqual(body["error"], "Не удалось получить ответ DeepSeek.")
         self.assertEqual(body["agent"]["messages"], [{"role": "user", "content": "Привет"}])
+
+    def test_summary_failure_returns_safe_502(self):
+        for number in range(1, 6):
+            self.json_request("POST", "/api/agents/agent-1/messages", {"text": f"Вопрос {number}"})
+        agent_instance = self.server.registry.get("agent-1")
+        before = agent_instance.snapshot()
+
+        def summary_failure(payload, **options):
+            if payload["temperature"] == 0:
+                raise RuntimeError("summary provider failure")
+            return "Обычный ответ"
+
+        agent_instance._ask_model = summary_failure
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Вопрос 6"})
+
+        self.assertEqual(status, 502)
+        self.assertEqual(body["error"], "Не удалось обновить сводку истории.")
+        self.assertEqual(body["agent"], before)
+        self.assertNotIn("summary provider failure", json.dumps(body, ensure_ascii=False))
 
     def test_missing_key_returns_503_after_saving_message(self):
         self.model_error = errors.MissingApiKeyError("DEEPSEEK_API_KEY")
