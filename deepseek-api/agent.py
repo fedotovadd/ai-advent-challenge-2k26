@@ -646,7 +646,7 @@ class AgentRegistry:
     def _load(self):
         try:
             state = json.loads(self._state_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        except (OSError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
             return None
         version = state.get("version") if isinstance(state, dict) else None
         if isinstance(version, int) and not isinstance(version, bool) and version in {1, 2} and isinstance(state.get("agents"), list):

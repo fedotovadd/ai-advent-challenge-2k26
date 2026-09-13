@@ -455,6 +455,18 @@ class AgentRegistryTests(unittest.TestCase):
                     Agent("agent-1", "Агент 1", default_settings(), lambda payload, **options: "Ответ").snapshot(),
                 ])
 
+    def test_registry_ignores_state_with_oversized_json_integer(self):
+        self.state_path.write_text(
+            '{"version":' + ("9" * 5_000) + ',"nextId":2,"agents":[]}',
+            encoding="utf-8",
+        )
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents(), [
+            Agent("agent-1", "Агент 1", default_settings(), lambda payload, **options: "Ответ").snapshot(),
+        ])
+
     def test_create_many_adds_requested_agents_with_default_configuration(self):
         registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
 
