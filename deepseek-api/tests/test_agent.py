@@ -9,6 +9,23 @@ from agent import Agent, AgentRegistry, MAX_BULK_AGENTS, PersistenceError, defau
 
 
 class AgentTests(unittest.TestCase):
+    def test_new_agent_snapshot_has_enabled_compression_and_empty_context(self):
+        snapshot = Agent("agent-1", "Первый", default_settings(), lambda payload, **options: "Ответ").snapshot()
+
+        self.assertIs(snapshot["settings"]["contextCompressionEnabled"], True)
+        self.assertEqual(snapshot["context"], {
+            "summary": None,
+            "compressedMessageCount": 0,
+            "summaryUsage": {
+                "calls": 0,
+                "promptTokens": 0,
+                "completionTokens": 0,
+                "totalTokens": 0,
+                "usd": 0,
+                "last": None,
+            },
+        })
+
     def test_estimate_payload_counts_system_messages_and_request_options(self):
         request = {
             "model": "deepseek-v4-flash",
@@ -271,7 +288,80 @@ class AgentRegistryTests(unittest.TestCase):
             "settings": default_settings(),
             "metadata": None,
             "metrics": agent.default_metrics(),
+            "context": agent.default_context(),
         }])
+
+    def test_registry_migrates_v1_and_v2_compression_schema_without_losing_metrics(self):
+        legacy_totals = {
+            "promptTokens": 11,
+            "completionTokens": 7,
+            "totalTokens": 18,
+            "usd": 0.000012,
+        }
+        expected_context = {
+            "summary": None,
+            "compressedMessageCount": 0,
+            "summaryUsage": {
+                "calls": 0,
+                "promptTokens": 0,
+                "completionTokens": 0,
+                "totalTokens": 0,
+                "usd": 0,
+                "last": None,
+            },
+        }
+        compression_totals = {
+            "compressionGrossSavedTokens": 0,
+            "summaryCallTokens": 0,
+            "compressionNetSavedTokens": 0,
+            "grossInputSavingsUsd": 0,
+            "summaryCostUsd": 0,
+            "netSavingsUsd": 0,
+        }
+        v1_settings = {
+            "model": agent.MODEL,
+            "systemPrompt": agent.SYSTEM_PROMPT,
+            "format": "text",
+            "maxTokens": None,
+            "stop": "",
+        }
+        v2_settings = {**v1_settings, "trainingContextLimit": None, "sendOnOverflow": False}
+
+        for version, settings, metrics in (
+            (1, v1_settings, None),
+            (2, v2_settings, {**agent.default_metrics(), "totals": legacy_totals}),
+        ):
+            with self.subTest(version=version):
+                self.state_path.write_text(json.dumps({
+                    "version": version,
+                    "nextId": 2,
+                    "agents": [{
+                        "id": "agent-1",
+                        "name": "Сохранённый агент",
+                        "messages": [{"role": "user", "content": "Старое сообщение"}],
+                        "settings": settings,
+                        "metadata": None,
+                        **({"metrics": metrics} if metrics is not None else {}),
+                    }],
+                }), encoding="utf-8")
+
+                registry = AgentRegistry(lambda payload, **options: "Новый ответ", self.state_path)
+                restored = registry.get("agent-1").snapshot()
+
+                self.assertEqual(restored["messages"], [{"role": "user", "content": "Старое сообщение"}])
+                self.assertIs(restored["settings"]["contextCompressionEnabled"], True)
+                self.assertEqual(restored["context"], expected_context)
+                self.assertEqual(restored["metrics"]["totals"], {
+                    **(legacy_totals if version == 2 else agent.default_metrics()["totals"]),
+                    **compression_totals,
+                })
+
+                registry.respond("agent-1", "Следующее сообщение")
+                after_response = registry.get("agent-1").snapshot()["metrics"]["totals"]
+                if version == 2:
+                    for key, value in legacy_totals.items():
+                        self.assertGreaterEqual(after_response[key], value)
+                self.assertTrue(all(key in after_response for key in compression_totals))
 
     def test_create_many_adds_requested_agents_with_default_configuration(self):
         registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)

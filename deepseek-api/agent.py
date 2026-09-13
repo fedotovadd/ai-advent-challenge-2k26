@@ -36,9 +36,10 @@ DEFAULT_SETTINGS = {
     "stop": "",
     "trainingContextLimit": None,
     "sendOnOverflow": False,
+    "contextCompressionEnabled": True,
 }
 MAX_BULK_AGENTS = 100
-STATE_VERSION = 2
+STATE_VERSION = 3
 DEFAULT_STATE_PATH = Path(__file__).with_name("data") / "agents.json"
 METADATA_FIELDS = {
     "userPrompt",
@@ -70,9 +71,35 @@ def default_settings():
 def default_metrics():
     return {
         "calls": [],
-        "totals": {"promptTokens": 0, "completionTokens": 0, "totalTokens": 0, "usd": 0},
+        "totals": {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "totalTokens": 0,
+            "usd": 0,
+            "compressionGrossSavedTokens": 0,
+            "summaryCallTokens": 0,
+            "compressionNetSavedTokens": 0,
+            "grossInputSavingsUsd": 0,
+            "summaryCostUsd": 0,
+            "netSavingsUsd": 0,
+        },
         "lastMessage": None,
         "lastContextAttempt": None,
+    }
+
+
+def default_context():
+    return {
+        "summary": None,
+        "compressedMessageCount": 0,
+        "summaryUsage": {
+            "calls": 0,
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "totalTokens": 0,
+            "usd": 0,
+            "last": None,
+        },
     }
 
 
@@ -146,7 +173,7 @@ def request_usage_and_cost(model, usage, estimated_prompt_tokens=None, estimated
 
 
 class Agent:
-    def __init__(self, agent_id, name, settings, ask_model, messages=None, metadata=None, metrics=None):
+    def __init__(self, agent_id, name, settings, ask_model, messages=None, metadata=None, metrics=None, context=None):
         self._lock = threading.RLock()
         self._id = agent_id
         self._name = name
@@ -155,6 +182,7 @@ class Agent:
         self._messages = copy.deepcopy(messages) if messages is not None else []
         self._metadata = copy.deepcopy(metadata)
         self._metrics = copy.deepcopy(metrics) if metrics is not None else default_metrics()
+        self._context = copy.deepcopy(context) if context is not None else default_context()
 
     def snapshot(self):
         with self._lock:
@@ -165,6 +193,7 @@ class Agent:
                 "settings": copy.deepcopy(self._settings),
                 "metadata": copy.deepcopy(self._metadata),
                 "metrics": copy.deepcopy(self._metrics),
+                "context": copy.deepcopy(self._context),
             }
 
     def update_settings(self, settings):
@@ -306,6 +335,58 @@ def _valid_settings(settings):
         and isinstance(settings["stop"], str)
         and (training_limit is None or (isinstance(training_limit, int) and not isinstance(training_limit, bool) and training_limit > 0))
         and isinstance(settings["sendOnOverflow"], bool)
+        and isinstance(settings["contextCompressionEnabled"], bool)
+    )
+
+
+def _valid_nonnegative_int(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _valid_nonnegative_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
+
+
+def _valid_summary_last(last):
+    if last is None:
+        return True
+    if not isinstance(last, dict) or set(last) != {"promptTokens", "completionTokens", "totalTokens", "source", "cost"}:
+        return False
+    cost = last["cost"]
+    return (
+        _valid_nonnegative_int(last["promptTokens"])
+        and _valid_nonnegative_int(last["completionTokens"])
+        and _valid_nonnegative_int(last["totalTokens"])
+        and last["source"] in {"actual", "estimated"}
+        and (
+            cost is None
+            or (
+                isinstance(cost, dict)
+                and set(cost) == {"kind", "usd", "source"}
+                and cost["kind"] in {"free", "paid"}
+                and _valid_nonnegative_number(cost["usd"])
+                and cost["source"] in {"actual", "estimated"}
+            )
+        )
+    )
+
+
+def _valid_context(context):
+    if not isinstance(context, dict) or set(context) != {"summary", "compressedMessageCount", "summaryUsage"}:
+        return False
+    summary = context["summary"]
+    usage = context["summaryUsage"]
+    return (
+        (summary is None or (isinstance(summary, str) and bool(summary.strip())))
+        and _valid_nonnegative_int(context["compressedMessageCount"])
+        and isinstance(usage, dict)
+        and set(usage) == {"calls", "promptTokens", "completionTokens", "totalTokens", "usd", "last"}
+        and _valid_nonnegative_int(usage["calls"])
+        and _valid_nonnegative_int(usage["promptTokens"])
+        and _valid_nonnegative_int(usage["completionTokens"])
+        and _valid_nonnegative_int(usage["totalTokens"])
+        and _valid_nonnegative_number(usage["usd"])
+        and _valid_summary_last(usage["last"])
     )
 
 
@@ -346,7 +427,7 @@ def _valid_metadata(metadata):
 def _valid_agent_snapshot(snapshot):
     return (
         isinstance(snapshot, dict)
-        and set(snapshot) == {"id", "name", "messages", "settings", "metadata", "metrics"}
+        and set(snapshot) == {"id", "name", "messages", "settings", "metadata", "metrics", "context"}
         and _agent_number(snapshot["id"]) is not None
         and isinstance(snapshot["name"], str)
         and bool(snapshot["name"].strip())
@@ -355,6 +436,7 @@ def _valid_agent_snapshot(snapshot):
         and _valid_settings(snapshot["settings"])
         and _valid_metadata(snapshot["metadata"])
         and isinstance(snapshot["metrics"], dict)
+        and _valid_context(snapshot["context"])
     )
 
 
@@ -482,14 +564,24 @@ class AgentRegistry:
             state = json.loads(self._state_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, UnicodeDecodeError):
             return None
-        if isinstance(state, dict) and state.get("version") == 1 and isinstance(state.get("agents"), list):
+        if isinstance(state, dict) and state.get("version") in {1, 2} and isinstance(state.get("agents"), list):
             for snapshot in state["agents"]:
                 if isinstance(snapshot, dict):
                     settings = snapshot.get("settings")
                     if isinstance(settings, dict):
                         settings.setdefault("trainingContextLimit", None)
                         settings.setdefault("sendOnOverflow", False)
+                        settings.setdefault("contextCompressionEnabled", True)
                     snapshot.setdefault("metrics", default_metrics())
+                    metrics = snapshot.get("metrics")
+                    if isinstance(metrics, dict):
+                        totals = metrics.get("totals")
+                        if not isinstance(totals, dict):
+                            metrics["totals"] = default_metrics()["totals"]
+                        else:
+                            for key, value in default_metrics()["totals"].items():
+                                totals.setdefault(key, value)
+                    snapshot.setdefault("context", default_context())
             state["version"] = STATE_VERSION
         if (
             not isinstance(state, dict)
@@ -515,6 +607,7 @@ class AgentRegistry:
                 snapshot["messages"],
                 snapshot["metadata"],
                 snapshot["metrics"],
+                snapshot["context"],
             )
             for snapshot in state["agents"]
         }, state["nextId"]
