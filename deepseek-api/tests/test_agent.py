@@ -428,6 +428,33 @@ class AgentRegistryTests(unittest.TestCase):
 
         self.assertEqual(registry.agents()[0]["name"], "Агент 1")
 
+    def test_registry_safely_rejects_malformed_state_scalars_and_metrics(self):
+        snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+        state = {"version": 3, "nextId": 2, "agents": [snapshot]}
+        cases = (
+            ("version", [], lambda current: current.__setitem__("version", [])),
+            ("settings.format", {}, lambda current: current["agents"][0]["settings"].__setitem__("format", {})),
+            ("messages[0].role", [], lambda current: current["agents"][0].__setitem__(
+                "messages", [{"role": [], "content": "Сообщение"}],
+            )),
+            ("metrics", {}, lambda current: current["agents"][0].__setitem__("metrics", {})),
+            ("metrics.totals.promptTokens", "bad", lambda current: current["agents"][0]["metrics"]["totals"].__setitem__(
+                "promptTokens", "bad",
+            )),
+        )
+
+        for field, value, mutate in cases:
+            with self.subTest(field=field, value=value):
+                malformed = json.loads(json.dumps(state))
+                mutate(malformed)
+                self.state_path.write_text(json.dumps(malformed), encoding="utf-8")
+
+                registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+                self.assertEqual(registry.agents(), [
+                    Agent("agent-1", "Агент 1", default_settings(), lambda payload, **options: "Ответ").snapshot(),
+                ])
+
     def test_create_many_adds_requested_agents_with_default_configuration(self):
         registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
 

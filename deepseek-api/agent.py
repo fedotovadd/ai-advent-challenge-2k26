@@ -320,17 +320,21 @@ def _agent_number(agent_id):
 def _valid_settings(settings):
     if not isinstance(settings, dict) or set(settings) != set(DEFAULT_SETTINGS):
         return False
+    model = settings["model"]
+    response_format = settings["format"]
     max_tokens = settings["maxTokens"]
     training_limit = settings["trainingContextLimit"]
     return (
-        settings["model"] in MODELS
+        isinstance(model, str)
+        and model in MODELS
         and isinstance(settings["systemPrompt"], str)
         and bool(settings["systemPrompt"].strip())
-        and settings["format"] in {"text", "json"}
+        and isinstance(response_format, str)
+        and response_format in {"text", "json"}
         and (
             max_tokens is None
             or (isinstance(max_tokens, int) and not isinstance(max_tokens, bool)
-                and 0 < max_tokens <= MODEL_CAPABILITIES[settings["model"]]["maxOutputTokens"])
+                and 0 < max_tokens <= MODEL_CAPABILITIES[model]["maxOutputTokens"])
         )
         and isinstance(settings["stop"], str)
         and (training_limit is None or (isinstance(training_limit, int) and not isinstance(training_limit, bool) and training_limit > 0))
@@ -347,6 +351,25 @@ def _valid_nonnegative_number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
 
 
+def _valid_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _valid_cost(cost):
+    return (
+        cost is None
+        or (
+            isinstance(cost, dict)
+            and set(cost) == {"kind", "usd", "source"}
+            and isinstance(cost["kind"], str)
+            and cost["kind"] in {"free", "paid"}
+            and _valid_nonnegative_number(cost["usd"])
+            and isinstance(cost["source"], str)
+            and cost["source"] in {"actual", "estimated"}
+        )
+    )
+
+
 def _valid_summary_last(last):
     if last is None:
         return True
@@ -359,18 +382,7 @@ def _valid_summary_last(last):
         and _valid_nonnegative_int(last["totalTokens"])
         and isinstance(last["source"], str)
         and last["source"] in {"actual", "estimated"}
-        and (
-            cost is None
-            or (
-                isinstance(cost, dict)
-                and set(cost) == {"kind", "usd", "source"}
-                and isinstance(cost["kind"], str)
-                and cost["kind"] in {"free", "paid"}
-                and _valid_nonnegative_number(cost["usd"])
-                and isinstance(cost["source"], str)
-                and cost["source"] in {"actual", "estimated"}
-            )
-        )
+        and _valid_cost(cost)
     )
 
 
@@ -398,9 +410,76 @@ def _valid_message(message):
     return (
         isinstance(message, dict)
         and set(message) == {"role", "content"}
+        and isinstance(message["role"], str)
         and message["role"] in {"user", "assistant"}
         and isinstance(message["content"], str)
         and bool(message["content"].strip())
+    )
+
+
+def _valid_metric_record(record):
+    expected_fields = {
+        "messageNumber", "messageTokens", "historyBeforeTokens", "payloadEstimatedTokens",
+        "promptTokens", "completionTokens", "totalTokens", "source", "historyAfterTokens",
+        "contextLimit", "contextPercent", "cost", "cumulativePromptTokens",
+        "cumulativeCompletionTokens", "cumulativeTotalTokens", "cumulativeUsd",
+    }
+    if not isinstance(record, dict) or set(record) != expected_fields:
+        return False
+    return (
+        isinstance(record["source"], str)
+        and record["source"] in {"actual", "estimated"}
+        and all(_valid_nonnegative_int(record[field]) for field in (
+            "messageNumber", "messageTokens", "historyBeforeTokens", "payloadEstimatedTokens",
+            "promptTokens", "completionTokens", "totalTokens", "historyAfterTokens", "contextLimit",
+            "cumulativePromptTokens", "cumulativeCompletionTokens", "cumulativeTotalTokens",
+        ))
+        and _valid_nonnegative_number(record["contextPercent"])
+        and _valid_cost(record["cost"])
+        and _valid_nonnegative_number(record["cumulativeUsd"])
+    )
+
+
+def _valid_context_attempt(attempt):
+    if attempt is None:
+        return True
+    return (
+        isinstance(attempt, dict)
+        and set(attempt) == {
+            "payloadEstimatedTokens", "requestedOutputTokens", "contextLimit", "contextPercent", "reason", "mode",
+        }
+        and _valid_nonnegative_int(attempt["payloadEstimatedTokens"])
+        and _valid_nonnegative_int(attempt["requestedOutputTokens"])
+        and _valid_nonnegative_int(attempt["contextLimit"])
+        and _valid_nonnegative_number(attempt["contextPercent"])
+        and isinstance(attempt["reason"], str)
+        and isinstance(attempt["mode"], str)
+        and attempt["mode"] in {"probe", "blocked"}
+    )
+
+
+def _valid_metrics(metrics):
+    expected_fields = {"calls", "totals", "lastMessage", "lastContextAttempt"}
+    expected_totals = set(default_metrics()["totals"])
+    if not isinstance(metrics, dict) or set(metrics) != expected_fields:
+        return False
+    totals = metrics["totals"]
+    return (
+        isinstance(metrics["calls"], list)
+        and all(_valid_metric_record(record) for record in metrics["calls"])
+        and (metrics["lastMessage"] is None or _valid_metric_record(metrics["lastMessage"]))
+        and _valid_context_attempt(metrics["lastContextAttempt"])
+        and isinstance(totals, dict)
+        and set(totals) == expected_totals
+        and all(_valid_nonnegative_int(totals[field]) for field in (
+            "promptTokens", "completionTokens", "totalTokens", "compressionGrossSavedTokens", "summaryCallTokens",
+        ))
+        and isinstance(totals["compressionNetSavedTokens"], int)
+        and not isinstance(totals["compressionNetSavedTokens"], bool)
+        and _valid_nonnegative_number(totals["usd"])
+        and _valid_nonnegative_number(totals["grossInputSavingsUsd"])
+        and _valid_nonnegative_number(totals["summaryCostUsd"])
+        and _valid_number(totals["netSavingsUsd"])
     )
 
 
@@ -439,7 +518,7 @@ def _valid_agent_snapshot(snapshot):
         and all(_valid_message(message) for message in snapshot["messages"])
         and _valid_settings(snapshot["settings"])
         and _valid_metadata(snapshot["metadata"])
-        and isinstance(snapshot["metrics"], dict)
+        and _valid_metrics(snapshot["metrics"])
         and _valid_context(snapshot["context"])
         and snapshot["context"]["compressedMessageCount"] <= len(snapshot["messages"])
     )
@@ -569,7 +648,8 @@ class AgentRegistry:
             state = json.loads(self._state_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, UnicodeDecodeError):
             return None
-        if isinstance(state, dict) and state.get("version") in {1, 2} and isinstance(state.get("agents"), list):
+        version = state.get("version") if isinstance(state, dict) else None
+        if isinstance(version, int) and not isinstance(version, bool) and version in {1, 2} and isinstance(state.get("agents"), list):
             for snapshot in state["agents"]:
                 if isinstance(snapshot, dict):
                     settings = snapshot.get("settings")
