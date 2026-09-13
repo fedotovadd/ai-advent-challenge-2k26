@@ -319,7 +319,8 @@ def _agent_number(agent_id):
         or len(number) > MAX_PERSISTED_INTEGER_DECIMAL_DIGITS
     ):
         return None
-    return int(number)
+    parsed_number = int(number)
+    return parsed_number if _valid_positive_int(parsed_number) else None
 
 
 def _valid_settings(settings):
@@ -362,6 +363,10 @@ def _valid_int(value):
 
 def _valid_nonnegative_int(value):
     return _valid_int(value) and value >= 0
+
+
+def _valid_positive_int(value):
+    return _valid_int(value) and value > 0
 
 
 def _valid_nonnegative_number(value):
@@ -690,9 +695,7 @@ class AgentRegistry:
             not isinstance(state, dict)
             or set(state) != {"version", "nextId", "agents"}
             or state["version"] != STATE_VERSION
-            or not isinstance(state["nextId"], int)
-            or isinstance(state["nextId"], bool)
-            or state["nextId"] < 1
+            or not _valid_positive_int(state["nextId"])
             or not isinstance(state["agents"], list)
             or not all(_valid_agent_snapshot(snapshot) for snapshot in state["agents"])
         ):
