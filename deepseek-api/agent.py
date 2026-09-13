@@ -29,6 +29,7 @@ SYSTEM_PROMPT = (
 JSON_OUTPUT_INSTRUCTION = "Верни только валидный JSON без Markdown-разметки."
 DEFAULT_TEMPERATURE = 1
 RECENT_MESSAGES_LIMIT = 10
+SUMMARY_BATCH_MESSAGES = 10
 SUMMARY_MAX_TOKENS = 512
 SUMMARY_SYSTEM_PROMPT = (
     "Составь краткую сводку предыдущего диалога. Сохрани факты, решения, "
@@ -227,10 +228,11 @@ class Agent:
             return self.snapshot()
 
     def _summary_candidate(self):
-        target = max(0, len(self._messages) - (RECENT_MESSAGES_LIMIT - 2))
         candidate = copy.deepcopy(self._context)
-        if target <= candidate["compressedMessageCount"]:
-            return candidate, target, None
+        target = max(0, len(self._messages) - RECENT_MESSAGES_LIMIT)
+        pending_messages = target - candidate["compressedMessageCount"]
+        if pending_messages < SUMMARY_BATCH_MESSAGES:
+            return candidate, candidate["compressedMessageCount"], None
 
         new_messages = self._messages[candidate["compressedMessageCount"]:target]
         labelled_messages = "\n".join(
