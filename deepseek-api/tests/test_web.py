@@ -147,6 +147,28 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertNotIn("Инструкция свободного формата", body)
         self.assertIn("Метаданные", body)
 
+    def test_page_shows_history_compression_controls_and_metrics(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        self.assertIn('id="context-compression-enabled"', body)
+        self.assertIn('for="context-compression-enabled"', body)
+        self.assertIn('type="checkbox"', body)
+        self.assertIn(
+            "elements.contextCompressionEnabled.checked=settings.contextCompressionEnabled",
+            body,
+        )
+        self.assertIn("contextCompressionEnabled:elements.contextCompressionEnabled.checked", body)
+        self.assertIn("elements.contextCompressionEnabled.addEventListener(\"change\",()=>scheduleSettingsSave(0))", body)
+        for label in (
+            "Сжато сообщений",
+            "Размер summary",
+            "Токены: полная / сжатая история",
+            "Экономия после summary",
+            "Стоимость summary",
+        ):
+            self.assertIn(label, body)
+
     def test_page_contains_model_and_usage_metadata(self):
         status, body, _ = self.request("GET", "/")
 
