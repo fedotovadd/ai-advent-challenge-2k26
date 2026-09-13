@@ -8,6 +8,10 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from errors import MissingApiKeyError
+from context_memory import (
+    STRATEGIES, FACTS_MAX_TOKENS, FACTS_PREFIX, FACTS_SYSTEM_PROMPT, FactsUpdateError,
+    apply_facts_patch, default_facts_usage, valid_facts, validate_context_settings, validate_name,
+)
 
 
 MODEL = "deepseek-v4-flash"
@@ -45,9 +49,11 @@ DEFAULT_SETTINGS = {
     "trainingContextLimit": None,
     "sendOnOverflow": False,
     "contextCompressionEnabled": True,
+    "contextStrategy": "sliding_window",
+    "windowSize": 10,
 }
 MAX_BULK_AGENTS = 100
-STATE_VERSION = 3
+STATE_VERSION = 4
 DEFAULT_STATE_PATH = Path(__file__).with_name("data") / "agents.json"
 METADATA_FIELDS = {
     "userPrompt",
@@ -102,6 +108,11 @@ def default_metrics():
 
 def default_context():
     return {
+        "facts": {},
+        "factsUsage": default_facts_usage(),
+        "activeBranch": "main",
+        "branches": {"main": {"name": "Основная", "checkpointId": None, "state": None}},
+        "checkpoints": {},
         "summary": None,
         "compressedMessageCount": 0,
         "summaryUsage": {
@@ -209,9 +220,12 @@ class Agent:
         self._metadata = copy.deepcopy(metadata)
         self._metrics = copy.deepcopy(metrics) if metrics is not None else default_metrics()
         self._context = copy.deepcopy(context) if context is not None else default_context()
+        validate_context_settings(self._settings)
+        self._trim_messages()
 
     def snapshot(self):
         with self._lock:
+            self._save_active_branch()
             return {
                 "id": self._id,
                 "name": self._name,
@@ -224,8 +238,104 @@ class Agent:
 
     def update_settings(self, settings):
         with self._lock:
-            self._settings = {**default_settings(), **copy.deepcopy(settings)}
+            candidate = {**default_settings(), **copy.deepcopy(settings)}
+            validate_context_settings(candidate)
+            self._settings = candidate
+            self._trim_messages()
             return self.snapshot()
+
+    def _trim_messages(self):
+        if self._settings["contextStrategy"] in {"sliding_window", "facts"}:
+            self._messages = self._messages[-self._settings["windowSize"]:]
+            # A previous summary is stale after physical pruning.
+            self._context["summary"] = None
+            self._context["compressedMessageCount"] = 0
+
+    def _branch_state(self):
+        return copy.deepcopy({
+            "messages": self._messages, "metadata": self._metadata, "metrics": self._metrics,
+            "memory": {key: value for key, value in self._context.items()
+                       if key not in {"activeBranch", "branches", "checkpoints"}},
+        })
+
+    def _save_active_branch(self):
+        self._context["branches"][self._context["activeBranch"]]["state"] = self._branch_state()
+
+    def _require_branching(self):
+        if self._settings["contextStrategy"] != "branching":
+            raise ValueError("Сначала выберите стратегию Branching.")
+
+    def create_checkpoint(self, name):
+        with self._lock:
+            self._require_branching()
+            name = validate_name(name)
+            checkpoint_id = f"checkpoint-{len(self._context['checkpoints']) + 1}"
+            self._context["checkpoints"][checkpoint_id] = {
+                "name": name, "branchId": self._context["activeBranch"], "state": self._branch_state(),
+            }
+            return {"checkpointId": checkpoint_id, "agent": self.snapshot()}
+
+    def create_branch(self, checkpoint_id, name):
+        with self._lock:
+            self._require_branching()
+            name = validate_name(name)
+            if not isinstance(checkpoint_id, str) or checkpoint_id not in self._context["checkpoints"]:
+                raise ValueError("Checkpoint не найден.")
+            branch_id = f"branch-{len(self._context['branches'])}"
+            self._context["branches"][branch_id] = {
+                "name": name, "checkpointId": checkpoint_id,
+                "state": copy.deepcopy(self._context["checkpoints"][checkpoint_id]["state"]),
+            }
+            return {"branchId": branch_id, "agent": self.snapshot()}
+
+    def switch_branch(self, branch_id):
+        with self._lock:
+            self._require_branching()
+            if not isinstance(branch_id, str) or branch_id not in self._context["branches"]:
+                raise ValueError("Ветка не найдена.")
+            self._save_active_branch()
+            branch = copy.deepcopy(self._context["branches"][branch_id]["state"])
+            self._messages, self._metadata, self._metrics = branch["messages"], branch["metadata"], branch["metrics"]
+            self._context.update(branch["memory"])
+            self._context["activeBranch"] = branch_id
+            return {"agent": self.snapshot()}
+
+    def _memory_options(self):
+        # DeepSeek V4 enables thinking by default; a short extraction budget can
+        # otherwise be exhausted before any visible JSON/summary is returned.
+        if self._settings["model"].startswith("deepseek-"):
+            return {"extra_body": {"thinking": {"type": "disabled"}}}
+        return {}
+
+    def _update_facts(self, text):
+        recent = [*self._messages, {"role": "user", "content": text}][-self._settings["windowSize"]:]
+        payload = {
+            "model": self._settings["model"], "temperature": 0,
+            "messages": [
+                {"role": "system", "content": FACTS_SYSTEM_PROMPT},
+                {"role": "user", "content": json.dumps({"facts": self._context["facts"], "dialogue": recent}, ensure_ascii=False)},
+            ],
+        }
+        options = {"response_format": {"type": "json_object"}, "max_tokens": FACTS_MAX_TOKENS, **self._memory_options()}
+        estimate = estimate_payload_tokens({**payload, **options})
+        limit = self._settings["trainingContextLimit"] or MODEL_CAPABILITIES[self._settings["model"]]["contextLimit"]
+        if estimate + FACTS_MAX_TOKENS > limit:
+            raise FactsUpdateError("Не удалось обновить facts: превышен лимит контекста.")
+        try:
+            content, provider_usage = _response_content_and_usage(self._ask_model(payload, **options))
+        except MissingApiKeyError as error:
+            error.accepted = False
+            raise
+        except Exception as error:
+            raise FactsUpdateError("Не удалось обновить facts: ошибка API.") from error
+        usage, cost = request_usage_and_cost(self._settings["model"], provider_usage, estimate, estimate_text_tokens(content))
+        account = self._context["factsUsage"]
+        account["calls"] += 1
+        for key in ("promptTokens", "completionTokens", "totalTokens"):
+            account[key] += usage[key]
+        account["usd"] += cost["usd"] if cost else 0
+        account["last"] = {**usage, "cost": cost}
+        self._context["facts"] = apply_facts_patch(self._context["facts"], content)
 
     def _summary_candidate(self):
         candidate = copy.deepcopy(self._context)
@@ -252,12 +362,15 @@ class Agent:
             "temperature": 0,
             "max_tokens": SUMMARY_MAX_TOKENS,
         }
-        summary_estimate = estimate_payload_tokens(summary_payload)
+        summary_estimate = estimate_payload_tokens({**summary_payload, **self._memory_options()})
         real_context_limit = MODEL_CAPABILITIES[self._settings["model"]]["contextLimit"]
         if summary_estimate + SUMMARY_MAX_TOKENS > real_context_limit:
             raise ContextSummaryError("summary payload exceeds the model context limit")
         try:
-            summary, provider_usage = _response_content_and_usage(self._ask_model(summary_payload))
+            summary, provider_usage = _response_content_and_usage(self._ask_model(
+                {key: value for key, value in summary_payload.items() if key != "max_tokens"},
+                max_tokens=SUMMARY_MAX_TOKENS, **self._memory_options(),
+            ))
             if not isinstance(summary, str) or not summary.strip():
                 raise ValueError("empty summary response")
         except Exception as error:
@@ -309,6 +422,7 @@ class Agent:
 
         with self._lock:
             text = text.strip()
+            history_before_tokens = estimate_payload_tokens({"messages": self._messages})
             system_prompt = self._settings["systemPrompt"]
             options = {}
             if self._settings["format"] == "json":
@@ -318,13 +432,22 @@ class Agent:
                 options["max_tokens"] = self._settings["maxTokens"]
             if self._settings["stop"]:
                 options["stop"] = self._settings["stop"]
-            if self._settings["contextCompressionEnabled"]:
+            strategy = self._settings["contextStrategy"]
+            if strategy == "summary":
                 candidate_context, target, summary_call = self._summary_candidate()
                 messages = self._context_messages(text, candidate_context, target)
             else:
+                if strategy == "facts":
+                    self._update_facts(text)
                 candidate_context = self._context
                 summary_call = None
-                messages = [{"role": "system", "content": system_prompt}, *self._messages, {"role": "user", "content": text}]
+                recent = [*self._messages, {"role": "user", "content": text}]
+                if strategy in {"sliding_window", "facts"}:
+                    recent = recent[-self._settings["windowSize"]:]
+                messages = [{"role": "system", "content": system_prompt}]
+                if strategy == "facts":
+                    messages.append({"role": "system", "content": FACTS_PREFIX + json.dumps(self._context["facts"], ensure_ascii=False)})
+                messages.extend(recent)
             payload = {
                 "model": self._settings["model"],
                 "messages": messages,
@@ -384,6 +507,7 @@ class Agent:
             except Exception as error:
                 metadata["status"] = {"kind": "error", "label": "Ошибка API"}
                 self._metadata = metadata
+                self._trim_messages()
                 if overflow:
                     raise OverflowProbeError(provider_error_message(error)) from error
                 raise
@@ -391,7 +515,8 @@ class Agent:
                 self._messages.append({"role": "user", "content": text})
             self._metadata = metadata
             self._messages.append({"role": "assistant", "content": answer})
-            if self._settings["contextCompressionEnabled"]:
+            self._trim_messages()
+            if strategy == "summary":
                 self._context = candidate_context
             usage_details = metadata["usage"]
             totals = self._metrics["totals"]
@@ -419,7 +544,7 @@ class Agent:
             record = {
                 "messageNumber": len(self._metrics["calls"]) + 1,
                 "messageTokens": estimate_text_tokens(text),
-                "historyBeforeTokens": estimate_payload_tokens({"messages": self._messages[:-2]}),
+                "historyBeforeTokens": history_before_tokens,
                 "payloadEstimatedTokens": estimated_payload,
                 "fullPayloadEstimatedTokens": full_payload_estimate,
                 "compressedPayloadEstimatedTokens": estimated_payload,
@@ -444,6 +569,7 @@ class Agent:
             }
             self._metrics["calls"].append(record)
             self._metrics["lastMessage"] = copy.deepcopy(record)
+            self._trim_messages()
             return self.snapshot()
 
 
@@ -485,6 +611,8 @@ def _valid_settings(settings):
         and (training_limit is None or (isinstance(training_limit, int) and not isinstance(training_limit, bool) and training_limit > 0))
         and isinstance(settings["sendOnOverflow"], bool)
         and isinstance(settings["contextCompressionEnabled"], bool)
+        and isinstance(settings["contextStrategy"], str) and settings["contextStrategy"] in STRATEGIES
+        and _valid_positive_int(settings["windowSize"]) and settings["windowSize"] <= 100
     )
 
 
@@ -549,8 +677,8 @@ def _valid_summary_last(last):
     )
 
 
-def _valid_context(context):
-    if not isinstance(context, dict) or set(context) != {"summary", "compressedMessageCount", "summaryUsage"}:
+def _valid_memory(context):
+    if not isinstance(context, dict) or set(context) != {"summary", "compressedMessageCount", "summaryUsage", "facts", "factsUsage"}:
         return False
     summary = context["summary"]
     usage = context["summaryUsage"]
@@ -566,7 +694,47 @@ def _valid_context(context):
         and _valid_nonnegative_int(usage["totalTokens"])
         and _valid_nonnegative_number(usage["usd"])
         and _valid_summary_last(usage["last"])
+        and valid_facts(context["facts"])
+        and _valid_facts_usage(context["factsUsage"])
     )
+
+
+def _valid_facts_usage(usage):
+    return (isinstance(usage, dict) and set(usage) == set(default_facts_usage())
+            and all(_valid_nonnegative_int(usage[key]) for key in ("calls", "promptTokens", "completionTokens", "totalTokens"))
+            and _valid_nonnegative_number(usage["usd"]) and _valid_summary_last(usage["last"]))
+
+
+def _valid_branch_state(state):
+    return (isinstance(state, dict) and set(state) == {"messages", "metadata", "metrics", "memory"}
+            and isinstance(state["messages"], list) and all(_valid_message(m) for m in state["messages"])
+            and _valid_metadata(state["metadata"]) and _valid_metrics(state["metrics"])
+            and _valid_memory(state["memory"])
+            and state["memory"]["compressedMessageCount"] <= len(state["messages"]))
+
+
+def _valid_context(context):
+    if not isinstance(context, dict) or set(context) != set(default_context()):
+        return False
+    memory = {key: value for key, value in context.items() if key not in {"activeBranch", "branches", "checkpoints"}}
+    branches, checkpoints = context["branches"], context["checkpoints"]
+    if not (_valid_memory(memory) and isinstance(branches, dict) and branches
+            and isinstance(checkpoints, dict) and isinstance(context["activeBranch"], str)
+            and context["activeBranch"] in branches):
+        return False
+    for key, branch in branches.items():
+        if not (isinstance(key, str) and isinstance(branch, dict) and set(branch) == {"name", "checkpointId", "state"}
+                and isinstance(branch["name"], str) and 1 <= len(branch["name"].strip()) <= 80
+                and (branch["checkpointId"] is None or isinstance(branch["checkpointId"], str) and branch["checkpointId"] in checkpoints)
+                and _valid_branch_state(branch["state"])):
+            return False
+    for key, checkpoint in checkpoints.items():
+        if not (isinstance(key, str) and isinstance(checkpoint, dict) and set(checkpoint) == {"name", "branchId", "state"}
+                and isinstance(checkpoint["name"], str) and 1 <= len(checkpoint["name"].strip()) <= 80
+                and isinstance(checkpoint["branchId"], str) and checkpoint["branchId"] in branches
+                and _valid_branch_state(checkpoint["state"])):
+            return False
+    return True
 
 
 def _valid_message(message):
@@ -747,8 +915,14 @@ class AgentRegistry:
             agent = self._agents.get(agent_id)
             if agent is None:
                 return None
+            before = agent.snapshot()
             snapshot = agent.update_settings(settings)
-            self._save()
+            try:
+                self._save()
+            except PersistenceError:
+                self._agents[agent_id] = Agent(before["id"], before["name"], before["settings"], self._ask_model,
+                                               before["messages"], before["metadata"], before["metrics"], before["context"])
+                raise
             return snapshot
 
     def respond(self, agent_id, text, temperature=DEFAULT_TEMPERATURE):
@@ -763,6 +937,30 @@ class AgentRegistry:
                 raise
             self._save()
             return snapshot
+
+    def context_action(self, agent_id, action, data):
+        with self._lock:
+            agent = self._agents.get(agent_id)
+            if agent is None:
+                return None
+            if not isinstance(data, dict):
+                raise ValueError("Некорректные параметры ветки.")
+            before = agent.snapshot()
+            if action == "checkpoint" and set(data) == {"name"}:
+                result = agent.create_checkpoint(data["name"])
+            elif action == "branch" and set(data) == {"checkpointId", "name"}:
+                result = agent.create_branch(data["checkpointId"], data["name"])
+            elif action == "switch" and set(data) == {"branchId"}:
+                result = agent.switch_branch(data["branchId"])
+            else:
+                raise ValueError("Некорректные параметры ветки.")
+            try:
+                self._save()
+            except PersistenceError:
+                self._agents[agent_id] = Agent(before["id"], before["name"], before["settings"], self._ask_model,
+                                               before["messages"], before["metadata"], before["metrics"], before["context"])
+                raise
+            return result
 
     def delete(self, agent_id):
         with self._lock:
@@ -820,7 +1018,7 @@ class AgentRegistry:
         except (OSError, ValueError, json.JSONDecodeError, UnicodeDecodeError):
             return None
         version = state.get("version") if isinstance(state, dict) else None
-        if isinstance(version, int) and not isinstance(version, bool) and version in {1, 2} and isinstance(state.get("agents"), list):
+        if isinstance(version, int) and not isinstance(version, bool) and version in {1, 2, 3} and isinstance(state.get("agents"), list):
             for snapshot in state["agents"]:
                 if isinstance(snapshot, dict):
                     settings = snapshot.get("settings")
@@ -828,6 +1026,8 @@ class AgentRegistry:
                         settings.setdefault("trainingContextLimit", None)
                         settings.setdefault("sendOnOverflow", False)
                         settings.setdefault("contextCompressionEnabled", True)
+                        settings.setdefault("contextStrategy", "summary" if settings["contextCompressionEnabled"] else "branching")
+                        settings.setdefault("windowSize", 10)
                     snapshot.setdefault("metrics", default_metrics())
                     metrics = snapshot.get("metrics")
                     if isinstance(metrics, dict):
@@ -838,6 +1038,17 @@ class AgentRegistry:
                             for key, value in default_metrics()["totals"].items():
                                 totals.setdefault(key, value)
                     snapshot.setdefault("context", default_context())
+                    context = snapshot["context"]
+                    if isinstance(context, dict):
+                        for key, value in default_context().items():
+                            context.setdefault(key, copy.deepcopy(value))
+                        if context["branches"] == {"main": {"name": "Основная", "checkpointId": None, "state": None}}:
+                            context["branches"]["main"]["state"] = {
+                                "messages": copy.deepcopy(snapshot.get("messages")),
+                                "metadata": copy.deepcopy(snapshot.get("metadata")),
+                                "metrics": copy.deepcopy(snapshot.get("metrics")),
+                                "memory": {k: copy.deepcopy(v) for k, v in context.items() if k not in {"activeBranch", "branches", "checkpoints"}},
+                            }
             state["version"] = STATE_VERSION
         if isinstance(state, dict) and state.get("version") == STATE_VERSION and isinstance(state.get("agents"), list):
             for snapshot in state["agents"]:
@@ -848,6 +1059,20 @@ class AgentRegistry:
                         for record in calls:
                             _backfill_compression_metric_record(record)
                     _backfill_compression_metric_record(metrics.get("lastMessage"))
+                    context = snapshot.get("context", {})
+                    if not isinstance(context, dict):
+                        return None
+                    if not all(isinstance(context.get(key), dict) for key in ("branches", "checkpoints")):
+                        return None
+                    for item in [*context["branches"].values(), *context["checkpoints"].values()]:
+                        nested = item.get("state") if isinstance(item, dict) else None
+                        nested_metrics = nested.get("metrics") if isinstance(nested, dict) else None
+                        if isinstance(nested_metrics, dict):
+                            if not isinstance(nested_metrics.get("calls"), list):
+                                return None
+                            for record in nested_metrics["calls"]:
+                                _backfill_compression_metric_record(record)
+                            _backfill_compression_metric_record(nested_metrics.get("lastMessage"))
         if (
             not isinstance(state, dict)
             or set(state) != {"version", "nextId", "agents"}

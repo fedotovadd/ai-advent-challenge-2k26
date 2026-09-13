@@ -12,6 +12,7 @@ from day_three import (
     stream_day_three_experiment,
 )
 from errors import MissingApiKeyError
+from context_memory import FactsUpdateError, validate_context_settings
 
 
 STATIC_PAGE = Path(__file__).with_name("static") / "index.html"
@@ -28,6 +29,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_html(200, STATIC_PAGE.read_text(encoding="utf-8"))
         elif path == "/static/agent-state.js":
             self._send_javascript(200, STATIC_AGENT_STATE.read_text(encoding="utf-8"))
+        elif path == "/static/context-controls.js":
+            self._send_javascript(200, STATIC_PAGE.with_name("context-controls.js").read_text(encoding="utf-8"))
         elif path == "/api/agents":
             self._send_json(200, {"agents": self.server.registry.agents()})
         elif path.startswith("/api/"):
@@ -59,6 +62,10 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._handle_bulk_create()
             return
         parts = path.split("/")
+        actions = {"checkpoints": "checkpoint", "branches": "branch", "switch-branch": "switch"}
+        if len(parts) == 5 and parts[:3] == ["", "api", "agents"] and parts[4] in actions:
+            self._handle_context_action(parts[3], actions[parts[4]])
+            return
         if len(parts) == 5 and parts[:3] == ["", "api", "agents"] and parts[4] == "messages":
             self._handle_message(parts[3])
             return
@@ -187,6 +194,24 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(201, {"agents": agents})
 
+    def _handle_context_action(self, agent_id, action):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 4096:
+                raise ValueError("Некорректный размер запроса.")
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+            result = self.server.registry.context_action(agent_id, action, data)
+        except (UnicodeDecodeError, ValueError) as error:
+            self._send_json(400, {"error": str(error)})
+            return
+        except PersistenceError:
+            self._send_storage_error()
+            return
+        if result is None:
+            self._send_json(404, {"error": "Агент не найден."})
+            return
+        self._send_json(200, result)
+
     def _handle_message(self, agent_id):
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -212,22 +237,28 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_json(503, {
                 "agent": snapshot,
                 "error": f"Не задан {error.key_name}.",
+                "accepted": getattr(error, "accepted", True),
                 "metadata": snapshot["metadata"],
             })
             return
         except ContextOverflowError as error:
             snapshot = agent.snapshot()
-            self._send_json(409, {"agent": snapshot, "error": str(error), "metadata": snapshot["metadata"]})
+            self._send_json(409, {"agent": snapshot, "error": str(error), "metadata": snapshot["metadata"], "accepted": False})
             return
         except OverflowProbeError as error:
             snapshot = agent.snapshot()
-            self._send_json(422, {"agent": snapshot, "error": str(error), "metadata": snapshot["metadata"], "probe": True})
+            self._send_json(422, {"agent": snapshot, "error": str(error), "metadata": snapshot["metadata"], "probe": True, "accepted": False})
+            return
+        except FactsUpdateError as error:
+            snapshot = agent.snapshot()
+            self._send_json(502, {"agent": snapshot, "error": str(error), "metadata": snapshot["metadata"], "accepted": False})
             return
         except ContextSummaryError:
             snapshot = agent.snapshot()
             self._send_json(502, {
                 "agent": snapshot,
                 "error": "Не удалось обновить сводку истории.",
+                "accepted": False,
                 "metadata": snapshot["metadata"],
             })
             return
@@ -262,7 +293,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
             self._send_json(400, {"error": "Некорректный JSON."})
             return
-        settings, error = self._validate_settings(data)
+        existing = self.server.registry.get(agent_id)
+        settings, error = self._validate_settings(data, existing.snapshot()["settings"] if existing else None)
         if error:
             self._send_json(400, {"error": error})
             return
@@ -280,7 +312,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(200, {"agent": snapshot})
 
-    def _validate_settings(self, data):
+    def _validate_settings(self, data, current_settings=None):
         legacy_fields = {"model", "systemPrompt", "format", "maxTokens", "stop"}
         day_eight_fields = legacy_fields | {"trainingContextLimit", "sendOnOverflow"}
         compression_fields = {"contextCompressionEnabled"}
@@ -290,12 +322,19 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             frozenset(legacy_fields | compression_fields),
             frozenset(day_eight_fields | compression_fields),
         }
+        strategy_fields = {"contextStrategy", "windowSize"}
+        allowed_fields |= {fields | strategy_fields for fields in list(allowed_fields)}
         if not isinstance(data, dict) or frozenset(data) not in allowed_fields:
             return None, "Настройки имеют неверный формат."
+        default_strategy = (current_settings or {}).get("contextStrategy", "sliding_window")
+        if "contextStrategy" not in data and "contextCompressionEnabled" in data:
+            default_strategy = "summary" if data["contextCompressionEnabled"] else "branching"
         data = {
             "trainingContextLimit": None,
             "sendOnOverflow": False,
             "contextCompressionEnabled": True,
+            "contextStrategy": default_strategy,
+            "windowSize": (current_settings or {}).get("windowSize", 10),
             **data,
         }
         system_prompt = data["systemPrompt"]
@@ -306,11 +345,15 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         training_limit = data["trainingContextLimit"]
         send_on_overflow = data["sendOnOverflow"]
         compression_enabled = data["contextCompressionEnabled"]
+        try:
+            validate_context_settings(data)
+        except ValueError as error:
+            return None, str(error)
         if not isinstance(system_prompt, str) or not system_prompt.strip():
             return None, "System prompt не может быть пустым."
-        if model not in MODELS:
+        if not isinstance(model, str) or model not in MODELS:
             return None, "Неизвестная модель."
-        if response_format not in {"text", "json"}:
+        if not isinstance(response_format, str) or response_format not in {"text", "json"}:
             return None, "Формат ответа должен быть text или json."
         if max_tokens is not None and (isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens <= 0 or max_tokens > MODEL_CAPABILITIES[model]["maxOutputTokens"]):
             return None, "Максимум токенов должен быть положительным целым числом."
@@ -331,6 +374,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             "trainingContextLimit": training_limit,
             "sendOnOverflow": send_on_overflow,
             "contextCompressionEnabled": compression_enabled,
+            "contextStrategy": data["contextStrategy"],
+            "windowSize": data["windowSize"],
         }, None
 
     def _send_json(self, status, body):

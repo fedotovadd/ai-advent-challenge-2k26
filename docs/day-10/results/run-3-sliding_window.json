@@ -1,0 +1,1589 @@
+{
+  "trial": 3,
+  "strategy": "sliding_window",
+  "agentId": "agent-23",
+  "settings": {
+    "model": "deepseek-v4-flash",
+    "systemPrompt": "Ты помогаешь собирать техническое задание.\nНа обычное сообщение отвечай одним предложением до 20 слов.\nНе повторяй ранее сообщённые требования без просьбы.\nУчитывай только утверждённые решения; гипотезы не являются решениями.\nЯвное изменение заменяет предыдущее значение.\nОтменённое значение без замены становится неизвестным.\nНезависимые варианты наследуют общие требования, но не изменения друг друга.\nНа контрольные вопросы отвечай в запрошенном формате.\nНеизвестные значения обозначай null. Не угадывай.\nВсе ответы пиши на русском языке.",
+    "format": "text",
+    "maxTokens": null,
+    "stop": "",
+    "trainingContextLimit": null,
+    "sendOnOverflow": false,
+    "contextCompressionEnabled": false,
+    "contextStrategy": "sliding_window",
+    "windowSize": 6
+  },
+  "temperature": 0,
+  "steps": [
+    {
+      "step": 1,
+      "prompt": "Собираем ТЗ проекта «Соседская полка»: сервис бронирования бумажных книг в районной библиотеке. Аудитория — жители одного района.",
+      "answer": "Понял; уточните, какие функции бронирования и сроки хранения книг считаем обязательными?",
+      "usage": {
+        "promptTokens": 217,
+        "completionTokens": 84,
+        "totalTokens": 301,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 1.93
+    },
+    {
+      "step": 2,
+      "prompt": "В MVP делаем только веб-сайт, удобный на телефоне. Отдельного мобильного приложения не будет. Язык интерфейса — только русский.",
+      "answer": "Принято: MVP — только адаптивный веб-сайт на русском языке, без отдельного мобильного приложения.",
+      "usage": {
+        "promptTokens": 289,
+        "completionTokens": 243,
+        "totalTokens": 532,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 2.25
+    },
+    {
+      "step": 3,
+      "prompt": "Утверждённый бюджет — 120000 рублей. Дата запуска — 15 декабря 2026 года.",
+      "answer": "Принято: бюджет 120 000 рублей, запуск 15 декабря 2026 года.",
+      "usage": {
+        "promptTokens": 347,
+        "completionTokens": 117,
+        "totalTokens": 464,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 1.84
+    },
+    {
+      "step": 4,
+      "prompt": "Бронирование бесплатное, онлайн-оплаты не будет. Для регистрации достаточно email. Телефон не запрашиваем и не храним. Уведомления отправляем только по email, без SMS.",
+      "answer": "Принято: бесплатное бронирование без онлайн-оплаты, регистрация по email, телефон не собираем, уведомления только email.",
+      "usage": {
+        "promptTokens": 378,
+        "completionTokens": 96,
+        "totalTokens": 474,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 1.44
+    },
+    {
+      "step": 5,
+      "prompt": "Нужны поиск книги по названию, фильтр по автору и экспорт активных броней в CSV. Сервер размещаем в инфраструктуре библиотеки.",
+      "answer": "Принято: поиск по названию, фильтр по автору, экспорт активных броней в CSV, сервер в инфраструктуре библиотеки.",
+      "usage": {
+        "promptTokens": 384,
+        "completionTokens": 176,
+        "totalTokens": 560,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 1.81
+    },
+    {
+      "step": 6,
+      "prompt": "Утверждаем бюджет 180000 рублей вместо 120000. Прежнюю дату запуска отменяем; новую пока не определили. Остальные требования сохраняются.",
+      "answer": "Бюджет 180000 руб. вместо 120000, дата запуска отменена и пока неизвестна (null), остальное без изменений.",
+      "usage": {
+        "promptTokens": 408,
+        "completionTokens": 259,
+        "totalTokens": 667,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 2.39
+    },
+    {
+      "step": 7,
+      "prompt": "Пользователь может отменить свою бронь в личном кабинете. Сотрудник библиотеки видит список активных броней и находит бронь по номеру.",
+      "answer": "Принято: пользователь отменяет свою бронь в личном кабинете, сотрудник видит активные брони и находит их по номеру.",
+      "usage": {
+        "promptTokens": 412,
+        "completionTokens": 228,
+        "totalTokens": 640,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 1.51
+    },
+    {
+      "step": 8,
+      "prompt": "Коллега предложил бюджет 500000 рублей, платное бронирование и SMS. Это только гипотеза для обсуждения, ничего из предложенного не утверждаем.",
+      "answer": "Гипотеза не утверждена, требования не меняются.",
+      "usage": {
+        "promptTokens": 414,
+        "completionTokens": 62,
+        "totalTokens": 476,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 1.69
+    },
+    {
+      "step": 9,
+      "prompt": "Покажи действующие общие требования. Верни только JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. budget_rub — число, launch_date — дата YYYY-MM-DD или null. Остальные значения — короткие строки или null. Не угадывай.",
+      "answer": "{\n  \"project\": null,\n  \"purpose\": null,\n  \"audience\": \"пользователи и сотрудники библиотеки\",\n  \"platform\": null,\n  \"language\": null,\n  \"payments\": null,\n  \"registration\": null,\n  \"phone\": null,\n  \"budget_rub\": 180000,\n  \"launch_date\": null,\n  \"notifications\": null,\n  \"hosting\": null\n}",
+      "usage": {
+        "promptTokens": 435,
+        "completionTokens": 1394,
+        "totalTokens": 1829,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 7.45
+    },
+    {
+      "step": 10,
+      "prompt": "Добавь критерии приёмки: один экземпляр нельзя одновременно забронировать двум пользователям; при отсутствии свободных экземпляров бронирование недоступно. Лист ожидания в MVP не делаем.",
+      "answer": "Критерии приёмки добавлены: занятый экземпляр не бронируется дважды, при отсутствии свободных бронирование недоступно, лист ожидания вне MVP.",
+      "usage": {
+        "promptTokens": 508,
+        "completionTokens": 155,
+        "totalTokens": 663,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 1.76
+    },
+    {
+      "step": 11,
+      "prompt": "Создаём независимый вариант A на основе общего ТЗ. Только для A утверждаем бюджет 240000 рублей и запуск 1 февраля 2027 года. Остальные общие требования сохраняются. Эти изменения не меняют общее ТЗ и будущий вариант B.",
+      "answer": "Вариант A создан: бюджет 240000 ₽, запуск 2027-02-01; общие требования и вариант B не изменены.",
+      "usage": {
+        "promptTokens": 537,
+        "completionTokens": 284,
+        "totalTokens": 821,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 2.64
+    },
+    {
+      "step": 12,
+      "prompt": "Покажи действующее ТЗ варианта A. Верни только JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null.",
+      "answer": "{\n  \"project\": null,\n  \"purpose\": null,\n  \"audience\": \"пользователи и сотрудники библиотеки\",\n  \"platform\": null,\n  \"language\": null,\n  \"payments\": null,\n  \"registration\": null,\n  \"phone\": null,\n  \"budget_rub\": 240000,\n  \"launch_date\": \"2027-02-01\",\n  \"notifications\": null,\n  \"hosting\": null\n}",
+      "usage": {
+        "promptTokens": 527,
+        "completionTokens": 1068,
+        "totalTokens": 1595,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 5.56
+    },
+    {
+      "step": 13,
+      "prompt": "Теперь создаём независимый вариант B на основе общего ТЗ, без изменений варианта A. Только для B утверждаем бюджет 160000 рублей и два языка интерфейса: русский и английский. Остальные общие требования сохраняются. Вариант A не меняем.",
+      "answer": "Вариант B создан: бюджет 160000 ₽, языки интерфейса русский и английский; вариант A не изменён.",
+      "usage": {
+        "promptTokens": 547,
+        "completionTokens": 188,
+        "totalTokens": 735,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 2.11
+    },
+    {
+      "step": 14,
+      "prompt": "Покажи действующее ТЗ варианта B. Верни только JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null.",
+      "answer": "{\n  \"project\": null,\n  \"purpose\": null,\n  \"audience\": \"пользователи и сотрудники библиотеки\",\n  \"platform\": null,\n  \"language\": [\"русский\", \"английский\"],\n  \"payments\": null,\n  \"registration\": null,\n  \"phone\": null,\n  \"budget_rub\": 160000,\n  \"launch_date\": null,\n  \"notifications\": null,\n  \"hosting\": null\n}",
+      "usage": {
+        "promptTokens": 529,
+        "completionTokens": 1993,
+        "totalTokens": 2522,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 9.21
+    },
+    {
+      "step": 15,
+      "prompt": "Возвращаемся к ранее согласованному варианту A. Покажи его ТЗ: сначала JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null. Затем предложи план запуска из пяти пунктов, соблюдая ограничения именно варианта A. Не переноси в него решения других вариантов.",
+      "answer": "{\n  \"project\": null,\n  \"purpose\": null,\n  \"audience\": \"пользователи и сотрудники библиотеки\",\n  \"platform\": null,\n  \"language\": null,\n  \"payments\": null,\n  \"registration\": null,\n  \"phone\": null,\n  \"budget_rub\": 240000,\n  \"launch_date\": \"2027-02-01\",\n  \"notifications\": null,\n  \"hosting\": null\n}\n\nПлан запуска варианта A:\n1. Уточнить неизвестные требования: платформу, язык интерфейса, платежи, регистрацию, телефон, уведомления и хостинг.\n2. Сформировать команду и распределить бюджет 240 000 ₽ с учётом уточнённых требований.\n3. Создать прототип для пользователей и сотрудников библиотеки.\n4. Провести тестирование прототипа с участием представителей аудитории.\n5. Завершить разработку и обеспечить запуск к 1 февраля 2027 года.",
+      "usage": {
+        "promptTokens": 636,
+        "completionTokens": 922,
+        "totalTokens": 1558,
+        "source": "actual"
+      },
+      "memoryTokens": 0,
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "facts": {},
+      "activeBranch": "main",
+      "elapsedSeconds": 4.76
+    }
+  ],
+  "actions": [],
+  "finalAgent": {
+    "id": "agent-23",
+    "name": "Sliding Window · Соседская полка",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Теперь создаём независимый вариант B на основе общего ТЗ, без изменений варианта A. Только для B утверждаем бюджет 160000 рублей и два языка интерфейса: русский и английский. Остальные общие требования сохраняются. Вариант A не меняем."
+      },
+      {
+        "role": "assistant",
+        "content": "Вариант B создан: бюджет 160000 ₽, языки интерфейса русский и английский; вариант A не изменён."
+      },
+      {
+        "role": "user",
+        "content": "Покажи действующее ТЗ варианта B. Верни только JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null."
+      },
+      {
+        "role": "assistant",
+        "content": "{\n  \"project\": null,\n  \"purpose\": null,\n  \"audience\": \"пользователи и сотрудники библиотеки\",\n  \"platform\": null,\n  \"language\": [\"русский\", \"английский\"],\n  \"payments\": null,\n  \"registration\": null,\n  \"phone\": null,\n  \"budget_rub\": 160000,\n  \"launch_date\": null,\n  \"notifications\": null,\n  \"hosting\": null\n}"
+      },
+      {
+        "role": "user",
+        "content": "Возвращаемся к ранее согласованному варианту A. Покажи его ТЗ: сначала JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null. Затем предложи план запуска из пяти пунктов, соблюдая ограничения именно варианта A. Не переноси в него решения других вариантов."
+      },
+      {
+        "role": "assistant",
+        "content": "{\n  \"project\": null,\n  \"purpose\": null,\n  \"audience\": \"пользователи и сотрудники библиотеки\",\n  \"platform\": null,\n  \"language\": null,\n  \"payments\": null,\n  \"registration\": null,\n  \"phone\": null,\n  \"budget_rub\": 240000,\n  \"launch_date\": \"2027-02-01\",\n  \"notifications\": null,\n  \"hosting\": null\n}\n\nПлан запуска варианта A:\n1. Уточнить неизвестные требования: платформу, язык интерфейса, платежи, регистрацию, телефон, уведомления и хостинг.\n2. Сформировать команду и распределить бюджет 240 000 ₽ с учётом уточнённых требований.\n3. Создать прототип для пользователей и сотрудников библиотеки.\n4. Провести тестирование прототипа с участием представителей аудитории.\n5. Завершить разработку и обеспечить запуск к 1 февраля 2027 года."
+      }
+    ],
+    "settings": {
+      "model": "deepseek-v4-flash",
+      "systemPrompt": "Ты помогаешь собирать техническое задание.\nНа обычное сообщение отвечай одним предложением до 20 слов.\nНе повторяй ранее сообщённые требования без просьбы.\nУчитывай только утверждённые решения; гипотезы не являются решениями.\nЯвное изменение заменяет предыдущее значение.\nОтменённое значение без замены становится неизвестным.\nНезависимые варианты наследуют общие требования, но не изменения друг друга.\nНа контрольные вопросы отвечай в запрошенном формате.\nНеизвестные значения обозначай null. Не угадывай.\nВсе ответы пиши на русском языке.",
+      "format": "text",
+      "maxTokens": null,
+      "stop": "",
+      "trainingContextLimit": null,
+      "sendOnOverflow": false,
+      "contextCompressionEnabled": false,
+      "contextStrategy": "sliding_window",
+      "windowSize": 6
+    },
+    "metadata": {
+      "userPrompt": "Возвращаемся к ранее согласованному варианту A. Покажи его ТЗ: сначала JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null. Затем предложи план запуска из пяти пунктов, соблюдая ограничения именно варианта A. Не переноси в него решения других вариантов.",
+      "systemPrompt": "Ты помогаешь собирать техническое задание.\nНа обычное сообщение отвечай одним предложением до 20 слов.\nНе повторяй ранее сообщённые требования без просьбы.\nУчитывай только утверждённые решения; гипотезы не являются решениями.\nЯвное изменение заменяет предыдущее значение.\nОтменённое значение без замены становится неизвестным.\nНезависимые варианты наследуют общие требования, но не изменения друг друга.\nНа контрольные вопросы отвечай в запрошенном формате.\nНеизвестные значения обозначай null. Не угадывай.\nВсе ответы пиши на русском языке.",
+      "payload": {
+        "model": "deepseek-v4-flash",
+        "messages": [
+          {
+            "role": "system",
+            "content": "Ты помогаешь собирать техническое задание.\nНа обычное сообщение отвечай одним предложением до 20 слов.\nНе повторяй ранее сообщённые требования без просьбы.\nУчитывай только утверждённые решения; гипотезы не являются решениями.\nЯвное изменение заменяет предыдущее значение.\nОтменённое значение без замены становится неизвестным.\nНезависимые варианты наследуют общие требования, но не изменения друг друга.\nНа контрольные вопросы отвечай в запрошенном формате.\nНеизвестные значения обозначай null. Не угадывай.\nВсе ответы пиши на русском языке."
+          },
+          {
+            "role": "assistant",
+            "content": "{\n  \"project\": null,\n  \"purpose\": null,\n  \"audience\": \"пользователи и сотрудники библиотеки\",\n  \"platform\": null,\n  \"language\": null,\n  \"payments\": null,\n  \"registration\": null,\n  \"phone\": null,\n  \"budget_rub\": 240000,\n  \"launch_date\": \"2027-02-01\",\n  \"notifications\": null,\n  \"hosting\": null\n}"
+          },
+          {
+            "role": "user",
+            "content": "Теперь создаём независимый вариант B на основе общего ТЗ, без изменений варианта A. Только для B утверждаем бюджет 160000 рублей и два языка интерфейса: русский и английский. Остальные общие требования сохраняются. Вариант A не меняем."
+          },
+          {
+            "role": "assistant",
+            "content": "Вариант B создан: бюджет 160000 ₽, языки интерфейса русский и английский; вариант A не изменён."
+          },
+          {
+            "role": "user",
+            "content": "Покажи действующее ТЗ варианта B. Верни только JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null."
+          },
+          {
+            "role": "assistant",
+            "content": "{\n  \"project\": null,\n  \"purpose\": null,\n  \"audience\": \"пользователи и сотрудники библиотеки\",\n  \"platform\": null,\n  \"language\": [\"русский\", \"английский\"],\n  \"payments\": null,\n  \"registration\": null,\n  \"phone\": null,\n  \"budget_rub\": 160000,\n  \"launch_date\": null,\n  \"notifications\": null,\n  \"hosting\": null\n}"
+          },
+          {
+            "role": "user",
+            "content": "Возвращаемся к ранее согласованному варианту A. Покажи его ТЗ: сначала JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null. Затем предложи план запуска из пяти пунктов, соблюдая ограничения именно варианта A. Не переноси в него решения других вариантов."
+          }
+        ],
+        "temperature": 0
+      },
+      "status": {
+        "kind": "success",
+        "label": "200 OK"
+      },
+      "responseTimeMs": 4755,
+      "usage": {
+        "promptTokens": 636,
+        "completionTokens": 922,
+        "totalTokens": 1558,
+        "source": "actual"
+      },
+      "cost": {
+        "kind": "paid",
+        "usd": 0.00074844,
+        "source": "actual"
+      }
+    },
+    "metrics": {
+      "calls": [
+        {
+          "messageNumber": 1,
+          "messageTokens": 33,
+          "historyBeforeTokens": 3,
+          "payloadEstimatedTokens": 189,
+          "fullPayloadEstimatedTokens": 189,
+          "compressedPayloadEstimatedTokens": 189,
+          "compressionGrossSavedTokens": 0,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 0,
+          "grossInputSavingsUsd": 0.0,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 0.0,
+          "promptTokens": 217,
+          "completionTokens": 84,
+          "totalTokens": 301,
+          "source": "actual",
+          "historyAfterTokens": 70,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000189,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.00010318000000000001,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 217,
+          "cumulativeCompletionTokens": 84,
+          "cumulativeTotalTokens": 301,
+          "cumulativeUsd": 0.00010318000000000001
+        },
+        {
+          "messageNumber": 2,
+          "messageTokens": 32,
+          "historyBeforeTokens": 70,
+          "payloadEstimatedTokens": 255,
+          "fullPayloadEstimatedTokens": 255,
+          "compressedPayloadEstimatedTokens": 255,
+          "compressionGrossSavedTokens": 0,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 0,
+          "grossInputSavingsUsd": 0.0,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 0.0,
+          "promptTokens": 289,
+          "completionTokens": 243,
+          "totalTokens": 532,
+          "source": "actual",
+          "historyAfterTokens": 139,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000255,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.00022396,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 506,
+          "cumulativeCompletionTokens": 327,
+          "cumulativeTotalTokens": 833,
+          "cumulativeUsd": 0.00032714
+        },
+        {
+          "messageNumber": 3,
+          "messageTokens": 19,
+          "historyBeforeTokens": 139,
+          "payloadEstimatedTokens": 311,
+          "fullPayloadEstimatedTokens": 311,
+          "compressedPayloadEstimatedTokens": 311,
+          "compressionGrossSavedTokens": 0,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 0,
+          "grossInputSavingsUsd": 0.0,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 0.0,
+          "promptTokens": 347,
+          "completionTokens": 117,
+          "totalTokens": 464,
+          "source": "actual",
+          "historyAfterTokens": 185,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000311,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.00015356000000000001,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 853,
+          "cumulativeCompletionTokens": 444,
+          "cumulativeTotalTokens": 1297,
+          "cumulativeUsd": 0.00048070000000000003
+        },
+        {
+          "messageNumber": 4,
+          "messageTokens": 42,
+          "historyBeforeTokens": 185,
+          "payloadEstimatedTokens": 342,
+          "fullPayloadEstimatedTokens": 380,
+          "compressedPayloadEstimatedTokens": 342,
+          "compressionGrossSavedTokens": 38,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 38,
+          "grossInputSavingsUsd": 8.36e-06,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 8.36e-06,
+          "promptTokens": 378,
+          "completionTokens": 96,
+          "totalTokens": 474,
+          "source": "actual",
+          "historyAfterTokens": 202,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000342,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.00014651999999999997,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 1231,
+          "cumulativeCompletionTokens": 540,
+          "cumulativeTotalTokens": 1771,
+          "cumulativeUsd": 0.00062722
+        },
+        {
+          "messageNumber": 5,
+          "messageTokens": 32,
+          "historyBeforeTokens": 202,
+          "payloadEstimatedTokens": 350,
+          "fullPayloadEstimatedTokens": 387,
+          "compressedPayloadEstimatedTokens": 350,
+          "compressionGrossSavedTokens": 37,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 37,
+          "grossInputSavingsUsd": 8.14e-06,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 8.14e-06,
+          "promptTokens": 384,
+          "completionTokens": 176,
+          "totalTokens": 560,
+          "source": "actual",
+          "historyAfterTokens": 205,
+          "contextLimit": 1000000,
+          "contextPercent": 0.00035,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.00020064,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 1615,
+          "cumulativeCompletionTokens": 716,
+          "cumulativeTotalTokens": 2331,
+          "cumulativeUsd": 0.0008278599999999999
+        },
+        {
+          "messageNumber": 6,
+          "messageTokens": 35,
+          "historyBeforeTokens": 205,
+          "payloadEstimatedTokens": 369,
+          "fullPayloadEstimatedTokens": 393,
+          "compressedPayloadEstimatedTokens": 369,
+          "compressionGrossSavedTokens": 24,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 24,
+          "grossInputSavingsUsd": 5.28e-06,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 5.28e-06,
+          "promptTokens": 408,
+          "completionTokens": 259,
+          "totalTokens": 667,
+          "source": "actual",
+          "historyAfterTokens": 233,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000369,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.0002607,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 2023,
+          "cumulativeCompletionTokens": 975,
+          "cumulativeTotalTokens": 2998,
+          "cumulativeUsd": 0.00108856
+        },
+        {
+          "messageNumber": 7,
+          "messageTokens": 34,
+          "historyBeforeTokens": 233,
+          "payloadEstimatedTokens": 373,
+          "fullPayloadEstimatedTokens": 420,
+          "compressedPayloadEstimatedTokens": 373,
+          "compressionGrossSavedTokens": 47,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 47,
+          "grossInputSavingsUsd": 1.034e-05,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 1.034e-05,
+          "promptTokens": 412,
+          "completionTokens": 228,
+          "totalTokens": 640,
+          "source": "actual",
+          "historyAfterTokens": 224,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000373,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.00024112,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 2435,
+          "cumulativeCompletionTokens": 1203,
+          "cumulativeTotalTokens": 3638,
+          "cumulativeUsd": 0.00132968
+        },
+        {
+          "messageNumber": 8,
+          "messageTokens": 36,
+          "historyBeforeTokens": 224,
+          "payloadEstimatedTokens": 376,
+          "fullPayloadEstimatedTokens": 413,
+          "compressedPayloadEstimatedTokens": 376,
+          "compressionGrossSavedTokens": 37,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 37,
+          "grossInputSavingsUsd": 8.14e-06,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 8.14e-06,
+          "promptTokens": 414,
+          "completionTokens": 62,
+          "totalTokens": 476,
+          "source": "actual",
+          "historyAfterTokens": 212,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000376,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.000132,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 2849,
+          "cumulativeCompletionTokens": 1265,
+          "cumulativeTotalTokens": 4114,
+          "cumulativeUsd": 0.00146168
+        },
+        {
+          "messageNumber": 9,
+          "messageTokens": 78,
+          "historyBeforeTokens": 212,
+          "payloadEstimatedTokens": 403,
+          "fullPayloadEstimatedTokens": 443,
+          "compressedPayloadEstimatedTokens": 403,
+          "compressionGrossSavedTokens": 40,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 40,
+          "grossInputSavingsUsd": 8.8e-06,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 8.8e-06,
+          "promptTokens": 435,
+          "completionTokens": 1394,
+          "totalTokens": 1829,
+          "source": "actual",
+          "historyAfterTokens": 300,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000403,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.0010157400000000002,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 3284,
+          "cumulativeCompletionTokens": 2659,
+          "cumulativeTotalTokens": 5943,
+          "cumulativeUsd": 0.00247742
+        },
+        {
+          "messageNumber": 10,
+          "messageTokens": 47,
+          "historyBeforeTokens": 300,
+          "payloadEstimatedTokens": 461,
+          "fullPayloadEstimatedTokens": 500,
+          "compressedPayloadEstimatedTokens": 461,
+          "compressionGrossSavedTokens": 39,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 39,
+          "grossInputSavingsUsd": 8.580000000000001e-06,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 8.580000000000001e-06,
+          "promptTokens": 508,
+          "completionTokens": 155,
+          "totalTokens": 663,
+          "source": "actual",
+          "historyAfterTokens": 320,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000461,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.00021406,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 3792,
+          "cumulativeCompletionTokens": 2814,
+          "cumulativeTotalTokens": 6606,
+          "cumulativeUsd": 0.00269148
+        },
+        {
+          "messageNumber": 11,
+          "messageTokens": 55,
+          "historyBeforeTokens": 320,
+          "payloadEstimatedTokens": 487,
+          "fullPayloadEstimatedTokens": 528,
+          "compressedPayloadEstimatedTokens": 487,
+          "compressionGrossSavedTokens": 41,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 41,
+          "grossInputSavingsUsd": 9.02e-06,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 9.02e-06,
+          "promptTokens": 537,
+          "completionTokens": 284,
+          "totalTokens": 821,
+          "source": "actual",
+          "historyAfterTokens": 351,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000487,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.00030557999999999996,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 4329,
+          "cumulativeCompletionTokens": 3098,
+          "cumulativeTotalTokens": 7427,
+          "cumulativeUsd": 0.00299706
+        },
+        {
+          "messageNumber": 12,
+          "messageTokens": 55,
+          "historyBeforeTokens": 351,
+          "payloadEstimatedTokens": 476,
+          "fullPayloadEstimatedTokens": 559,
+          "compressedPayloadEstimatedTokens": 476,
+          "compressionGrossSavedTokens": 83,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 83,
+          "grossInputSavingsUsd": 1.826e-05,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 1.826e-05,
+          "promptTokens": 527,
+          "completionTokens": 1068,
+          "totalTokens": 1595,
+          "source": "actual",
+          "historyAfterTokens": 330,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000476,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.0008208199999999999,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 4856,
+          "cumulativeCompletionTokens": 4166,
+          "cumulativeTotalTokens": 9022,
+          "cumulativeUsd": 0.00381788
+        },
+        {
+          "messageNumber": 13,
+          "messageTokens": 59,
+          "historyBeforeTokens": 330,
+          "payloadEstimatedTokens": 490,
+          "fullPayloadEstimatedTokens": 542,
+          "compressedPayloadEstimatedTokens": 490,
+          "compressionGrossSavedTokens": 52,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 52,
+          "grossInputSavingsUsd": 1.1439999999999999e-05,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 1.1439999999999999e-05,
+          "promptTokens": 547,
+          "completionTokens": 188,
+          "totalTokens": 735,
+          "source": "actual",
+          "historyAfterTokens": 330,
+          "contextLimit": 1000000,
+          "contextPercent": 0.00049,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.00024442,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 5403,
+          "cumulativeCompletionTokens": 4354,
+          "cumulativeTotalTokens": 9757,
+          "cumulativeUsd": 0.0040623000000000005
+        },
+        {
+          "messageNumber": 14,
+          "messageTokens": 55,
+          "historyBeforeTokens": 330,
+          "payloadEstimatedTokens": 478,
+          "fullPayloadEstimatedTokens": 538,
+          "compressedPayloadEstimatedTokens": 478,
+          "compressionGrossSavedTokens": 60,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 60,
+          "grossInputSavingsUsd": 1.3199999999999999e-05,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 1.3199999999999999e-05,
+          "promptTokens": 529,
+          "completionTokens": 1993,
+          "totalTokens": 2522,
+          "source": "actual",
+          "historyAfterTokens": 383,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000478,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.0014317600000000002,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 5932,
+          "cumulativeCompletionTokens": 6347,
+          "cumulativeTotalTokens": 12279,
+          "cumulativeUsd": 0.00549406
+        },
+        {
+          "messageNumber": 15,
+          "messageTokens": 93,
+          "historyBeforeTokens": 383,
+          "payloadEstimatedTokens": 569,
+          "fullPayloadEstimatedTokens": 629,
+          "compressedPayloadEstimatedTokens": 569,
+          "compressionGrossSavedTokens": 60,
+          "summaryCallTokens": 0,
+          "compressionNetSavedTokens": 60,
+          "grossInputSavingsUsd": 1.3199999999999999e-05,
+          "summaryCostUsd": 0,
+          "netSavingsUsd": 1.3199999999999999e-05,
+          "promptTokens": 636,
+          "completionTokens": 922,
+          "totalTokens": 1558,
+          "source": "actual",
+          "historyAfterTokens": 530,
+          "contextLimit": 1000000,
+          "contextPercent": 0.000569,
+          "cost": {
+            "kind": "paid",
+            "usd": 0.00074844,
+            "source": "actual"
+          },
+          "cumulativePromptTokens": 6568,
+          "cumulativeCompletionTokens": 7269,
+          "cumulativeTotalTokens": 13837,
+          "cumulativeUsd": 0.0062425
+        }
+      ],
+      "totals": {
+        "promptTokens": 6568,
+        "completionTokens": 7269,
+        "totalTokens": 13837,
+        "usd": 0.0062425,
+        "compressionGrossSavedTokens": 558,
+        "summaryCallTokens": 0,
+        "compressionNetSavedTokens": 558,
+        "grossInputSavingsUsd": 0.00012276,
+        "summaryCostUsd": 0,
+        "netSavingsUsd": 0.00012276
+      },
+      "lastMessage": {
+        "messageNumber": 15,
+        "messageTokens": 93,
+        "historyBeforeTokens": 383,
+        "payloadEstimatedTokens": 569,
+        "fullPayloadEstimatedTokens": 629,
+        "compressedPayloadEstimatedTokens": 569,
+        "compressionGrossSavedTokens": 60,
+        "summaryCallTokens": 0,
+        "compressionNetSavedTokens": 60,
+        "grossInputSavingsUsd": 1.3199999999999999e-05,
+        "summaryCostUsd": 0,
+        "netSavingsUsd": 1.3199999999999999e-05,
+        "promptTokens": 636,
+        "completionTokens": 922,
+        "totalTokens": 1558,
+        "source": "actual",
+        "historyAfterTokens": 530,
+        "contextLimit": 1000000,
+        "contextPercent": 0.000569,
+        "cost": {
+          "kind": "paid",
+          "usd": 0.00074844,
+          "source": "actual"
+        },
+        "cumulativePromptTokens": 6568,
+        "cumulativeCompletionTokens": 7269,
+        "cumulativeTotalTokens": 13837,
+        "cumulativeUsd": 0.0062425
+      },
+      "lastContextAttempt": null
+    },
+    "context": {
+      "facts": {},
+      "factsUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      },
+      "activeBranch": "main",
+      "branches": {
+        "main": {
+          "name": "Основная",
+          "checkpointId": null,
+          "state": {
+            "messages": [
+              {
+                "role": "user",
+                "content": "Теперь создаём независимый вариант B на основе общего ТЗ, без изменений варианта A. Только для B утверждаем бюджет 160000 рублей и два языка интерфейса: русский и английский. Остальные общие требования сохраняются. Вариант A не меняем."
+              },
+              {
+                "role": "assistant",
+                "content": "Вариант B создан: бюджет 160000 ₽, языки интерфейса русский и английский; вариант A не изменён."
+              },
+              {
+                "role": "user",
+                "content": "Покажи действующее ТЗ варианта B. Верни только JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null."
+              },
+              {
+                "role": "assistant",
+                "content": "{\n  \"project\": null,\n  \"purpose\": null,\n  \"audience\": \"пользователи и сотрудники библиотеки\",\n  \"platform\": null,\n  \"language\": [\"русский\", \"английский\"],\n  \"payments\": null,\n  \"registration\": null,\n  \"phone\": null,\n  \"budget_rub\": 160000,\n  \"launch_date\": null,\n  \"notifications\": null,\n  \"hosting\": null\n}"
+              },
+              {
+                "role": "user",
+                "content": "Возвращаемся к ранее согласованному варианту A. Покажи его ТЗ: сначала JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null. Затем предложи план запуска из пяти пунктов, соблюдая ограничения именно варианта A. Не переноси в него решения других вариантов."
+              },
+              {
+                "role": "assistant",
+                "content": "{\n  \"project\": null,\n  \"purpose\": null,\n  \"audience\": \"пользователи и сотрудники библиотеки\",\n  \"platform\": null,\n  \"language\": null,\n  \"payments\": null,\n  \"registration\": null,\n  \"phone\": null,\n  \"budget_rub\": 240000,\n  \"launch_date\": \"2027-02-01\",\n  \"notifications\": null,\n  \"hosting\": null\n}\n\nПлан запуска варианта A:\n1. Уточнить неизвестные требования: платформу, язык интерфейса, платежи, регистрацию, телефон, уведомления и хостинг.\n2. Сформировать команду и распределить бюджет 240 000 ₽ с учётом уточнённых требований.\n3. Создать прототип для пользователей и сотрудников библиотеки.\n4. Провести тестирование прототипа с участием представителей аудитории.\n5. Завершить разработку и обеспечить запуск к 1 февраля 2027 года."
+              }
+            ],
+            "metadata": {
+              "userPrompt": "Возвращаемся к ранее согласованному варианту A. Покажи его ТЗ: сначала JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null. Затем предложи план запуска из пяти пунктов, соблюдая ограничения именно варианта A. Не переноси в него решения других вариантов.",
+              "systemPrompt": "Ты помогаешь собирать техническое задание.\nНа обычное сообщение отвечай одним предложением до 20 слов.\nНе повторяй ранее сообщённые требования без просьбы.\nУчитывай только утверждённые решения; гипотезы не являются решениями.\nЯвное изменение заменяет предыдущее значение.\nОтменённое значение без замены становится неизвестным.\nНезависимые варианты наследуют общие требования, но не изменения друг друга.\nНа контрольные вопросы отвечай в запрошенном формате.\nНеизвестные значения обозначай null. Не угадывай.\nВсе ответы пиши на русском языке.",
+              "payload": {
+                "model": "deepseek-v4-flash",
+                "messages": [
+                  {
+                    "role": "system",
+                    "content": "Ты помогаешь собирать техническое задание.\nНа обычное сообщение отвечай одним предложением до 20 слов.\nНе повторяй ранее сообщённые требования без просьбы.\nУчитывай только утверждённые решения; гипотезы не являются решениями.\nЯвное изменение заменяет предыдущее значение.\nОтменённое значение без замены становится неизвестным.\nНезависимые варианты наследуют общие требования, но не изменения друг друга.\nНа контрольные вопросы отвечай в запрошенном формате.\nНеизвестные значения обозначай null. Не угадывай.\nВсе ответы пиши на русском языке."
+                  },
+                  {
+                    "role": "assistant",
+                    "content": "{\n  \"project\": null,\n  \"purpose\": null,\n  \"audience\": \"пользователи и сотрудники библиотеки\",\n  \"platform\": null,\n  \"language\": null,\n  \"payments\": null,\n  \"registration\": null,\n  \"phone\": null,\n  \"budget_rub\": 240000,\n  \"launch_date\": \"2027-02-01\",\n  \"notifications\": null,\n  \"hosting\": null\n}"
+                  },
+                  {
+                    "role": "user",
+                    "content": "Теперь создаём независимый вариант B на основе общего ТЗ, без изменений варианта A. Только для B утверждаем бюджет 160000 рублей и два языка интерфейса: русский и английский. Остальные общие требования сохраняются. Вариант A не меняем."
+                  },
+                  {
+                    "role": "assistant",
+                    "content": "Вариант B создан: бюджет 160000 ₽, языки интерфейса русский и английский; вариант A не изменён."
+                  },
+                  {
+                    "role": "user",
+                    "content": "Покажи действующее ТЗ варианта B. Верни только JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null."
+                  },
+                  {
+                    "role": "assistant",
+                    "content": "{\n  \"project\": null,\n  \"purpose\": null,\n  \"audience\": \"пользователи и сотрудники библиотеки\",\n  \"platform\": null,\n  \"language\": [\"русский\", \"английский\"],\n  \"payments\": null,\n  \"registration\": null,\n  \"phone\": null,\n  \"budget_rub\": 160000,\n  \"launch_date\": null,\n  \"notifications\": null,\n  \"hosting\": null\n}"
+                  },
+                  {
+                    "role": "user",
+                    "content": "Возвращаемся к ранее согласованному варианту A. Покажи его ТЗ: сначала JSON с ключами project, purpose, audience, platform, language, payments, registration, phone, budget_rub, launch_date, notifications, hosting. Неизвестные значения — null. Затем предложи план запуска из пяти пунктов, соблюдая ограничения именно варианта A. Не переноси в него решения других вариантов."
+                  }
+                ],
+                "temperature": 0
+              },
+              "status": {
+                "kind": "success",
+                "label": "200 OK"
+              },
+              "responseTimeMs": 4755,
+              "usage": {
+                "promptTokens": 636,
+                "completionTokens": 922,
+                "totalTokens": 1558,
+                "source": "actual"
+              },
+              "cost": {
+                "kind": "paid",
+                "usd": 0.00074844,
+                "source": "actual"
+              }
+            },
+            "metrics": {
+              "calls": [
+                {
+                  "messageNumber": 1,
+                  "messageTokens": 33,
+                  "historyBeforeTokens": 3,
+                  "payloadEstimatedTokens": 189,
+                  "fullPayloadEstimatedTokens": 189,
+                  "compressedPayloadEstimatedTokens": 189,
+                  "compressionGrossSavedTokens": 0,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 0,
+                  "grossInputSavingsUsd": 0.0,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 0.0,
+                  "promptTokens": 217,
+                  "completionTokens": 84,
+                  "totalTokens": 301,
+                  "source": "actual",
+                  "historyAfterTokens": 70,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000189,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.00010318000000000001,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 217,
+                  "cumulativeCompletionTokens": 84,
+                  "cumulativeTotalTokens": 301,
+                  "cumulativeUsd": 0.00010318000000000001
+                },
+                {
+                  "messageNumber": 2,
+                  "messageTokens": 32,
+                  "historyBeforeTokens": 70,
+                  "payloadEstimatedTokens": 255,
+                  "fullPayloadEstimatedTokens": 255,
+                  "compressedPayloadEstimatedTokens": 255,
+                  "compressionGrossSavedTokens": 0,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 0,
+                  "grossInputSavingsUsd": 0.0,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 0.0,
+                  "promptTokens": 289,
+                  "completionTokens": 243,
+                  "totalTokens": 532,
+                  "source": "actual",
+                  "historyAfterTokens": 139,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000255,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.00022396,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 506,
+                  "cumulativeCompletionTokens": 327,
+                  "cumulativeTotalTokens": 833,
+                  "cumulativeUsd": 0.00032714
+                },
+                {
+                  "messageNumber": 3,
+                  "messageTokens": 19,
+                  "historyBeforeTokens": 139,
+                  "payloadEstimatedTokens": 311,
+                  "fullPayloadEstimatedTokens": 311,
+                  "compressedPayloadEstimatedTokens": 311,
+                  "compressionGrossSavedTokens": 0,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 0,
+                  "grossInputSavingsUsd": 0.0,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 0.0,
+                  "promptTokens": 347,
+                  "completionTokens": 117,
+                  "totalTokens": 464,
+                  "source": "actual",
+                  "historyAfterTokens": 185,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000311,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.00015356000000000001,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 853,
+                  "cumulativeCompletionTokens": 444,
+                  "cumulativeTotalTokens": 1297,
+                  "cumulativeUsd": 0.00048070000000000003
+                },
+                {
+                  "messageNumber": 4,
+                  "messageTokens": 42,
+                  "historyBeforeTokens": 185,
+                  "payloadEstimatedTokens": 342,
+                  "fullPayloadEstimatedTokens": 380,
+                  "compressedPayloadEstimatedTokens": 342,
+                  "compressionGrossSavedTokens": 38,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 38,
+                  "grossInputSavingsUsd": 8.36e-06,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 8.36e-06,
+                  "promptTokens": 378,
+                  "completionTokens": 96,
+                  "totalTokens": 474,
+                  "source": "actual",
+                  "historyAfterTokens": 202,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000342,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.00014651999999999997,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 1231,
+                  "cumulativeCompletionTokens": 540,
+                  "cumulativeTotalTokens": 1771,
+                  "cumulativeUsd": 0.00062722
+                },
+                {
+                  "messageNumber": 5,
+                  "messageTokens": 32,
+                  "historyBeforeTokens": 202,
+                  "payloadEstimatedTokens": 350,
+                  "fullPayloadEstimatedTokens": 387,
+                  "compressedPayloadEstimatedTokens": 350,
+                  "compressionGrossSavedTokens": 37,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 37,
+                  "grossInputSavingsUsd": 8.14e-06,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 8.14e-06,
+                  "promptTokens": 384,
+                  "completionTokens": 176,
+                  "totalTokens": 560,
+                  "source": "actual",
+                  "historyAfterTokens": 205,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.00035,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.00020064,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 1615,
+                  "cumulativeCompletionTokens": 716,
+                  "cumulativeTotalTokens": 2331,
+                  "cumulativeUsd": 0.0008278599999999999
+                },
+                {
+                  "messageNumber": 6,
+                  "messageTokens": 35,
+                  "historyBeforeTokens": 205,
+                  "payloadEstimatedTokens": 369,
+                  "fullPayloadEstimatedTokens": 393,
+                  "compressedPayloadEstimatedTokens": 369,
+                  "compressionGrossSavedTokens": 24,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 24,
+                  "grossInputSavingsUsd": 5.28e-06,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 5.28e-06,
+                  "promptTokens": 408,
+                  "completionTokens": 259,
+                  "totalTokens": 667,
+                  "source": "actual",
+                  "historyAfterTokens": 233,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000369,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.0002607,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 2023,
+                  "cumulativeCompletionTokens": 975,
+                  "cumulativeTotalTokens": 2998,
+                  "cumulativeUsd": 0.00108856
+                },
+                {
+                  "messageNumber": 7,
+                  "messageTokens": 34,
+                  "historyBeforeTokens": 233,
+                  "payloadEstimatedTokens": 373,
+                  "fullPayloadEstimatedTokens": 420,
+                  "compressedPayloadEstimatedTokens": 373,
+                  "compressionGrossSavedTokens": 47,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 47,
+                  "grossInputSavingsUsd": 1.034e-05,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 1.034e-05,
+                  "promptTokens": 412,
+                  "completionTokens": 228,
+                  "totalTokens": 640,
+                  "source": "actual",
+                  "historyAfterTokens": 224,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000373,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.00024112,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 2435,
+                  "cumulativeCompletionTokens": 1203,
+                  "cumulativeTotalTokens": 3638,
+                  "cumulativeUsd": 0.00132968
+                },
+                {
+                  "messageNumber": 8,
+                  "messageTokens": 36,
+                  "historyBeforeTokens": 224,
+                  "payloadEstimatedTokens": 376,
+                  "fullPayloadEstimatedTokens": 413,
+                  "compressedPayloadEstimatedTokens": 376,
+                  "compressionGrossSavedTokens": 37,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 37,
+                  "grossInputSavingsUsd": 8.14e-06,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 8.14e-06,
+                  "promptTokens": 414,
+                  "completionTokens": 62,
+                  "totalTokens": 476,
+                  "source": "actual",
+                  "historyAfterTokens": 212,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000376,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.000132,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 2849,
+                  "cumulativeCompletionTokens": 1265,
+                  "cumulativeTotalTokens": 4114,
+                  "cumulativeUsd": 0.00146168
+                },
+                {
+                  "messageNumber": 9,
+                  "messageTokens": 78,
+                  "historyBeforeTokens": 212,
+                  "payloadEstimatedTokens": 403,
+                  "fullPayloadEstimatedTokens": 443,
+                  "compressedPayloadEstimatedTokens": 403,
+                  "compressionGrossSavedTokens": 40,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 40,
+                  "grossInputSavingsUsd": 8.8e-06,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 8.8e-06,
+                  "promptTokens": 435,
+                  "completionTokens": 1394,
+                  "totalTokens": 1829,
+                  "source": "actual",
+                  "historyAfterTokens": 300,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000403,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.0010157400000000002,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 3284,
+                  "cumulativeCompletionTokens": 2659,
+                  "cumulativeTotalTokens": 5943,
+                  "cumulativeUsd": 0.00247742
+                },
+                {
+                  "messageNumber": 10,
+                  "messageTokens": 47,
+                  "historyBeforeTokens": 300,
+                  "payloadEstimatedTokens": 461,
+                  "fullPayloadEstimatedTokens": 500,
+                  "compressedPayloadEstimatedTokens": 461,
+                  "compressionGrossSavedTokens": 39,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 39,
+                  "grossInputSavingsUsd": 8.580000000000001e-06,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 8.580000000000001e-06,
+                  "promptTokens": 508,
+                  "completionTokens": 155,
+                  "totalTokens": 663,
+                  "source": "actual",
+                  "historyAfterTokens": 320,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000461,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.00021406,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 3792,
+                  "cumulativeCompletionTokens": 2814,
+                  "cumulativeTotalTokens": 6606,
+                  "cumulativeUsd": 0.00269148
+                },
+                {
+                  "messageNumber": 11,
+                  "messageTokens": 55,
+                  "historyBeforeTokens": 320,
+                  "payloadEstimatedTokens": 487,
+                  "fullPayloadEstimatedTokens": 528,
+                  "compressedPayloadEstimatedTokens": 487,
+                  "compressionGrossSavedTokens": 41,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 41,
+                  "grossInputSavingsUsd": 9.02e-06,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 9.02e-06,
+                  "promptTokens": 537,
+                  "completionTokens": 284,
+                  "totalTokens": 821,
+                  "source": "actual",
+                  "historyAfterTokens": 351,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000487,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.00030557999999999996,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 4329,
+                  "cumulativeCompletionTokens": 3098,
+                  "cumulativeTotalTokens": 7427,
+                  "cumulativeUsd": 0.00299706
+                },
+                {
+                  "messageNumber": 12,
+                  "messageTokens": 55,
+                  "historyBeforeTokens": 351,
+                  "payloadEstimatedTokens": 476,
+                  "fullPayloadEstimatedTokens": 559,
+                  "compressedPayloadEstimatedTokens": 476,
+                  "compressionGrossSavedTokens": 83,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 83,
+                  "grossInputSavingsUsd": 1.826e-05,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 1.826e-05,
+                  "promptTokens": 527,
+                  "completionTokens": 1068,
+                  "totalTokens": 1595,
+                  "source": "actual",
+                  "historyAfterTokens": 330,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000476,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.0008208199999999999,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 4856,
+                  "cumulativeCompletionTokens": 4166,
+                  "cumulativeTotalTokens": 9022,
+                  "cumulativeUsd": 0.00381788
+                },
+                {
+                  "messageNumber": 13,
+                  "messageTokens": 59,
+                  "historyBeforeTokens": 330,
+                  "payloadEstimatedTokens": 490,
+                  "fullPayloadEstimatedTokens": 542,
+                  "compressedPayloadEstimatedTokens": 490,
+                  "compressionGrossSavedTokens": 52,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 52,
+                  "grossInputSavingsUsd": 1.1439999999999999e-05,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 1.1439999999999999e-05,
+                  "promptTokens": 547,
+                  "completionTokens": 188,
+                  "totalTokens": 735,
+                  "source": "actual",
+                  "historyAfterTokens": 330,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.00049,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.00024442,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 5403,
+                  "cumulativeCompletionTokens": 4354,
+                  "cumulativeTotalTokens": 9757,
+                  "cumulativeUsd": 0.0040623000000000005
+                },
+                {
+                  "messageNumber": 14,
+                  "messageTokens": 55,
+                  "historyBeforeTokens": 330,
+                  "payloadEstimatedTokens": 478,
+                  "fullPayloadEstimatedTokens": 538,
+                  "compressedPayloadEstimatedTokens": 478,
+                  "compressionGrossSavedTokens": 60,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 60,
+                  "grossInputSavingsUsd": 1.3199999999999999e-05,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 1.3199999999999999e-05,
+                  "promptTokens": 529,
+                  "completionTokens": 1993,
+                  "totalTokens": 2522,
+                  "source": "actual",
+                  "historyAfterTokens": 383,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000478,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.0014317600000000002,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 5932,
+                  "cumulativeCompletionTokens": 6347,
+                  "cumulativeTotalTokens": 12279,
+                  "cumulativeUsd": 0.00549406
+                },
+                {
+                  "messageNumber": 15,
+                  "messageTokens": 93,
+                  "historyBeforeTokens": 383,
+                  "payloadEstimatedTokens": 569,
+                  "fullPayloadEstimatedTokens": 629,
+                  "compressedPayloadEstimatedTokens": 569,
+                  "compressionGrossSavedTokens": 60,
+                  "summaryCallTokens": 0,
+                  "compressionNetSavedTokens": 60,
+                  "grossInputSavingsUsd": 1.3199999999999999e-05,
+                  "summaryCostUsd": 0,
+                  "netSavingsUsd": 1.3199999999999999e-05,
+                  "promptTokens": 636,
+                  "completionTokens": 922,
+                  "totalTokens": 1558,
+                  "source": "actual",
+                  "historyAfterTokens": 530,
+                  "contextLimit": 1000000,
+                  "contextPercent": 0.000569,
+                  "cost": {
+                    "kind": "paid",
+                    "usd": 0.00074844,
+                    "source": "actual"
+                  },
+                  "cumulativePromptTokens": 6568,
+                  "cumulativeCompletionTokens": 7269,
+                  "cumulativeTotalTokens": 13837,
+                  "cumulativeUsd": 0.0062425
+                }
+              ],
+              "totals": {
+                "promptTokens": 6568,
+                "completionTokens": 7269,
+                "totalTokens": 13837,
+                "usd": 0.0062425,
+                "compressionGrossSavedTokens": 558,
+                "summaryCallTokens": 0,
+                "compressionNetSavedTokens": 558,
+                "grossInputSavingsUsd": 0.00012276,
+                "summaryCostUsd": 0,
+                "netSavingsUsd": 0.00012276
+              },
+              "lastMessage": {
+                "messageNumber": 15,
+                "messageTokens": 93,
+                "historyBeforeTokens": 383,
+                "payloadEstimatedTokens": 569,
+                "fullPayloadEstimatedTokens": 629,
+                "compressedPayloadEstimatedTokens": 569,
+                "compressionGrossSavedTokens": 60,
+                "summaryCallTokens": 0,
+                "compressionNetSavedTokens": 60,
+                "grossInputSavingsUsd": 1.3199999999999999e-05,
+                "summaryCostUsd": 0,
+                "netSavingsUsd": 1.3199999999999999e-05,
+                "promptTokens": 636,
+                "completionTokens": 922,
+                "totalTokens": 1558,
+                "source": "actual",
+                "historyAfterTokens": 530,
+                "contextLimit": 1000000,
+                "contextPercent": 0.000569,
+                "cost": {
+                  "kind": "paid",
+                  "usd": 0.00074844,
+                  "source": "actual"
+                },
+                "cumulativePromptTokens": 6568,
+                "cumulativeCompletionTokens": 7269,
+                "cumulativeTotalTokens": 13837,
+                "cumulativeUsd": 0.0062425
+              },
+              "lastContextAttempt": null
+            },
+            "memory": {
+              "facts": {},
+              "factsUsage": {
+                "calls": 0,
+                "promptTokens": 0,
+                "completionTokens": 0,
+                "totalTokens": 0,
+                "usd": 0,
+                "last": null
+              },
+              "summary": null,
+              "compressedMessageCount": 0,
+              "summaryUsage": {
+                "calls": 0,
+                "promptTokens": 0,
+                "completionTokens": 0,
+                "totalTokens": 0,
+                "usd": 0,
+                "last": null
+              }
+            }
+          }
+        }
+      },
+      "checkpoints": {},
+      "summary": null,
+      "compressedMessageCount": 0,
+      "summaryUsage": {
+        "calls": 0,
+        "promptTokens": 0,
+        "completionTokens": 0,
+        "totalTokens": 0,
+        "usd": 0,
+        "last": null
+      }
+    }
+  },
+  "completedAt": "2026-09-13T22:58:11+0300"
+}
