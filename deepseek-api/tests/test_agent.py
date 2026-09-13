@@ -9,22 +9,14 @@ from agent import Agent, AgentRegistry, MAX_BULK_AGENTS, PersistenceError, defau
 
 
 class AgentTests(unittest.TestCase):
-    def test_new_agent_snapshot_has_enabled_compression_and_empty_context(self):
+    def test_new_agent_defaults_to_window_with_empty_memories(self):
         snapshot = Agent("agent-1", "Первый", default_settings(), lambda payload, **options: "Ответ").snapshot()
-
-        self.assertIs(snapshot["settings"]["contextCompressionEnabled"], True)
-        self.assertEqual(snapshot["context"], {
-            "summary": None,
-            "compressedMessageCount": 0,
-            "summaryUsage": {
-                "calls": 0,
-                "promptTokens": 0,
-                "completionTokens": 0,
-                "totalTokens": 0,
-                "usd": 0,
-                "last": None,
-            },
-        })
+        self.assertEqual(snapshot["settings"]["contextStrategy"], "sliding_window")
+        self.assertEqual(snapshot["settings"]["windowSize"], 10)
+        self.assertIsNone(snapshot["context"]["summary"])
+        self.assertEqual(snapshot["context"]["facts"], {})
+        self.assertEqual(snapshot["context"]["activeBranch"], "main")
+        self.assertEqual(snapshot["context"]["branches"]["main"]["state"]["messages"], [])
 
     def test_estimate_payload_counts_system_messages_and_request_options(self):
         request = {
@@ -220,101 +212,54 @@ class AgentTests(unittest.TestCase):
 
     def test_compression_replaces_old_messages_with_summary(self):
         calls = []
-
-        def ask_model(payload, **options):
-            calls.append({"payload": payload, "options": options})
-            return "Новая сводка" if payload["temperature"] == 0 else "Обычный ответ"
-
-        agent_instance = Agent("agent-1", "Первый", default_settings(), ask_model)
-        for number in range(1, 6):
-            agent_instance.respond(f"Вопрос {number}")
-        self.assertEqual(len(agent_instance.snapshot()["messages"]), 10)
-        calls.clear()
-
-        result = agent_instance.respond("Вопрос 6")
-
-        self.assertEqual(len(calls), 2)
-        self.assertEqual(calls[0]["options"], {})
-        self.assertEqual(calls[0]["payload"]["model"], default_settings()["model"])
-        self.assertEqual(calls[0]["payload"]["temperature"], 0)
-        self.assertEqual(calls[0]["payload"]["max_tokens"], 512)
-        self.assertEqual(calls[0]["payload"]["messages"][-1]["role"], "user")
-        self.assertIn("USER: Вопрос 1\nASSISTANT: Обычный ответ", calls[0]["payload"]["messages"][-1]["content"])
-        self.assertEqual(calls[1]["payload"]["messages"], [
+        def ask(payload, **options):
+            calls.append(payload)
+            return "Сводка" if payload["temperature"] == 0 else "Ответ"
+        instance = Agent("agent-1", "Тест", {**default_settings(), "contextStrategy": "summary"}, ask)
+        for number in range(1, 11):
+            instance.respond(f"Вопрос {number}")
+        self.assertEqual(len(calls), 10)
+        result = instance.respond("Вопрос 11")
+        self.assertEqual(len(calls), 12)
+        self.assertEqual(result["context"]["compressedMessageCount"], 10)
+        self.assertEqual(result["context"]["summaryUsage"]["calls"], 1)
+        self.assertIn("Вопрос 1", calls[-2]["messages"][-1]["content"])
+        self.assertEqual(calls[-1]["messages"], [
             {"role": "system", "content": default_settings()["systemPrompt"]},
-            {"role": "system", "content": "Сжатый контекст предыдущего диалога:\nНовая сводка"},
-            *result["messages"][2:10],
-            {"role": "user", "content": "Вопрос 6"},
-        ])
-        self.assertEqual(len(result["messages"]), 12)
-        self.assertEqual(result["context"]["compressedMessageCount"], 2)
-        self.assertEqual(len(result["messages"][2:]), 10)
+            {"role": "system", "content": agent.SUMMARY_CONTEXT_PREFIX + "Сводка"},
+            *result["messages"][10:20], {"role": "user", "content": "Вопрос 11"}])
 
     def test_compression_updates_only_newly_displaced_messages(self):
         calls = []
-        answers = iter(["Ответ 1", "Ответ 2", "Ответ 3", "Ответ 4", "Ответ 5", "Сводка 1", "Ответ 6", "Сводка 2", "Ответ 7"])
+        def ask(payload, **options):
+            calls.append(payload)
+            return "Сводка" if payload["temperature"] == 0 else "Ответ"
+        instance = Agent("agent-1", "Тест", {**default_settings(), "contextStrategy": "summary"}, ask)
+        for number in range(1, 17):
+            result = instance.respond(f"Вопрос {number}")
+        summary_calls = [c for c in calls if c["temperature"] == 0]
+        self.assertEqual(len(summary_calls), 2)
+        text = summary_calls[1]["messages"][-1]["content"]
+        self.assertIn("Предыдущая сводка", text)
+        self.assertIn("USER: Вопрос 6", text)
+        self.assertNotIn("USER: Вопрос 1\n", text)
+        self.assertEqual(result["context"]["compressedMessageCount"], 20)
 
-        def ask_model(payload, **options):
-            calls.append({"payload": payload, "options": options})
-            return next(answers)
-
-        agent_instance = Agent("agent-1", "Первый", default_settings(), ask_model)
-        for number in range(1, 7):
-            agent_instance.respond(f"Вопрос {number}")
-        calls.clear()
-
-        result = agent_instance.respond("Вопрос 7")
-
-        self.assertEqual(len(calls), 2)
-        summary_prompt = calls[0]["payload"]["messages"][-1]["content"]
-        self.assertIn("Сводка 1", summary_prompt)
-        self.assertIn("USER: Вопрос 2\nASSISTANT: Ответ 2", summary_prompt)
-        self.assertNotIn("Вопрос 1", summary_prompt)
-        self.assertEqual(calls[1]["payload"]["messages"], [
-            {"role": "system", "content": default_settings()["systemPrompt"]},
-            {"role": "system", "content": "Сжатый контекст предыдущего диалога:\nСводка 2"},
-            *result["messages"][4:12],
-            {"role": "user", "content": "Вопрос 7"},
-        ])
-        self.assertEqual(result["context"]["summary"], "Сводка 2")
-        self.assertEqual(result["context"]["compressedMessageCount"], 4)
-
-    def test_disabled_compression_sends_full_history_then_summarizes_backlog(self):
+    def test_branching_to_summary_summarizes_existing_backlog(self):
         calls = []
-        answers = iter(["Ответ 1", "Ответ 2", "Ответ 3", "Ответ 4", "Ответ 5", "Ответ 6", "Сводка", "Ответ 7"])
-
-        def ask_model(payload, **options):
-            calls.append({"payload": payload, "options": options})
-            return next(answers)
-
-        settings = default_settings()
-        settings["contextCompressionEnabled"] = False
-        agent_instance = Agent("agent-1", "Первый", settings, ask_model)
-        for number in range(1, 7):
-            agent_instance.respond(f"Вопрос {number}")
-
-        self.assertEqual(len(calls), 6)
-        self.assertEqual(calls[-1]["payload"]["messages"], [
-            {"role": "system", "content": default_settings()["systemPrompt"]},
-            *agent_instance.snapshot()["messages"][:10],
-            {"role": "user", "content": "Вопрос 6"},
-        ])
-
-        enabled_settings = default_settings()
-        agent_instance.update_settings(enabled_settings)
-        calls.clear()
-        result = agent_instance.respond("Вопрос 7")
-
-        self.assertEqual(len(calls), 2)
-        self.assertIn("USER: Вопрос 1\nASSISTANT: Ответ 1", calls[0]["payload"]["messages"][-1]["content"])
-        self.assertIn("USER: Вопрос 2\nASSISTANT: Ответ 2", calls[0]["payload"]["messages"][-1]["content"])
-        self.assertEqual(calls[1]["payload"]["messages"], [
-            {"role": "system", "content": default_settings()["systemPrompt"]},
-            {"role": "system", "content": "Сжатый контекст предыдущего диалога:\nСводка"},
-            *result["messages"][4:12],
-            {"role": "user", "content": "Вопрос 7"},
-        ])
-        self.assertEqual(result["context"]["compressedMessageCount"], 4)
+        def ask(payload, **options):
+            calls.append(payload)
+            return "Сводка" if payload["temperature"] == 0 else "Ответ"
+        instance = Agent("agent-1", "Тест", {**default_settings(), "contextStrategy": "branching"}, ask)
+        for number in range(1, 13):
+            instance.respond(f"Вопрос {number}")
+        self.assertEqual(len(calls), 12)
+        self.assertEqual(len(calls[-1]["messages"]), 24)
+        instance.update_settings({**default_settings(), "contextStrategy": "summary"})
+        result = instance.respond("Вопрос 13")
+        self.assertEqual(len(calls), 14)
+        self.assertEqual(result["context"]["compressedMessageCount"], 14)
+        self.assertEqual(result["context"]["summary"], "Сводка")
 
     def test_summary_failure_does_not_change_agent(self):
         for failing_summary in (
@@ -333,14 +278,14 @@ class AgentTests(unittest.TestCase):
                         return failing_summary
                     return "Обычный ответ"
 
-                agent_instance = Agent("agent-1", "Первый", default_settings(), ask_model)
-                for number in range(1, 6):
+                agent_instance = Agent("agent-1", "Первый", {**default_settings(), "contextStrategy": "summary"}, ask_model)
+                for number in range(1, 11):
                     agent_instance.respond(f"Вопрос {number}")
                 before = agent_instance.snapshot()
                 calls.clear()
 
                 with self.assertRaises(agent.ContextSummaryError):
-                    agent_instance.respond("Вопрос 6")
+                    agent_instance.respond("Вопрос 11")
 
                 after = agent_instance.snapshot()
                 for field in ("messages", "context", "metadata", "metrics"):
@@ -355,9 +300,9 @@ class AgentTests(unittest.TestCase):
             calls.append({"payload": payload, "options": options})
             return "Обычный ответ"
 
-        settings = default_settings()
+        settings = {**default_settings(), "contextStrategy": "summary"}
         agent_instance = Agent("agent-1", "Первый", settings, ask_model)
-        for number in range(1, 6):
+        for number in range(1, 11):
             agent_instance.respond(f"Вопрос {number}")
         before = agent_instance.snapshot()
         calls.clear()
@@ -368,7 +313,7 @@ class AgentTests(unittest.TestCase):
         agent_instance.update_settings(settings)
 
         with self.assertRaises(agent.ContextSummaryError):
-            agent_instance.respond("Вопрос 6")
+            agent_instance.respond("Вопрос 11")
 
         after = agent_instance.snapshot()
         for field in ("messages", "context", "metadata", "metrics"):
@@ -382,24 +327,24 @@ class AgentTests(unittest.TestCase):
             calls.append({"payload": payload, "options": options})
             if payload["temperature"] == 0:
                 return {"content": "Новая сводка", "usage": {"prompt_tokens": 13, "completion_tokens": 4, "total_tokens": 17}}
-            if len(calls) > 6:
+            if len(calls) > 11:
                 raise RuntimeError("primary network failure")
             return "Обычный ответ"
 
-        agent_instance = Agent("agent-1", "Первый", default_settings(), ask_model)
-        for number in range(1, 6):
+        agent_instance = Agent("agent-1", "Первый", {**default_settings(), "contextStrategy": "summary"}, ask_model)
+        for number in range(1, 11):
             agent_instance.respond(f"Вопрос {number}")
         before = agent_instance.snapshot()
 
         with self.assertRaisesRegex(RuntimeError, "primary network failure"):
-            agent_instance.respond("Вопрос 6")
+            agent_instance.respond("Вопрос 11")
 
         after = agent_instance.snapshot()
-        self.assertEqual(after["messages"], [*before["messages"], {"role": "user", "content": "Вопрос 6"}])
-        self.assertEqual(after["context"], before["context"])
+        self.assertEqual(after["messages"], [*before["messages"], {"role": "user", "content": "Вопрос 11"}])
+        self.assertEqual(after["context"]["summary"], before["context"]["summary"])
         self.assertEqual(after["metrics"], before["metrics"])
         self.assertEqual(after["metadata"]["status"], {"kind": "error", "label": "Ошибка API"})
-        self.assertEqual(after["metadata"]["payload"]["messages"][0]["content"], default_settings()["systemPrompt"])
+        self.assertEqual(after["metadata"]["payload"]["messages"][0]["content"], {**default_settings(), "contextStrategy": "summary"}["systemPrompt"])
         self.assertNotIn(agent.SUMMARY_SYSTEM_PROMPT, str(after["metadata"]))
 
     def test_compression_records_net_token_and_cost_savings(self):
@@ -411,11 +356,11 @@ class AgentTests(unittest.TestCase):
                 return {"content": "Краткая сводка", "usage": {"prompt_tokens": 13, "completion_tokens": 4, "total_tokens": 17}}
             return {"content": "Обычный ответ", "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110}}
 
-        agent_instance = Agent("agent-1", "Первый", default_settings(), ask_model)
-        for number in range(1, 6):
+        agent_instance = Agent("agent-1", "Первый", {**default_settings(), "contextStrategy": "summary"}, ask_model)
+        for number in range(1, 11):
             agent_instance.respond(f"Вопрос {number}")
 
-        result = agent_instance.respond("Вопрос 6")
+        result = agent_instance.respond("Вопрос 11")
 
         summary_usage = result["context"]["summaryUsage"]
         self.assertEqual(summary_usage, {
@@ -425,15 +370,15 @@ class AgentTests(unittest.TestCase):
         })
         record = result["metrics"]["calls"][-1]
         self.assertEqual(record["fullPayloadEstimatedTokens"], agent.estimate_payload_tokens({
-            "model": default_settings()["model"],
-            "messages": [{"role": "system", "content": default_settings()["systemPrompt"]}, *result["messages"][:10], {"role": "user", "content": "Вопрос 6"}],
+            "model": {**default_settings(), "contextStrategy": "summary"}["model"],
+            "messages": [{"role": "system", "content": {**default_settings(), "contextStrategy": "summary"}["systemPrompt"]}, *result["messages"][:20], {"role": "user", "content": "Вопрос 11"}],
             "temperature": 1,
         }))
         self.assertEqual(record["compressedPayloadEstimatedTokens"], record["payloadEstimatedTokens"])
         self.assertEqual(record["compressionGrossSavedTokens"], record["fullPayloadEstimatedTokens"] - record["compressedPayloadEstimatedTokens"])
         self.assertEqual(record["summaryCallTokens"], 17)
         self.assertEqual(record["compressionNetSavedTokens"], record["compressionGrossSavedTokens"] - 17)
-        self.assertEqual(record["grossInputSavingsUsd"], record["compressionGrossSavedTokens"] * agent.MODEL_PRICING[default_settings()["model"]]["input"] / 1_000_000)
+        self.assertEqual(record["grossInputSavingsUsd"], record["compressionGrossSavedTokens"] * agent.MODEL_PRICING[{**default_settings(), "contextStrategy": "summary"}["model"]]["input"] / 1_000_000)
         self.assertEqual(record["summaryCostUsd"], 0.0000055)
         self.assertEqual(record["netSavingsUsd"], record["grossInputSavingsUsd"] - record["summaryCostUsd"])
         self.assertNotIn(agent.SUMMARY_SYSTEM_PROMPT, str(result["metadata"]))
@@ -452,12 +397,12 @@ class AgentTests(unittest.TestCase):
                 return {"content": "Краткая сводка", "usage": {"prompt_tokens": 13, "completion_tokens": 4, "total_tokens": 17}}
             return {"content": "Обычный ответ", "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110}}
 
-        settings = default_settings()
+        settings = {**default_settings(), "contextStrategy": "summary"}
         settings["model"] = "glm-4.7-flash"
         agent_instance = Agent("agent-1", "Первый", settings, ask_model)
-        for number in range(1, 6):
+        for number in range(1, 11):
             agent_instance.respond(f"Вопрос {number}")
-        result = agent_instance.respond("Вопрос 6")
+        result = agent_instance.respond("Вопрос 11")
 
         record = result["metrics"]["calls"][-1]
         self.assertEqual(record["grossInputSavingsUsd"], 0)
@@ -537,7 +482,7 @@ class AgentRegistryTests(unittest.TestCase):
             "settings": default_settings(),
             "metadata": None,
             "metrics": agent.default_metrics(),
-            "context": agent.default_context(),
+            "context": Agent("agent-1", "Агент 1", default_settings(), lambda p: "").snapshot()["context"],
         }])
 
     def test_registry_ignores_non_object_saved_state_after_metric_migration(self):
@@ -606,7 +551,8 @@ class AgentRegistryTests(unittest.TestCase):
 
                 self.assertEqual(restored["messages"], [{"role": "user", "content": "Старое сообщение"}])
                 self.assertIs(restored["settings"]["contextCompressionEnabled"], True)
-                self.assertEqual(restored["context"], expected_context)
+                self.assertEqual({key: restored["context"][key] for key in expected_context}, expected_context)
+                self.assertEqual(restored["settings"]["contextStrategy"], "summary")
                 self.assertEqual(restored["metrics"]["totals"], {
                     **(legacy_totals if version == 2 else agent.default_metrics()["totals"]),
                     **compression_totals,
