@@ -363,6 +363,71 @@ class AgentRegistryTests(unittest.TestCase):
                         self.assertGreaterEqual(after_response[key], value)
                 self.assertTrue(all(key in after_response for key in compression_totals))
 
+    def test_registry_ignores_summary_usage_with_non_scalar_type_fields(self):
+        valid_summary_last = {
+            "promptTokens": 1,
+            "completionTokens": 1,
+            "totalTokens": 2,
+            "source": "actual",
+            "cost": None,
+        }
+        invalid_values = (
+            ("source", ["actual"]),
+            ("cost.kind", ["paid"]),
+            ("cost.source", ["actual"]),
+        )
+
+        for field, value in invalid_values:
+            with self.subTest(field=field):
+                summary_last = json.loads(json.dumps(valid_summary_last))
+                if field == "source":
+                    summary_last["source"] = value
+                else:
+                    summary_last["cost"] = {"kind": "paid", "usd": 0, "source": "actual"}
+                    summary_last["cost"][field.split(".")[1]] = value
+                snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+                snapshot["messages"] = [{"role": "user", "content": "Старое сообщение"}]
+                snapshot["context"] = {
+                    "summary": "Краткая сводка.",
+                    "compressedMessageCount": 1,
+                    "summaryUsage": {**agent.default_context()["summaryUsage"], "last": summary_last},
+                }
+                self.state_path.write_text(json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]}), encoding="utf-8")
+
+                registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+                self.assertEqual(registry.agents()[0]["name"], "Агент 1")
+
+    def test_registry_ignores_context_with_inconsistent_summary_and_count(self):
+        for summary, count in ((None, 1), ("Краткая сводка.", 0)):
+            with self.subTest(summary=summary, count=count):
+                snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+                snapshot["messages"] = [{"role": "user", "content": "Старое сообщение"}]
+                snapshot["context"] = {
+                    "summary": summary,
+                    "compressedMessageCount": count,
+                    "summaryUsage": agent.default_context()["summaryUsage"],
+                }
+                self.state_path.write_text(json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]}), encoding="utf-8")
+
+                registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+                self.assertEqual(registry.agents()[0]["name"], "Агент 1")
+
+    def test_registry_ignores_context_count_larger_than_saved_history(self):
+        snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+        snapshot["messages"] = [{"role": "user", "content": "Старое сообщение"}]
+        snapshot["context"] = {
+            "summary": "Краткая сводка.",
+            "compressedMessageCount": 2,
+            "summaryUsage": agent.default_context()["summaryUsage"],
+        }
+        self.state_path.write_text(json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]}), encoding="utf-8")
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents()[0]["name"], "Агент 1")
+
     def test_create_many_adds_requested_agents_with_default_configuration(self):
         registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
 

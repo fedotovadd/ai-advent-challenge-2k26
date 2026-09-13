@@ -357,14 +357,17 @@ def _valid_summary_last(last):
         _valid_nonnegative_int(last["promptTokens"])
         and _valid_nonnegative_int(last["completionTokens"])
         and _valid_nonnegative_int(last["totalTokens"])
+        and isinstance(last["source"], str)
         and last["source"] in {"actual", "estimated"}
         and (
             cost is None
             or (
                 isinstance(cost, dict)
                 and set(cost) == {"kind", "usd", "source"}
+                and isinstance(cost["kind"], str)
                 and cost["kind"] in {"free", "paid"}
                 and _valid_nonnegative_number(cost["usd"])
+                and isinstance(cost["source"], str)
                 and cost["source"] in {"actual", "estimated"}
             )
         )
@@ -379,6 +382,7 @@ def _valid_context(context):
     return (
         (summary is None or (isinstance(summary, str) and bool(summary.strip())))
         and _valid_nonnegative_int(context["compressedMessageCount"])
+        and ((summary is None) == (context["compressedMessageCount"] == 0))
         and isinstance(usage, dict)
         and set(usage) == {"calls", "promptTokens", "completionTokens", "totalTokens", "usd", "last"}
         and _valid_nonnegative_int(usage["calls"])
@@ -437,6 +441,7 @@ def _valid_agent_snapshot(snapshot):
         and _valid_metadata(snapshot["metadata"])
         and isinstance(snapshot["metrics"], dict)
         and _valid_context(snapshot["context"])
+        and snapshot["context"]["compressedMessageCount"] <= len(snapshot["messages"])
     )
 
 
