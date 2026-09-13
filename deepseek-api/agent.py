@@ -312,9 +312,14 @@ def _agent_number(agent_id):
     if not isinstance(agent_id, str) or not agent_id.startswith("agent-"):
         return None
     number = agent_id[6:]
-    if not number.isascii() or not number.isdigit() or number.startswith("0"):
+    if (
+        not number.isascii()
+        or not number.isdigit()
+        or number.startswith("0")
+        or len(number) > MAX_PERSISTED_INTEGER_DECIMAL_DIGITS
+    ):
         return None
-    return int(number) if int(number) > 0 else None
+    return int(number)
 
 
 def _valid_settings(settings):
@@ -344,15 +349,19 @@ def _valid_settings(settings):
 
 
 MAX_PERSISTED_INTEGER_BITS = 1024
+MAX_PERSISTED_INTEGER_DECIMAL_DIGITS = 309
 
 
-def _valid_nonnegative_int(value):
+def _valid_int(value):
     return (
         isinstance(value, int)
         and not isinstance(value, bool)
-        and value >= 0
         and value.bit_length() <= MAX_PERSISTED_INTEGER_BITS
     )
+
+
+def _valid_nonnegative_int(value):
+    return _valid_int(value) and value >= 0
 
 
 def _valid_nonnegative_number(value):
@@ -361,7 +370,7 @@ def _valid_nonnegative_number(value):
 
 def _valid_number(value):
     if isinstance(value, int) and not isinstance(value, bool):
-        return value.bit_length() <= MAX_PERSISTED_INTEGER_BITS
+        return _valid_int(value)
     return isinstance(value, float) and math.isfinite(value)
 
 
@@ -484,8 +493,7 @@ def _valid_metrics(metrics):
         and all(_valid_nonnegative_int(totals[field]) for field in (
             "promptTokens", "completionTokens", "totalTokens", "compressionGrossSavedTokens", "summaryCallTokens",
         ))
-        and isinstance(totals["compressionNetSavedTokens"], int)
-        and not isinstance(totals["compressionNetSavedTokens"], bool)
+        and _valid_int(totals["compressionNetSavedTokens"])
         and _valid_nonnegative_number(totals["usd"])
         and _valid_nonnegative_number(totals["grossInputSavingsUsd"])
         and _valid_nonnegative_number(totals["summaryCostUsd"])
