@@ -1,0 +1,64 @@
+{
+  "model": "deepseek-v4-flash",
+  "temperature": 0,
+  "maxTokens": null,
+  "windowSize": 6,
+  "startedAt": "2026-09-13T22:48:31+0300",
+  "runs": [
+    {
+      "trial": 1,
+      "strategy": "sliding_window",
+      "agentId": "agent-13",
+      "file": "run-1-sliding_window.json"
+    },
+    {
+      "trial": 1,
+      "strategy": "facts",
+      "agentId": "agent-14",
+      "file": "run-1-facts.json"
+    },
+    {
+      "trial": 1,
+      "strategy": "branching",
+      "agentId": "agent-15",
+      "file": "run-1-branching.json"
+    },
+    {
+      "trial": 2,
+      "strategy": "sliding_window",
+      "agentId": "agent-17",
+      "file": "run-2-sliding_window.json"
+    },
+    {
+      "trial": 2,
+      "strategy": "facts",
+      "agentId": "agent-21",
+      "file": "run-2-facts.json"
+    },
+    {
+      "trial": 2,
+      "strategy": "branching",
+      "agentId": "agent-22",
+      "file": "run-2-branching.json"
+    },
+    {
+      "trial": 3,
+      "strategy": "sliding_window",
+      "agentId": "agent-23",
+      "file": "run-3-sliding_window.json"
+    },
+    {
+      "trial": 3,
+      "strategy": "facts",
+      "agentId": "agent-24",
+      "file": "run-3-facts.json"
+    },
+    {
+      "trial": 3,
+      "strategy": "branching",
+      "agentId": "agent-25",
+      "file": "run-3-branching.json"
+    }
+  ],
+  "completedAt": "2026-09-13T22:59:47+0300"
+}

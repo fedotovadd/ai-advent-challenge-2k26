@@ -1,0 +1,1433 @@
+[
+  {
+    "trial": 1,
+    "strategy": "sliding_window",
+    "controls": {
+      "9": {
+        "score": 2,
+        "correctFields": [
+          "budget_rub",
+          "launch_date"
+        ],
+        "incorrectFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "notifications",
+          "hosting"
+        ],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": null,
+          "purpose": null,
+          "audience": null,
+          "platform": null,
+          "language": null,
+          "payments": null,
+          "registration": null,
+          "phone": null,
+          "budget_rub": 180000,
+          "launch_date": null,
+          "notifications": null,
+          "hosting": null
+        }
+      },
+      "12": {
+        "score": 2,
+        "correctFields": [
+          "budget_rub",
+          "launch_date"
+        ],
+        "incorrectFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "notifications",
+          "hosting"
+        ],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": null,
+          "purpose": null,
+          "audience": null,
+          "platform": null,
+          "language": null,
+          "payments": null,
+          "registration": null,
+          "phone": null,
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": null,
+          "hosting": null
+        }
+      },
+      "14": {
+        "score": 3,
+        "correctFields": [
+          "budget_rub",
+          "launch_date",
+          "language"
+        ],
+        "incorrectFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "payments",
+          "registration",
+          "phone",
+          "notifications",
+          "hosting"
+        ],
+        "markdownFence": false,
+        "nonStringFields": [
+          "language"
+        ],
+        "answer": {
+          "project": null,
+          "purpose": null,
+          "audience": null,
+          "platform": null,
+          "language": [
+            "русский",
+            "английский"
+          ],
+          "payments": null,
+          "registration": null,
+          "phone": null,
+          "budget_rub": 160000,
+          "launch_date": null,
+          "notifications": null,
+          "hosting": null
+        }
+      },
+      "15": {
+        "score": 2,
+        "correctFields": [
+          "budget_rub",
+          "launch_date"
+        ],
+        "incorrectFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "notifications",
+          "hosting"
+        ],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": null,
+          "purpose": null,
+          "audience": null,
+          "platform": null,
+          "language": null,
+          "payments": null,
+          "registration": null,
+          "phone": null,
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": null,
+          "hosting": null
+        }
+      }
+    },
+    "planScore": 4,
+    "degradedFields": 0,
+    "crossVariantTransfers": 0,
+    "tokens": {
+      "mainInput": 6574,
+      "mainOutput": 7028,
+      "main": 13602,
+      "memoryInput": 0,
+      "memoryOutput": 0,
+      "memory": 0,
+      "all": 13602,
+      "common": 6329,
+      "variants": 7273
+    }
+  },
+  {
+    "trial": 1,
+    "strategy": "facts",
+    "controls": {
+      "9": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "жители одного района",
+          "platform": "только веб-сайт, удобный на телефоне",
+          "language": "только русский",
+          "payments": "бесплатное, онлайн-оплаты нет",
+          "registration": "достаточно email",
+          "phone": "не запрашивается и не хранится",
+          "budget_rub": 180000,
+          "launch_date": null,
+          "notifications": "только по email, без SMS",
+          "hosting": "сервер размещается в инфраструктуре библиотеки"
+        }
+      },
+      "12": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "жители одного района",
+          "platform": "только веб-сайт, удобный на телефоне",
+          "language": "только русский",
+          "payments": "бесплатное, онлайн-оплаты нет",
+          "registration": "достаточно email",
+          "phone": "не запрашивается и не хранится",
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": "только по email, без SMS",
+          "hosting": "сервер размещается в инфраструктуре библиотеки"
+        }
+      },
+      "14": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "жители одного района",
+          "platform": "только веб-сайт, удобный на телефоне",
+          "language": "русский и английский",
+          "payments": "бесплатное, онлайн-оплаты нет",
+          "registration": "достаточно email",
+          "phone": "не запрашивается и не хранится",
+          "budget_rub": 160000,
+          "launch_date": null,
+          "notifications": "только по email, без SMS",
+          "hosting": "сервер размещается в инфраструктуре библиотеки"
+        }
+      },
+      "15": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "жители одного района",
+          "platform": "только веб-сайт, удобный на телефоне",
+          "language": "только русский",
+          "payments": "бесплатное, онлайн-оплаты нет",
+          "registration": "достаточно email",
+          "phone": "не запрашивается и не хранится",
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": "только по email, без SMS",
+          "hosting": "сервер размещается в инфраструктуре библиотеки"
+        }
+      }
+    },
+    "planScore": 4,
+    "degradedFields": 0,
+    "crossVariantTransfers": 0,
+    "tokens": {
+      "mainInput": 13727,
+      "mainOutput": 6854,
+      "main": 20581,
+      "memoryInput": 14714,
+      "memoryOutput": 1623,
+      "memory": 16337,
+      "all": 36918,
+      "common": 19542,
+      "variants": 17376
+    }
+  },
+  {
+    "trial": 1,
+    "strategy": "branching",
+    "controls": {
+      "9": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка — сервис бронирования бумажных книг в районной библиотеке",
+          "purpose": "бронирование бумажных книг",
+          "audience": "жители одного района",
+          "platform": "адаптивный веб-сайт",
+          "language": "русский",
+          "payments": "бронирование бесплатное, онлайн-оплаты нет",
+          "registration": "по email",
+          "phone": "не запрашиваем и не храним",
+          "budget_rub": 180000,
+          "launch_date": null,
+          "notifications": "только email",
+          "hosting": "инфраструктура библиотеки"
+        }
+      },
+      "12": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка — сервис бронирования бумажных книг в районной библиотеке",
+          "purpose": "бронирование бумажных книг",
+          "audience": "жители одного района",
+          "platform": "адаптивный веб-сайт",
+          "language": "русский",
+          "payments": "бронирование бесплатное, онлайн-оплаты нет",
+          "registration": "по email",
+          "phone": "не запрашиваем и не храним",
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": "только email",
+          "hosting": "инфраструктура библиотеки"
+        }
+      },
+      "14": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка — сервис бронирования бумажных книг в районной библиотеке",
+          "purpose": "бронирование бумажных книг",
+          "audience": "жители одного района",
+          "platform": "адаптивный веб-сайт",
+          "language": "русский и английский",
+          "payments": "бронирование бесплатное, онлайн-оплаты нет",
+          "registration": "по email",
+          "phone": "не запрашиваем и не храним",
+          "budget_rub": 160000,
+          "launch_date": null,
+          "notifications": "только email",
+          "hosting": "инфраструктура библиотеки"
+        }
+      },
+      "15": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка — сервис бронирования бумажных книг в районной библиотеке",
+          "purpose": "бронирование бумажных книг",
+          "audience": "жители одного района",
+          "platform": "адаптивный веб-сайт",
+          "language": "русский",
+          "payments": "бронирование бесплатное, онлайн-оплаты нет",
+          "registration": "по email",
+          "phone": "не запрашиваем и не храним",
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": "только email",
+          "hosting": "инфраструктура библиотеки"
+        }
+      }
+    },
+    "planScore": 5,
+    "degradedFields": 0,
+    "crossVariantTransfers": 0,
+    "tokens": {
+      "mainInput": 12122,
+      "mainOutput": 4048,
+      "main": 16170,
+      "memoryInput": 0,
+      "memoryOutput": 0,
+      "memory": 0,
+      "all": 16170,
+      "common": 7945,
+      "variants": 8225
+    }
+  },
+  {
+    "trial": 2,
+    "strategy": "sliding_window",
+    "controls": {
+      "9": {
+        "score": 2,
+        "correctFields": [
+          "budget_rub",
+          "launch_date"
+        ],
+        "incorrectFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "notifications",
+          "hosting"
+        ],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": null,
+          "purpose": null,
+          "audience": null,
+          "platform": null,
+          "language": null,
+          "payments": null,
+          "registration": null,
+          "phone": null,
+          "budget_rub": 180000,
+          "launch_date": null,
+          "notifications": null,
+          "hosting": null
+        }
+      },
+      "12": {
+        "score": 2,
+        "correctFields": [
+          "budget_rub",
+          "launch_date"
+        ],
+        "incorrectFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "notifications",
+          "hosting"
+        ],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": null,
+          "purpose": null,
+          "audience": null,
+          "platform": null,
+          "language": null,
+          "payments": null,
+          "registration": null,
+          "phone": null,
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": null,
+          "hosting": null
+        }
+      },
+      "14": {
+        "score": 3,
+        "correctFields": [
+          "budget_rub",
+          "launch_date",
+          "language"
+        ],
+        "incorrectFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "payments",
+          "registration",
+          "phone",
+          "notifications",
+          "hosting"
+        ],
+        "markdownFence": false,
+        "nonStringFields": [
+          "language"
+        ],
+        "answer": {
+          "project": null,
+          "purpose": null,
+          "audience": null,
+          "platform": null,
+          "language": [
+            "ru",
+            "en"
+          ],
+          "payments": null,
+          "registration": null,
+          "phone": null,
+          "budget_rub": 160000,
+          "launch_date": null,
+          "notifications": null,
+          "hosting": null
+        }
+      },
+      "15": {
+        "score": 2,
+        "correctFields": [
+          "budget_rub",
+          "launch_date"
+        ],
+        "incorrectFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "notifications",
+          "hosting"
+        ],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": null,
+          "purpose": null,
+          "audience": null,
+          "platform": null,
+          "language": null,
+          "payments": null,
+          "registration": null,
+          "phone": null,
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": null,
+          "hosting": null
+        }
+      }
+    },
+    "planScore": 4,
+    "degradedFields": 0,
+    "crossVariantTransfers": 0,
+    "tokens": {
+      "mainInput": 6385,
+      "mainOutput": 5472,
+      "main": 11857,
+      "memoryInput": 0,
+      "memoryOutput": 0,
+      "memory": 0,
+      "all": 11857,
+      "common": 6448,
+      "variants": 5409
+    }
+  },
+  {
+    "trial": 2,
+    "strategy": "facts",
+    "controls": {
+      "9": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "Сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "Жители одного района",
+          "platform": "Только веб-сайт, удобный на телефоне",
+          "language": "Только русский",
+          "payments": "Бронирование бесплатное, онлайн-оплаты нет",
+          "registration": "Достаточно email",
+          "phone": "Не запрашиваем и не храним",
+          "budget_rub": 180000,
+          "launch_date": null,
+          "notifications": "Только email, без SMS",
+          "hosting": "Сервер в инфраструктуре библиотеки"
+        }
+      },
+      "12": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "Сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "Жители одного района",
+          "platform": "Только веб-сайт, удобный на телефоне",
+          "language": "Только русский",
+          "payments": "Бронирование бесплатное, онлайн-оплаты нет",
+          "registration": "Достаточно email",
+          "phone": "Не запрашиваем и не храним",
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": "Только email, без SMS",
+          "hosting": "Сервер в инфраструктуре библиотеки"
+        }
+      },
+      "14": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "Сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "Жители одного района",
+          "platform": "Только веб-сайт, удобный на телефоне",
+          "language": "Русский и английский",
+          "payments": "Бронирование бесплатное, онлайн-оплаты нет",
+          "registration": "Достаточно email",
+          "phone": "Не запрашиваем и не храним",
+          "budget_rub": 160000,
+          "launch_date": null,
+          "notifications": "Только email, без SMS",
+          "hosting": "Сервер в инфраструктуре библиотеки"
+        }
+      },
+      "15": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "Сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "Жители одного района",
+          "platform": "Только веб-сайт, удобный на телефоне",
+          "language": "Только русский",
+          "payments": "Бронирование бесплатное, онлайн-оплаты нет",
+          "registration": "Достаточно email",
+          "phone": "Не запрашиваем и не храним",
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": "Только email, без SMS",
+          "hosting": "Сервер в инфраструктуре библиотеки"
+        }
+      }
+    },
+    "planScore": 4,
+    "degradedFields": 0,
+    "crossVariantTransfers": 0,
+    "tokens": {
+      "mainInput": 13389,
+      "mainOutput": 2367,
+      "main": 15756,
+      "memoryInput": 14392,
+      "memoryOutput": 1276,
+      "memory": 15668,
+      "all": 31424,
+      "common": 16080,
+      "variants": 15344
+    }
+  },
+  {
+    "trial": 2,
+    "strategy": "branching",
+    "controls": {
+      "9": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "жители одного района",
+          "platform": "адаптивный веб-сайт; мобильного приложения нет",
+          "language": "русский",
+          "payments": "бронирование бесплатное; онлайн-оплаты нет",
+          "registration": "по email",
+          "phone": "не запрашиваем и не храним",
+          "budget_rub": 180000,
+          "launch_date": null,
+          "notifications": "только email; SMS нет",
+          "hosting": "инфраструктура библиотеки"
+        }
+      },
+      "12": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "жители одного района",
+          "platform": "адаптивный веб-сайт; мобильного приложения нет",
+          "language": "русский",
+          "payments": "бронирование бесплатное; онлайн-оплаты нет",
+          "registration": "по email",
+          "phone": "не запрашиваем и не храним",
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": "только email; SMS нет",
+          "hosting": "инфраструктура библиотеки"
+        }
+      },
+      "14": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "жители одного района",
+          "platform": "адаптивный веб-сайт; мобильного приложения нет",
+          "language": "русский и английский",
+          "payments": "бронирование бесплатное; онлайн-оплаты нет",
+          "registration": "по email",
+          "phone": "не запрашиваем и не храним",
+          "budget_rub": 160000,
+          "launch_date": null,
+          "notifications": "только email; SMS нет",
+          "hosting": "инфраструктура библиотеки"
+        }
+      },
+      "15": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "жители одного района",
+          "platform": "адаптивный веб-сайт; мобильного приложения нет",
+          "language": "русский",
+          "payments": "бронирование бесплатное; онлайн-оплаты нет",
+          "registration": "по email",
+          "phone": "не запрашиваем и не храним",
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": "только email; SMS нет",
+          "hosting": "инфраструктура библиотеки"
+        }
+      }
+    },
+    "planScore": 4,
+    "degradedFields": 0,
+    "crossVariantTransfers": 0,
+    "tokens": {
+      "mainInput": 12217,
+      "mainOutput": 3906,
+      "main": 16123,
+      "memoryInput": 0,
+      "memoryOutput": 0,
+      "memory": 0,
+      "all": 16123,
+      "common": 8289,
+      "variants": 7834
+    }
+  },
+  {
+    "trial": 3,
+    "strategy": "sliding_window",
+    "controls": {
+      "9": {
+        "score": 2,
+        "correctFields": [
+          "budget_rub",
+          "launch_date"
+        ],
+        "incorrectFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "notifications",
+          "hosting"
+        ],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": null,
+          "purpose": null,
+          "audience": "пользователи и сотрудники библиотеки",
+          "platform": null,
+          "language": null,
+          "payments": null,
+          "registration": null,
+          "phone": null,
+          "budget_rub": 180000,
+          "launch_date": null,
+          "notifications": null,
+          "hosting": null
+        }
+      },
+      "12": {
+        "score": 2,
+        "correctFields": [
+          "budget_rub",
+          "launch_date"
+        ],
+        "incorrectFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "notifications",
+          "hosting"
+        ],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": null,
+          "purpose": null,
+          "audience": "пользователи и сотрудники библиотеки",
+          "platform": null,
+          "language": null,
+          "payments": null,
+          "registration": null,
+          "phone": null,
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": null,
+          "hosting": null
+        }
+      },
+      "14": {
+        "score": 3,
+        "correctFields": [
+          "budget_rub",
+          "launch_date",
+          "language"
+        ],
+        "incorrectFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "payments",
+          "registration",
+          "phone",
+          "notifications",
+          "hosting"
+        ],
+        "markdownFence": false,
+        "nonStringFields": [
+          "language"
+        ],
+        "answer": {
+          "project": null,
+          "purpose": null,
+          "audience": "пользователи и сотрудники библиотеки",
+          "platform": null,
+          "language": [
+            "русский",
+            "английский"
+          ],
+          "payments": null,
+          "registration": null,
+          "phone": null,
+          "budget_rub": 160000,
+          "launch_date": null,
+          "notifications": null,
+          "hosting": null
+        }
+      },
+      "15": {
+        "score": 2,
+        "correctFields": [
+          "budget_rub",
+          "launch_date"
+        ],
+        "incorrectFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "notifications",
+          "hosting"
+        ],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": null,
+          "purpose": null,
+          "audience": "пользователи и сотрудники библиотеки",
+          "platform": null,
+          "language": null,
+          "payments": null,
+          "registration": null,
+          "phone": null,
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": null,
+          "hosting": null
+        }
+      }
+    },
+    "planScore": 4,
+    "degradedFields": 0,
+    "crossVariantTransfers": 0,
+    "tokens": {
+      "mainInput": 6568,
+      "mainOutput": 7269,
+      "main": 13837,
+      "memoryInput": 0,
+      "memoryOutput": 0,
+      "memory": 0,
+      "all": 13837,
+      "common": 6606,
+      "variants": 7231
+    }
+  },
+  {
+    "trial": 3,
+    "strategy": "facts",
+    "controls": {
+      "9": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "жители одного района",
+          "platform": "только веб-сайт, удобный на телефоне",
+          "language": "только русский",
+          "payments": "бесплатно, онлайн-оплаты нет",
+          "registration": "достаточно email",
+          "phone": "не запрашивается и не хранится",
+          "budget_rub": 180000,
+          "launch_date": null,
+          "notifications": "только email, без SMS",
+          "hosting": "сервер в инфраструктуре библиотеки"
+        }
+      },
+      "12": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "жители одного района",
+          "platform": "только веб-сайт, удобный на телефоне",
+          "language": "только русский",
+          "payments": "бесплатное, онлайн-оплаты нет",
+          "registration": "достаточно email",
+          "phone": "не запрашивается и не хранится",
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": "только по email, без SMS",
+          "hosting": "сервер размещается в инфраструктуре библиотеки"
+        }
+      },
+      "14": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "жители одного района",
+          "platform": "только веб-сайт, удобный на телефоне",
+          "language": "русский и английский",
+          "payments": "бесплатное, онлайн-оплаты нет",
+          "registration": "достаточно email",
+          "phone": "не запрашивается и не хранится",
+          "budget_rub": 160000,
+          "launch_date": null,
+          "notifications": "только по email, без SMS",
+          "hosting": "сервер размещается в инфраструктуре библиотеки"
+        }
+      },
+      "15": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": true,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "жители одного района",
+          "platform": "только веб-сайт, удобный на телефоне",
+          "language": "только русский",
+          "payments": "бесплатное, онлайн-оплаты нет",
+          "registration": "достаточно email",
+          "phone": "не запрашивается и не хранится",
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": "только по email, без SMS",
+          "hosting": "сервер размещается в инфраструктуре библиотеки"
+        }
+      }
+    },
+    "planScore": 4,
+    "degradedFields": 0,
+    "crossVariantTransfers": 0,
+    "tokens": {
+      "mainInput": 12901,
+      "mainOutput": 3428,
+      "main": 16329,
+      "memoryInput": 13948,
+      "memoryOutput": 1611,
+      "memory": 15559,
+      "all": 31888,
+      "common": 16780,
+      "variants": 15108
+    }
+  },
+  {
+    "trial": 3,
+    "strategy": "branching",
+    "controls": {
+      "9": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "Сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "Жители одного района",
+          "platform": "Веб-сайт, удобный на телефоне",
+          "language": "Русский",
+          "payments": "Бесплатно, онлайн-оплаты нет",
+          "registration": "Достаточно email",
+          "phone": "Не запрашиваем и не храним",
+          "budget_rub": 180000,
+          "launch_date": null,
+          "notifications": "Только email, без SMS",
+          "hosting": "Инфраструктура библиотеки"
+        }
+      },
+      "12": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "Сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "Жители одного района",
+          "platform": "Веб-сайт, удобный на телефоне",
+          "language": "Русский",
+          "payments": "Бесплатно, онлайн-оплаты нет",
+          "registration": "Достаточно email",
+          "phone": "Не запрашиваем и не храним",
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": "Только email, без SMS",
+          "hosting": "Инфраструктура библиотеки"
+        }
+      },
+      "14": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "Сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "Жители одного района",
+          "platform": "Веб-сайт, удобный на телефоне",
+          "language": "Русский и английский",
+          "payments": "Бесплатно, онлайн-оплаты нет",
+          "registration": "Достаточно email",
+          "phone": "Не запрашиваем и не храним",
+          "budget_rub": 160000,
+          "launch_date": null,
+          "notifications": "Только email, без SMS",
+          "hosting": "Инфраструктура библиотеки"
+        }
+      },
+      "15": {
+        "score": 12,
+        "correctFields": [
+          "project",
+          "purpose",
+          "audience",
+          "platform",
+          "language",
+          "payments",
+          "registration",
+          "phone",
+          "budget_rub",
+          "launch_date",
+          "notifications",
+          "hosting"
+        ],
+        "incorrectFields": [],
+        "markdownFence": false,
+        "nonStringFields": [],
+        "answer": {
+          "project": "Соседская полка",
+          "purpose": "Сервис бронирования бумажных книг в районной библиотеке",
+          "audience": "Жители одного района",
+          "platform": "Веб-сайт, удобный на телефоне",
+          "language": "Русский",
+          "payments": "Бесплатно, онлайн-оплаты нет",
+          "registration": "Достаточно email",
+          "phone": "Не запрашиваем и не храним",
+          "budget_rub": 240000,
+          "launch_date": "2027-02-01",
+          "notifications": "Только email, без SMS",
+          "hosting": "Инфраструктура библиотеки"
+        }
+      }
+    },
+    "planScore": 4,
+    "degradedFields": 0,
+    "crossVariantTransfers": 0,
+    "tokens": {
+      "mainInput": 12251,
+      "mainOutput": 5405,
+      "main": 17656,
+      "memoryInput": 0,
+      "memoryOutput": 0,
+      "memory": 0,
+      "all": 17656,
+      "common": 8895,
+      "variants": 8761
+    }
+  }
+]
