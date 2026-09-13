@@ -467,6 +467,19 @@ class AgentRegistryTests(unittest.TestCase):
             Agent("agent-1", "Агент 1", default_settings(), lambda payload, **options: "Ответ").snapshot(),
         ])
 
+    def test_registry_ignores_state_with_oversized_metric_integer(self):
+        snapshot = Agent("agent-1", "Сохранённый агент", default_settings(), lambda payload, **options: "Ответ").snapshot()
+        state = json.dumps({"version": 3, "nextId": 2, "agents": [snapshot]})
+        oversized_usd = "9" * 4_000
+        state = state.replace('"usd": 0, "compressionGrossSavedTokens"', f'"usd": {oversized_usd}, "compressionGrossSavedTokens"')
+        self.state_path.write_text(state, encoding="utf-8")
+
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(registry.agents(), [
+            Agent("agent-1", "Агент 1", default_settings(), lambda payload, **options: "Ответ").snapshot(),
+        ])
+
     def test_create_many_adds_requested_agents_with_default_configuration(self):
         registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
 

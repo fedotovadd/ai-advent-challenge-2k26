@@ -343,16 +343,26 @@ def _valid_settings(settings):
     )
 
 
+MAX_PERSISTED_INTEGER_BITS = 1024
+
+
 def _valid_nonnegative_int(value):
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value >= 0
+        and value.bit_length() <= MAX_PERSISTED_INTEGER_BITS
+    )
 
 
 def _valid_nonnegative_number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
+    return _valid_number(value) and value >= 0
 
 
 def _valid_number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value.bit_length() <= MAX_PERSISTED_INTEGER_BITS
+    return isinstance(value, float) and math.isfinite(value)
 
 
 def _valid_cost(cost):
