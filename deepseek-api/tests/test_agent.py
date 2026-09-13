@@ -218,6 +218,104 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(result["messages"], [{"role": "user", "content": "Привет"}])
         self.assertEqual(result["metadata"]["status"], {"kind": "error", "label": "Ошибка API"})
 
+    def test_compression_replaces_old_messages_with_summary(self):
+        calls = []
+
+        def ask_model(payload, **options):
+            calls.append({"payload": payload, "options": options})
+            return "Новая сводка" if payload["temperature"] == 0 else "Обычный ответ"
+
+        agent_instance = Agent("agent-1", "Первый", default_settings(), ask_model)
+        for number in range(1, 6):
+            agent_instance.respond(f"Вопрос {number}")
+        self.assertEqual(len(agent_instance.snapshot()["messages"]), 10)
+        calls.clear()
+
+        result = agent_instance.respond("Вопрос 6")
+
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0]["options"], {})
+        self.assertEqual(calls[0]["payload"]["model"], default_settings()["model"])
+        self.assertEqual(calls[0]["payload"]["temperature"], 0)
+        self.assertEqual(calls[0]["payload"]["max_tokens"], 512)
+        self.assertEqual(calls[0]["payload"]["messages"][-1]["role"], "user")
+        self.assertIn("USER: Вопрос 1\nASSISTANT: Обычный ответ", calls[0]["payload"]["messages"][-1]["content"])
+        self.assertEqual(calls[1]["payload"]["messages"], [
+            {"role": "system", "content": default_settings()["systemPrompt"]},
+            {"role": "system", "content": "Сжатый контекст предыдущего диалога:\nНовая сводка"},
+            *result["messages"][2:10],
+            {"role": "user", "content": "Вопрос 6"},
+        ])
+        self.assertEqual(len(result["messages"]), 12)
+        self.assertEqual(result["context"]["compressedMessageCount"], 2)
+        self.assertEqual(len(result["messages"][2:]), 10)
+
+    def test_compression_updates_only_newly_displaced_messages(self):
+        calls = []
+        answers = iter(["Ответ 1", "Ответ 2", "Ответ 3", "Ответ 4", "Ответ 5", "Сводка 1", "Ответ 6", "Сводка 2", "Ответ 7"])
+
+        def ask_model(payload, **options):
+            calls.append({"payload": payload, "options": options})
+            return next(answers)
+
+        agent_instance = Agent("agent-1", "Первый", default_settings(), ask_model)
+        for number in range(1, 7):
+            agent_instance.respond(f"Вопрос {number}")
+        calls.clear()
+
+        result = agent_instance.respond("Вопрос 7")
+
+        self.assertEqual(len(calls), 2)
+        summary_prompt = calls[0]["payload"]["messages"][-1]["content"]
+        self.assertIn("Сводка 1", summary_prompt)
+        self.assertIn("USER: Вопрос 2\nASSISTANT: Ответ 2", summary_prompt)
+        self.assertNotIn("Вопрос 1", summary_prompt)
+        self.assertEqual(calls[1]["payload"]["messages"], [
+            {"role": "system", "content": default_settings()["systemPrompt"]},
+            {"role": "system", "content": "Сжатый контекст предыдущего диалога:\nСводка 2"},
+            *result["messages"][4:12],
+            {"role": "user", "content": "Вопрос 7"},
+        ])
+        self.assertEqual(result["context"]["summary"], "Сводка 2")
+        self.assertEqual(result["context"]["compressedMessageCount"], 4)
+
+    def test_disabled_compression_sends_full_history_then_summarizes_backlog(self):
+        calls = []
+        answers = iter(["Ответ 1", "Ответ 2", "Ответ 3", "Ответ 4", "Ответ 5", "Ответ 6", "Сводка", "Ответ 7"])
+
+        def ask_model(payload, **options):
+            calls.append({"payload": payload, "options": options})
+            return next(answers)
+
+        settings = default_settings()
+        settings["contextCompressionEnabled"] = False
+        agent_instance = Agent("agent-1", "Первый", settings, ask_model)
+        for number in range(1, 7):
+            agent_instance.respond(f"Вопрос {number}")
+
+        self.assertEqual(len(calls), 6)
+        self.assertEqual(calls[-1]["payload"]["messages"], [
+            {"role": "system", "content": default_settings()["systemPrompt"]},
+            *agent_instance.snapshot()["messages"][:10],
+            {"role": "user", "content": "Вопрос 6"},
+        ])
+
+        enabled_settings = default_settings()
+        agent_instance.update_settings(enabled_settings)
+        calls.clear()
+        result = agent_instance.respond("Вопрос 7")
+
+        self.assertEqual(len(calls), 2)
+        self.assertIn("USER: Вопрос 1\nASSISTANT: Ответ 1", calls[0]["payload"]["messages"][-1]["content"])
+        self.assertIn("USER: Вопрос 2\nASSISTANT: Ответ 2", calls[0]["payload"]["messages"][-1]["content"])
+        self.assertEqual(calls[1]["payload"]["messages"], [
+            {"role": "system", "content": default_settings()["systemPrompt"]},
+            {"role": "system", "content": "Сжатый контекст предыдущего диалога:\nСводка"},
+            *result["messages"][4:12],
+            {"role": "user", "content": "Вопрос 7"},
+        ])
+        self.assertEqual(result["context"]["compressedMessageCount"], 4)
+
 
 class AgentRegistryTests(unittest.TestCase):
     def setUp(self):

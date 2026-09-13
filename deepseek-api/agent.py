@@ -28,6 +28,13 @@ SYSTEM_PROMPT = (
 )
 JSON_OUTPUT_INSTRUCTION = "Верни только валидный JSON без Markdown-разметки."
 DEFAULT_TEMPERATURE = 1
+RECENT_MESSAGES_LIMIT = 10
+SUMMARY_MAX_TOKENS = 512
+SUMMARY_SYSTEM_PROMPT = (
+    "Составь краткую сводку предыдущего диалога. Сохрани факты, решения, "
+    "ограничения, предпочтения и открытые вопросы; не пересказывай переписку дословно."
+)
+SUMMARY_CONTEXT_PREFIX = "Сжатый контекст предыдущего диалога:\n"
 DEFAULT_SETTINGS = {
     "model": MODEL,
     "systemPrompt": SYSTEM_PROMPT,
@@ -201,6 +208,48 @@ class Agent:
             self._settings = {**default_settings(), **copy.deepcopy(settings)}
             return self.snapshot()
 
+    def _summary_candidate(self):
+        target = max(0, len(self._messages) - (RECENT_MESSAGES_LIMIT - 2))
+        candidate = copy.deepcopy(self._context)
+        if target <= candidate["compressedMessageCount"]:
+            return candidate, target
+
+        new_messages = self._messages[candidate["compressedMessageCount"]:target]
+        labelled_messages = "\n".join(
+            f"{'USER' if message['role'] == 'user' else 'ASSISTANT'}: {message['content']}"
+            for message in new_messages
+        )
+        previous_summary = candidate["summary"]
+        summary_input = (
+            f"Предыдущая сводка:\n{previous_summary}\n\n" if previous_summary else ""
+        ) + f"Новые сообщения:\n{labelled_messages}"
+        summary_payload = {
+            "model": self._settings["model"],
+            "messages": [
+                {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+                {"role": "user", "content": summary_input},
+            ],
+            "temperature": 0,
+            "max_tokens": SUMMARY_MAX_TOKENS,
+        }
+        summary, _ = _response_content_and_usage(self._ask_model(summary_payload))
+        if not isinstance(summary, str) or not summary.strip():
+            raise ValueError("empty summary response")
+        candidate["summary"] = summary.strip()
+        candidate["compressedMessageCount"] = target
+        return candidate, target
+
+    def _context_messages(self, text, context, target):
+        summary = context["summary"]
+        messages = [{"role": "system", "content": self._settings["systemPrompt"]}]
+        if self._settings["format"] == "json":
+            messages[0]["content"] = f"{messages[0]['content']}\n\n{JSON_OUTPUT_INSTRUCTION}"
+        if summary:
+            messages.append({"role": "system", "content": f"{SUMMARY_CONTEXT_PREFIX}{summary}"})
+        messages.extend(self._messages[target:])
+        messages.append({"role": "user", "content": text})
+        return messages
+
     def respond(self, text, temperature=DEFAULT_TEMPERATURE):
         if not isinstance(text, str) or not text.strip():
             raise ValueError("Пустое сообщение.")
@@ -223,9 +272,15 @@ class Agent:
                 options["max_tokens"] = self._settings["maxTokens"]
             if self._settings["stop"]:
                 options["stop"] = self._settings["stop"]
+            if self._settings["contextCompressionEnabled"]:
+                candidate_context, target = self._summary_candidate()
+                messages = self._context_messages(text, candidate_context, target)
+            else:
+                candidate_context = self._context
+                messages = [{"role": "system", "content": system_prompt}, *self._messages, {"role": "user", "content": text}]
             payload = {
                 "model": self._settings["model"],
-                "messages": [{"role": "system", "content": system_prompt}, *self._messages, {"role": "user", "content": text}],
+                "messages": messages,
                 "temperature": temperature,
             }
             full_payload = {**payload, **options}
@@ -278,6 +333,8 @@ class Agent:
                 self._messages.append({"role": "user", "content": text})
             self._metadata = metadata
             self._messages.append({"role": "assistant", "content": answer})
+            if self._settings["contextCompressionEnabled"]:
+                self._context = candidate_context
             usage_details = metadata["usage"]
             totals = self._metrics["totals"]
             totals["promptTokens"] += usage_details["promptTokens"]
