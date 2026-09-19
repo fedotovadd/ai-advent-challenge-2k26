@@ -298,3 +298,60 @@ Expected: both commands exit 0 without output.
 git add deepseek-api/README.md docs/day-13/task-state-machine-results.md
 git commit -m "docs: describe task state machine workflow"
 ```
+
+### Task 5: Visible progress and autonomous step chain
+
+**Files:**
+- Modify: `deepseek-api/task_state.py`
+- Modify: `deepseek-api/agent.py`
+- Modify: `deepseek-api/web.py`
+- Modify: `deepseek-api/static/index.html`
+- Modify: `deepseek-api/tests/test_task_state.py`
+- Modify: `deepseek-api/tests/test_web.py`
+
+- [ ] **Step 1: Add failing state-rendering and one-step execution tests**
+
+Write focused tests that establish three contracts:
+
+1. Plan markdown is normalized to `- [x]` for `done` steps and `- [ ]` for current/future steps while retaining the original step text.
+2. A model answer ending in `[[TASK_STEP_DONE]]` returns an explicit `continueTask` signal whenever the new stage is `EXECUTION` or `VALIDATION`; it returns no signal for `DONE`, `PLANNING`, or paused state.
+3. `POST /api/agents/{id}/task/advance` invokes exactly one current task step without adding an artificial user message to the transcript. Its HTTP envelope is `{agent, continueTask}`; `continueTask` is not written into the persisted agent snapshot. The UI can therefore render each assistant answer and stage change before scheduling the next request. Assert the same envelope for `/execute` after it completes the first step.
+
+Also assert that the static page contains a task state card with an accessible title and the Russian labels `Этап`, `Шаг`, and `Ожидаемое действие`.
+
+- [ ] **Step 2: Run the new tests to verify RED**
+
+Run: `cd deepseek-api && python3 -m unittest tests.test_task_state tests.test_web -v`
+
+Expected: FAIL because completed steps have no checkbox rendering and the task-advance route and response signal do not yet exist.
+
+- [ ] **Step 3: Make task progress a pure, renderable contract**
+
+In `task_state.py`, add a helper that derives a Markdown checklist from the stored plan and ordered `done` prefix. Use it for both the on-disk plan and the task prompt, so the display cannot disagree with persisted state. Update plan parsing to accept generated checkbox lines as well as ordinary numbered model output, but persist only canonical step text in `taskState.plan`.
+
+Extend `apply_execution_markers` with a boolean continuation field. After a successful step marker, it is true only if the task is unpaused and has moved to the next execution step or validation. Preserve the existing stage-transition notice and never auto-continue when a marker is malformed or is not the last non-empty line.
+
+- [ ] **Step 4: Add a non-transcript task-step runner and HTTP route**
+
+In `Agent`, add a narrow method for model-driven task work that creates the same task-aware payload as `respond`, but does not append a synthetic user instruction to `_messages`. It appends only the visible assistant answer, applies the marker, saves the checklist, and returns its continuation signal. Reuse the existing locking, metadata, metrics, persistence and pause checks rather than duplicating provider-call logic.
+
+Expose it through `AgentRegistry` and `POST /api/agents/{agent_id}/task/advance`. Reject it with `400` unless there is an unpaused task in `EXECUTION` or `VALIDATION`; the route must never accept a user-provided prompt. The route returns the explicit HTTP envelope `{agent, continueTask}`. `/execute` still moves `PLANNING → EXECUTION` and invokes the first task-step runner once; its command response uses `{agent, command, continueTask}` so the browser can start the same automatic chain without adding transient data to `context` or to a saved snapshot.
+
+- [ ] **Step 5: Drive the continuation in the browser and show task state**
+
+In `static/index.html`, render a compact state card above the chat composer whenever `context.taskState` is non-null. It shows stage progress (`PLANNING 1/4` etc.), current task step, complete checklist, expected action, and a distinct status: `ожидает /execute` in planning with a plan, `выполняется` while an advance request is pending, `на паузе`, or `завершена`.
+
+After `/execute` receives the first answer, schedule the private task-advance route only when the HTTP envelope has `continueTask: true`. Do the same after every automatic response. Render and clear the normal “Думаю над ответом…” status around each request. Stop the chain immediately when the task is paused, planned again, done, an error occurs, the selected agent changes, or a newer user request begins. Include a bounded continuation guard of 25 requests to protect against a misbehaving model.
+
+- [ ] **Step 6: Run tests to verify GREEN**
+
+Run: `cd deepseek-api && python3 -m unittest tests.test_task_state tests.test_web -v`
+
+Expected: PASS. Then run `python3 -m unittest discover -s tests -v` from `deepseek-api` and `python3 -m py_compile agent.py web.py task_state.py`.
+
+- [ ] **Step 7: Commit the autonomous progress feature**
+
+```bash
+git add docs/superpowers/plans/2026-09-19-day-13-task-state-machine.md deepseek-api/task_state.py deepseek-api/agent.py deepseek-api/web.py deepseek-api/static/index.html deepseek-api/tests/test_task_state.py deepseek-api/tests/test_web.py
+git commit -m "feat: show and continue task progress"
+```

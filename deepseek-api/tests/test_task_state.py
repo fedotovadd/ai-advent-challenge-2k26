@@ -2,7 +2,7 @@ import unittest
 
 from task_state import (
     TaskStateError, apply_execution_markers, apply_task_command, default_task_state,
-    extract_task_plan, parse_task_command, task_prompt_block, task_status, valid_task_state,
+    extract_task_plan, parse_task_command, task_plan_markdown, task_prompt_block, task_status, valid_task_state,
 )
 
 
@@ -44,6 +44,20 @@ class TaskStateTests(unittest.TestCase):
         result = apply_execution_markers("Проверено\n[[TASK_TRANSITION:DONE]]", result["task"])
         self.assertEqual(result["task"]["stage"], "DONE")
         self.assertNotIn("[[", result["visible"])
+
+    def test_checklist_marks_completed_prefix_and_marker_requests_continuation(self):
+        task = default_task_state("task-1", "Лендинг")
+        task = extract_task_plan("[[TASK_PLAN]]\n1. Первый\n2. Второй\n[[/TASK_PLAN]]", task)[0]["task"]
+        task = apply_task_command(task, {"action": "execute"}, 2)[0]
+
+        result = apply_execution_markers("Первый готов\n[[TASK_STEP_DONE]]", task)
+
+        self.assertEqual(task_plan_markdown(result["task"]), "# План\n- [x] Первый\n- [ ] Второй")
+        self.assertTrue(result["continueTask"])
+        final = apply_execution_markers("Второй готов\n[[TASK_STEP_DONE]]", result["task"])
+        self.assertTrue(final["continueTask"])
+        done = apply_execution_markers("Проверено\n[[TASK_TRANSITION:DONE]]", final["task"])
+        self.assertFalse(done["continueTask"])
 
     def test_marker_not_on_last_line_does_not_change_state(self):
         task = default_task_state("task-1", "Лендинг")

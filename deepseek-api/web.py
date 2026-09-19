@@ -87,6 +87,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if len(parts) == 5 and parts[:3] == ["", "api", "agents"] and parts[4] == "messages":
             self._handle_message(parts[3])
             return
+        if len(parts) == 6 and parts[:3] == ["", "api", "agents"] and parts[4:] == ["task", "advance"]:
+            self._handle_task_advance(parts[3])
+            return
         self._send_json(404, {"error": "Маршрут не найден."})
 
     def do_PUT(self):
@@ -327,6 +330,12 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             except PersistenceError:
                 self._send_storage_error()
                 return
+            except MissingApiKeyError as error:
+                self._send_task_provider_error(agent_id, error)
+                return
+            except Exception as error:
+                self._send_task_provider_error(agent_id, error)
+                return
             if result is None:
                 self._send_json(404, {"error": "Агент не найден."})
                 return
@@ -399,6 +408,57 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "Агент не найден."})
             return
         self._send_json(200, {"agent": snapshot, "metadata": snapshot["metadata"]})
+
+    def _handle_task_advance(self, agent_id):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 <= length <= 4096:
+                raise ValueError("Некорректный размер запроса.")
+            data = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            if not isinstance(data, dict) or data:
+                raise ValueError("Продолжение задачи не принимает параметры.")
+        except (UnicodeDecodeError, ValueError, json.JSONDecodeError, TaskStateError) as error:
+            self._send_json(400, {"error": str(error)})
+            return
+        try:
+            result = self.server.registry.advance_task(agent_id, DEFAULT_TEMPERATURE)
+        except TaskStateError as error:
+            agent = self.server.registry.get(agent_id)
+            body = {"error": str(error)}
+            if agent is not None:
+                body["agent"] = agent.snapshot()
+            self._send_json(400, body)
+            return
+        except PersistenceError:
+            self._send_storage_error()
+            return
+        except MissingApiKeyError as error:
+            self._send_task_provider_error(agent_id, error)
+            return
+        except Exception as error:
+            self._send_task_provider_error(agent_id, error)
+            return
+        if result is None:
+            self._send_json(404, {"error": "Агент не найден."})
+            return
+        self._send_json(200, result)
+
+    def _send_task_provider_error(self, agent_id, error):
+        agent = self.server.registry.get(agent_id)
+        if agent is None:
+            self._send_json(404, {"error": "Агент не найден."})
+            return
+        snapshot = agent.snapshot()
+        if isinstance(error, MissingApiKeyError):
+            self._send_json(503, {
+                "agent": snapshot, "error": f"Не задан {error.key_name}.",
+                "accepted": getattr(error, "accepted", True), "metadata": snapshot["metadata"],
+            })
+            return
+        self._send_json(502, {
+            "agent": snapshot, "error": "Не удалось получить ответ DeepSeek.",
+            "metadata": snapshot["metadata"],
+        })
 
     def _handle_settings(self, agent_id):
         try:

@@ -1154,20 +1154,99 @@ class DeepSeekWebTests(unittest.TestCase):
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/task Статья"})
         self.assertEqual(status, 200)
         self.assertEqual(body["agent"]["context"]["taskState"]["stage"], "PLANNING")
+        self.assertEqual(body["agent"]["messages"], [])
         self.assertEqual(self.calls, [])
         self.answers = ["[[TASK_PLAN]]\n# План\n1. Исследовать\n2. Написать\n[[/TASK_PLAN]]"]
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Нужна статья"})
         self.assertEqual(status, 200)
         self.assertIn("# План", body["agent"]["messages"][-1]["content"])
+        messages_before_execute = list(body["agent"]["messages"])
+        self.answers = ["Начинаю исследование.\n[[TASK_STEP_DONE]]"]
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/execute"})
         self.assertEqual(status, 200)
         self.assertEqual(body["agent"]["context"]["taskState"]["stage"], "EXECUTION")
+        self.assertTrue(body["continueTask"])
+        self.assertEqual(body["agent"]["messages"][:-1], messages_before_execute)
+        self.assertEqual(body["agent"]["messages"][-1]["role"], "assistant")
+        self.assertNotIn("[[TASK_STEP_DONE]]", body["agent"]["messages"][-1]["content"])
+        self.assertNotIn("continueTask", self.server.registry._state()["agents"][0]["context"])
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/pause"})
         self.assertEqual(status, 200)
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Продолжай"})
         self.assertEqual(status, 400)
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/resume"})
         self.assertEqual(status, 200)
+
+    def test_task_advance_runs_one_step_without_a_user_message(self):
+        self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/task Статья"})
+        self.answers = ["[[TASK_PLAN]]\n1. Исследовать\n2. Написать\n[[/TASK_PLAN]]"]
+        self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Нужна статья"})
+        self.answers = ["Первый шаг\n[[TASK_STEP_DONE]]"]
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/execute"})
+        self.assertEqual(status, 200)
+        before = list(body["agent"]["messages"])
+        self.answers = ["Второй шаг\n[[TASK_STEP_DONE]]"]
+
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/task/advance", {})
+
+        self.assertEqual(status, 200)
+        self.assertEqual(set(body), {"agent", "continueTask"})
+        self.assertEqual(body["agent"]["messages"][:-1], before)
+        self.assertEqual(body["agent"]["messages"][-1]["role"], "assistant")
+        self.assertTrue(body["continueTask"])
+        status, page, _ = self.request("GET", "/")
+        self.assertEqual(status, 200)
+        self.assertIn('setAttribute("aria-label","Состояние задачи")', page)
+        for label in ("Этап", "Шаг", "Ожидаемое действие"):
+            self.assertIn(label, page)
+        self.assertIn("if(!current()){state.autoPendingAgentIds.delete(agentId)", page)
+        self.assertIn('stopped?"автопродолжение остановлено":"выполняется"', page)
+        self.assertIn("state.autoPendingAgentIds.delete(agentId);if(body.agent)upsertAgent(body.agent,false);if(!current())return", page)
+
+    def test_task_execute_and_advance_provider_errors_are_safe_and_persisted(self):
+        self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/task Статья"})
+        self.answers = ["[[TASK_PLAN]]\n1. Исследовать\n[[/TASK_PLAN]]"]
+        self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Нужна статья"})
+        self.model_error = ValueError("provider unavailable")
+
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/execute"})
+
+        self.assertEqual(status, 502)
+        self.assertEqual(body["agent"]["context"]["taskState"]["stage"], "PLANNING")
+        self.assertEqual(body["agent"]["metadata"]["status"]["kind"], "error")
+        self.model_error = None
+        self.answers = ["Первый шаг"]
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/execute"})
+        self.assertEqual(status, 200)
+        self.model_error = RuntimeError("provider unavailable")
+
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/task/advance", {})
+
+        self.assertEqual(status, 502)
+        self.assertEqual(body["agent"]["metadata"]["status"]["kind"], "error")
+
+    def test_task_chain_source_keeps_composer_available_for_pause_and_has_one_runner(self):
+        status, page, _ = self.request("GET", "/")
+        self.assertEqual(status, 200)
+        self.assertEqual(page.count("function renderTaskState("), 1)
+        self.assertEqual(page.count("function continueTaskChain("), 1)
+        self.assertIn("autoPendingAgentIds", page)
+        self.assertIn("state.autoPendingAgentIds.add(agentId);render();try {const {response,body}=await api(\"/api/agents/\"+agentId+\"/task/advance\"", page)
+        self.assertIn("const taskVersion=++state.taskChainVersion", page)
+        self.assertIn("if(!text||!agentId||state.pendingAgentIds.has(agentId)||state.contextBusy)return", page)
+        self.assertIn("if(count>=25){state.autoPendingAgentIds.delete(agentId);state.taskChainGuarded.add(agentId)", page)
+
+    def test_task_advance_missing_key_returns_503(self):
+        self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/task Статья"})
+        self.answers = ["[[TASK_PLAN]]\n1. Исследовать\n[[/TASK_PLAN]]"]
+        self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Нужна статья"})
+        self.model_error = errors.MissingApiKeyError("DEEPSEEK_API_KEY")
+
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/execute"})
+
+        self.assertEqual(status, 503)
+        self.assertEqual(body["agent"]["context"]["taskState"]["stage"], "PLANNING")
+        self.assertEqual(body["agent"]["metadata"]["status"]["kind"], "error")
 
     def test_matching_origin_is_accepted(self):
         status, _, _ = self.json_request(

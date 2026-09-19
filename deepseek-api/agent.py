@@ -18,7 +18,7 @@ from memory_layers import (
 )
 from task_state import (
     TaskStateError, apply_execution_markers, apply_task_command, extract_task_plan,
-    task_prompt_block, valid_task_state,
+    task_plan_markdown, task_prompt_block, valid_task_state,
 )
 from user_profiles import (
     MAX_USER_PROFILES, default_profile, normalize_profile, profile_prompt_block,
@@ -237,6 +237,7 @@ class Agent:
         self._metrics = copy.deepcopy(metrics) if metrics is not None else default_metrics()
         self._context = copy.deepcopy(context) if context is not None else default_context()
         self._task_plan_dir = Path(task_plan_dir) if task_plan_dir is not None else DEFAULT_STATE_PATH.parent / "task-plans"
+        self._last_task_continue = False
         validate_context_settings(self._settings)
         self._trim_messages()
 
@@ -531,11 +532,22 @@ class Agent:
         if summary:
             messages.append({"role": "system", "content": f"{SUMMARY_CONTEXT_PREFIX}{summary}"})
         messages.extend(self._messages[target:])
-        messages.append({"role": "user", "content": text})
+        if text is not None:
+            messages.append({"role": "user", "content": text})
         return messages
 
-    def respond(self, text, temperature=DEFAULT_TEMPERATURE, profile=None):
-        if not isinstance(text, str) or not text.strip():
+    def advance_task(self, temperature=DEFAULT_TEMPERATURE, profile=None):
+        """Run one task step without inventing a user chat message."""
+        with self._lock:
+            task = self._context["taskState"]
+            if task is None or task["paused"] or task["stage"] not in {"EXECUTION", "VALIDATION"}:
+                raise TaskStateError("Для продолжения нужна активная задача на этапе выполнения или проверки.")
+            self._last_task_continue = False
+        snapshot = self.respond("", temperature, profile, _task_advance=True)
+        return snapshot, self._last_task_continue
+
+    def respond(self, text, temperature=DEFAULT_TEMPERATURE, profile=None, _task_advance=False):
+        if not _task_advance and (not isinstance(text, str) or not text.strip()):
             raise ValueError("Пустое сообщение.")
         if (
             isinstance(temperature, bool)
@@ -546,7 +558,7 @@ class Agent:
             raise ValueError("Поле temperature должно быть числом от 0 до 2.")
 
         with self._lock:
-            text = text.strip()
+            text = text.strip() if isinstance(text, str) else ""
             if self._context["taskState"] is not None and self._context["taskState"]["paused"]:
                 raise TaskStateError("Задача на паузе. Используйте /resume или /status.")
             history_before_tokens = estimate_payload_tokens({"messages": self._messages})
@@ -568,13 +580,15 @@ class Agent:
             strategy = self._settings["contextStrategy"]
             if strategy == "summary":
                 candidate_context, target, summary_call = self._summary_candidate()
-                messages = self._context_messages(text, candidate_context, target, system_prompt)
+                messages = self._context_messages(None if _task_advance else text, candidate_context, target, system_prompt)
             else:
-                if strategy == "facts":
+                if strategy == "facts" and not _task_advance:
                     self._update_facts(text)
                 candidate_context = self._context
                 summary_call = None
-                recent = [*self._messages, {"role": "user", "content": text}]
+                recent = list(self._messages)
+                if not _task_advance:
+                    recent.append({"role": "user", "content": text})
                 if strategy in {"sliding_window", "facts"}:
                     recent = recent[-self._settings["windowSize"]:]
                 messages = self._memory_layer_messages(system_prompt, candidate_context)
@@ -593,7 +607,7 @@ class Agent:
                 "messages": [
                     *self._memory_layer_messages(system_prompt, candidate_context),
                     *self._messages,
-                    {"role": "user", "content": text},
+                    *([] if _task_advance else [{"role": "user", "content": text}]),
                 ],
                 "temperature": temperature,
                 **options,
@@ -616,7 +630,7 @@ class Agent:
                 if not self._settings["sendOnOverflow"]:
                     raise ContextOverflowError("Сообщение не отправлено: история и возможный ответ превышают лимит контекста модели.")
             metadata = {
-                "userPrompt": text,
+                "userPrompt": text if not _task_advance else "Автоматическое выполнение шага.",
                 "systemPrompt": system_prompt,
                 "payload": primary_payload,
                 "status": {"kind": "success", "label": "200 OK"},
@@ -626,7 +640,7 @@ class Agent:
                 "memoryLayers": self._memory_trace(messages, candidate_context),
                 "userProfile": copy.deepcopy(profile),
             }
-            commit_user_before_call = not overflow
+            commit_user_before_call = not overflow and not _task_advance
             if commit_user_before_call:
                 self._messages.append({"role": "user", "content": text})
             try:
@@ -646,7 +660,7 @@ class Agent:
                 if overflow:
                     raise OverflowProbeError(provider_error_message(error)) from error
                 raise
-            if overflow:
+            if overflow and not _task_advance:
                 self._messages.append({"role": "user", "content": text})
             visible_answer = answer
             if self._context["taskState"] is not None:
@@ -654,10 +668,15 @@ class Agent:
                     extracted, visible_answer, _ = extract_task_plan(answer, self._context["taskState"])
                     if extracted["markdown"] is not None:
                         task = extracted["task"]
-                        task["planPath"] = self._write_task_plan(task, extracted["markdown"])
+                        task["planPath"] = self._write_task_plan(task, task_plan_markdown(task))
                         self._context["taskState"] = task
                     marker_result = apply_execution_markers(visible_answer, self._context["taskState"])
                     self._context["taskState"] = marker_result["task"]
+                    if marker_result["task"]["plan"]:
+                        task = marker_result["task"]
+                        task["planPath"] = self._write_task_plan(task, task_plan_markdown(task))
+                        self._context["taskState"] = task
+                    self._last_task_continue = marker_result["continueTask"] if _task_advance else False
                     visible_answer = marker_result["visible"]
                     if marker_result["notice"]:
                         visible_answer = f"{visible_answer}\n\n{marker_result['notice']}".strip()
@@ -1290,13 +1309,45 @@ class AgentRegistry:
             if agent is None:
                 return None
             before = self._snapshots()
-            message = agent.apply_task_command(command)
             try:
+                message = agent.apply_task_command(command)
+                continue_task = False
+                if command.get("action") == "execute":
+                    snapshot, continue_task = agent.advance_task(DEFAULT_TEMPERATURE, self._active_profile())
+                else:
+                    snapshot = agent.snapshot()
                 self._save()
             except PersistenceError:
                 self._restore(before, self._shared_long_term)
                 raise
-            return {"agent": agent.snapshot(), "command": {"message": message}}
+            except Exception:
+                if command.get("action") == "execute":
+                    rollback = copy.deepcopy(before)
+                    rollback[agent_id]["metadata"] = copy.deepcopy(agent.snapshot()["metadata"])
+                    self._restore(rollback, self._shared_long_term)
+                    self._save()
+                raise
+            result = {"agent": snapshot, "command": {"message": message}}
+            if command.get("action") == "execute":
+                result["continueTask"] = continue_task
+            return result
+
+    def advance_task(self, agent_id, temperature=DEFAULT_TEMPERATURE):
+        with self._lock:
+            agent = self._agents.get(agent_id)
+            if agent is None:
+                return None
+            before = self._snapshots()
+            try:
+                snapshot, continue_task = agent.advance_task(temperature, self._active_profile())
+                self._save()
+            except PersistenceError:
+                self._restore(before, self._shared_long_term)
+                raise
+            except Exception:
+                self._save()
+                raise
+            return {"agent": snapshot, "continueTask": continue_task}
 
     def respond(self, agent_id, text, temperature=DEFAULT_TEMPERATURE):
         with self._lock:

@@ -126,14 +126,26 @@ def apply_task_command(task, command, next_task_id):
 def _plan_steps(markdown):
     steps = []
     for line in markdown.splitlines():
-        match = re.fullmatch(r"\s*(\d+)\.\s+(.+?)\s*", line)
+        match = re.fullmatch(r"\s*(?:(\d+)\.\s+|- \[[ xX]\]\s+)(.+?)\s*", line)
         if match:
-            if int(match.group(1)) != len(steps) + 1 or not _text(match.group(2), MAX_STEP_LENGTH):
+            number, text = match.groups()
+            if (number is not None and int(number) != len(steps) + 1) or not _text(text, MAX_STEP_LENGTH):
                 raise TaskStateError("Шаги плана должны быть последовательным нумерованным списком.")
-            steps.append(match.group(2).strip())
+            steps.append(text.strip())
     if not 1 <= len(steps) <= MAX_STEPS:
         raise TaskStateError("План должен содержать от 1 до 24 нумерованных шагов.")
     return steps
+
+
+def task_plan_markdown(task):
+    """Render the canonical plan from state, never trusting stale plan-file markup."""
+    _require_task(task)
+    if not task["plan"]:
+        return ""
+    completed = len(task["done"])
+    lines = ["# План"]
+    lines.extend(f"- [{'x' if index < completed else ' '}] {step}" for index, step in enumerate(task["plan"]))
+    return "\n".join(lines)
 
 
 def extract_task_plan(answer, task):
@@ -159,8 +171,8 @@ def extract_task_plan(answer, task):
         candidate["step"] = 0
         candidate["current"] = "План готов к просмотру"
     candidate["expectedAction"] = "Прочитайте план и используйте /execute для запуска выполнения."
-    visible = (answer[:start] + markdown + answer[end + len(TASK_PLAN_CLOSE):]).strip()
-    return {"task": candidate, "markdown": markdown}, visible, steps
+    rendered = task_plan_markdown(candidate)
+    return {"task": candidate, "markdown": rendered}, rendered, steps
 
 
 def _last_nonempty_line(answer):
@@ -176,7 +188,7 @@ def apply_execution_markers(answer, task):
     candidate = copy.deepcopy(task)
     index, marker = _last_nonempty_line(answer)
     if marker not in {TASK_STEP_DONE, TASK_DONE}:
-        return {"task": candidate, "visible": answer, "notice": None}
+        return {"task": candidate, "visible": answer, "notice": None, "continueTask": False}
     if marker == TASK_STEP_DONE and candidate["stage"] == "EXECUTION":
         visible = "\n".join(answer.splitlines()[:index] + answer.splitlines()[index + 1:]).strip()
         candidate["done"].append(candidate["current"])
@@ -187,21 +199,22 @@ def apply_execution_markers(answer, task):
             candidate["step"] += 1
             candidate["current"] = candidate["plan"][candidate["step"] - 1]
             notice = f"Завершён шаг {candidate['step'] - 1}. Начат шаг {candidate['step']}."
-        return {"task": candidate, "visible": visible, "notice": notice}
+        return {"task": candidate, "visible": visible, "notice": notice,
+                "continueTask": not candidate["paused"] and candidate["stage"] in {"EXECUTION", "VALIDATION"}}
     if marker == TASK_DONE and candidate["stage"] == "VALIDATION":
         visible = "\n".join(answer.splitlines()[:index] + answer.splitlines()[index + 1:]).strip()
         candidate.update({"stage": "DONE", "paused": False, "current": "Задача завершена", "expectedAction": "Создайте новую задачу командой /task Название."})
-        return {"task": candidate, "visible": visible, "notice": "Завершён этап VALIDATION. Задача завершена."}
-    return {"task": candidate, "visible": answer, "notice": None}
+        return {"task": candidate, "visible": visible, "notice": "Завершён этап VALIDATION. Задача завершена.", "continueTask": False}
+    return {"task": candidate, "visible": answer, "notice": None, "continueTask": False}
 
 
 def task_prompt_block(task, plan_markdown):
     if task is None:
         return ""
     done = "; ".join(task["done"]) or "—"
-    plan = plan_markdown or "План ещё не сформирован."
+    plan = task_plan_markdown(task) or "План ещё не сформирован."
     return ("[TASK_STATE]\n"
-            f"Задача: {task['title']}\nЭтап: {task['stage']}\nПрогресс: {task['step']}/{task['total']}\n"
+            f"Задача: {task['title']}\nЭтап: {task['stage']} ({TASK_STAGES.index(task['stage']) + 1}/4)\nПрогресс шагов: {task['step']}/{task['total']}\n"
             f"Текущий шаг: {task['current']}\nВыполнено: {done}\nОжидаемое действие: {task['expectedAction']}\n"
             f"План:\n{plan}\n\n"
             "Не пропускай этапы. В PLANNING собери требования и при готовности верни Markdown в [[TASK_PLAN]]...[[/TASK_PLAN]]. "
@@ -213,5 +226,5 @@ def task_status(task):
     _require_task(task)
     done = "; ".join(task["done"]) or "—"
     pause = " · на паузе" if task["paused"] else ""
-    return (f"Задача: {task['title']}\nЭтап: {task['stage']}{pause}\nПрогресс: {task['step']}/{task['total']}\n"
+    return (f"Задача: {task['title']}\nЭтап: {task['stage']} ({TASK_STAGES.index(task['stage']) + 1}/4){pause}\nПрогресс шагов: {task['step']}/{task['total']}\n"
             f"Текущий шаг: {task['current']}\nВыполнено: {done}\nОжидаемое действие: {task['expectedAction']}")
