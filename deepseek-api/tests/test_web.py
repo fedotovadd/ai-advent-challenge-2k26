@@ -1075,6 +1075,11 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body["agent"]["context"]["memoryLayers"]["longTerm"]["profile"], {"Имя": "Диана"})
         status, body, _ = self.json_request(
+            "POST", "/api/agents/agent-1/messages", {"text": "/knowledge Любит минимализм"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["context"]["memoryLayers"]["longTerm"]["knowledge"], {"note-1": "Любит минимализм"})
+        status, body, _ = self.json_request(
             "POST", "/api/agents/agent-1/messages", {"text": "/decision Используем светлую палитру"},
         )
         self.assertEqual(status, 200)

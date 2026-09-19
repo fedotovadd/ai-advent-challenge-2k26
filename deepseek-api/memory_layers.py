@@ -39,7 +39,11 @@ def parse_memory_command(text):
         return {"action": text_commands[command], "text": argument}
     if command in pair_commands:
         key, separator, value = argument.partition(":")
-        if not separator or not key.strip() or not value.strip():
+        if not argument:
+            raise MemoryCommandError(f"После {command} укажите текст для сохранения.")
+        if not separator:
+            return {"action": pair_commands[command], "value": argument}
+        if not key.strip() or not value.strip():
             raise MemoryCommandError(f"После {command} укажите пару «ключ: значение».")
         return {"action": pair_commands[command], "key": key.strip(), "value": value.strip()}
     if argument:

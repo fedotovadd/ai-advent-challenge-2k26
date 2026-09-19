@@ -64,14 +64,23 @@ class MemoryLayerTests(unittest.TestCase):
         self.assertEqual(parse_memory_command("/working-data Дедлайн: 20 октября"), {
             "action": "working-data", "key": "Дедлайн", "value": "20 октября",
         })
+        self.assertEqual(parse_memory_command("/working-data Встреча в четверг"), {
+            "action": "working-data", "value": "Встреча в четверг",
+        })
         self.assertEqual(parse_memory_command("/profile Имя: Диана"), {
             "action": "profile", "key": "Имя", "value": "Диана",
+        })
+        self.assertEqual(parse_memory_command("/profile Диана"), {
+            "action": "profile", "value": "Диана",
         })
         self.assertEqual(parse_memory_command("/decision Используем светлую палитру"), {
             "action": "decision", "text": "Используем светлую палитру",
         })
         self.assertEqual(parse_memory_command("/knowledge Figma: основной инструмент"), {
             "action": "knowledge", "key": "Figma", "value": "основной инструмент",
+        })
+        self.assertEqual(parse_memory_command("/knowledge Любит минимализм"), {
+            "action": "knowledge", "value": "Любит минимализм",
         })
         self.assertEqual(parse_memory_command("/clear-working"), {"action": "clear-working"})
         self.assertEqual(parse_memory_command("/clear-working-data"), {"action": "clear-working-data"})
@@ -81,7 +90,7 @@ class MemoryLayerTests(unittest.TestCase):
         self.assertEqual(parse_memory_command("/clear-long"), {"action": "clear-long"})
         self.assertEqual(parse_memory_command("/clear-memory"), {"action": "clear-memory"})
         self.assertIsNone(parse_memory_command("/long Меня зовут Диана"))
-        for command in ("/working", "/working-data без разделителя", "/profile : Диана", "/decision ", "/clear-long extra"):
+        for command in ("/working", "/working-data ", "/profile : Диана", "/decision ", "/clear-long extra"):
             with self.subTest(command=command), self.assertRaises(MemoryCommandError):
                 parse_memory_command(command)
 

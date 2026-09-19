@@ -13,7 +13,7 @@ from context_memory import (
     apply_facts_patch, default_facts_usage, valid_facts, validate_context_settings, validate_name,
 )
 from memory_layers import (
-    MemoryCommandError, default_memory_layers, default_long_term, default_working, valid_long_term,
+    MAX_LONG_TERM_FIELDS, MAX_WORKING_FIELDS, MemoryCommandError, default_memory_layers, default_long_term, default_working, valid_long_term,
     valid_memory_layers, valid_working, working_has_content, long_term_has_content,
 )
 
@@ -188,6 +188,14 @@ def estimate_payload_tokens(payload):
     return 3 + message_tokens + option_tokens
 
 
+def _next_note_key(entries, maximum):
+    for number in range(1, maximum + 1):
+        key = f"note-{number}"
+        if key not in entries:
+            return key
+    return None
+
+
 def request_usage_and_cost(model, usage, estimated_prompt_tokens=None, estimated_completion_tokens=None):
     prompt_tokens = _usage_value(usage, "prompt_tokens")
     completion_tokens = _usage_value(usage, "completion_tokens")
@@ -290,14 +298,20 @@ class Agent:
                 return "Рабочая память сохранена."
             if action == "working-data":
                 candidate = copy.deepcopy(layers["working"])
-                candidate["data"][command["key"]] = command["value"]
+                key = command.get("key") or _next_note_key(candidate["data"], MAX_WORKING_FIELDS)
+                if key is None:
+                    raise MemoryCommandError("Данные рабочей памяти заполнены.")
+                candidate["data"][key] = command["value"]
                 if not valid_working(candidate):
                     raise MemoryCommandError("Данные рабочей памяти имеют неверный формат или заполнены.")
                 layers["working"] = candidate
                 return "Данные рабочей памяти сохранены."
             if action in {"profile", "knowledge"}:
                 candidate = copy.deepcopy(layers["longTerm"])
-                candidate[action][command["key"]] = command["value"]
+                key = command.get("key") or _next_note_key(candidate[action], MAX_LONG_TERM_FIELDS)
+                if key is None:
+                    raise MemoryCommandError("Долговременная память заполнена.")
+                candidate[action][key] = command["value"]
                 if not valid_long_term(candidate):
                     raise MemoryCommandError("Долговременная память имеет неверный формат или заполнена.")
                 layers["longTerm"] = candidate

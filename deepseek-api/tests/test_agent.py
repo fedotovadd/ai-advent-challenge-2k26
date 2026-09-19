@@ -463,10 +463,12 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(instance.apply_memory_command({"action": "profile", "key": "Имя", "value": "Диана"}), "Профиль сохранён.")
         self.assertEqual(instance.apply_memory_command({"action": "decision", "text": "Используем светлую палитру"}), "Решение сохранено.")
         self.assertEqual(instance.apply_memory_command({"action": "knowledge", "key": "Figma", "value": "основной инструмент"}), "Знание сохранено.")
+        self.assertEqual(instance.apply_memory_command({"action": "profile", "value": "Диана"}), "Профиль сохранён.")
+        self.assertEqual(instance.apply_memory_command({"action": "working-data", "value": "Встреча в четверг"}), "Данные рабочей памяти сохранены.")
         self.assertEqual(instance.snapshot()["context"]["memoryLayers"]["working"]["task"], "Дизайнерский проект")
-        self.assertEqual(instance.snapshot()["context"]["memoryLayers"]["working"]["data"], {"Дедлайн": "20 октября"})
+        self.assertEqual(instance.snapshot()["context"]["memoryLayers"]["working"]["data"], {"Дедлайн": "20 октября", "note-1": "Встреча в четверг"})
         self.assertEqual(instance.snapshot()["context"]["memoryLayers"]["longTerm"], {
-            "profile": {"Имя": "Диана"},
+            "profile": {"Имя": "Диана", "note-1": "Диана"},
             "decisions": ["Используем светлую палитру"],
             "knowledge": {"Figma": "основной инструмент"},
         })
