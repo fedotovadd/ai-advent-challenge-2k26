@@ -5,7 +5,50 @@ from pathlib import Path
 from unittest.mock import patch
 
 import agent
+import user_profiles
 from agent import Agent, AgentRegistry, MAX_BULK_AGENTS, PersistenceError, default_settings
+
+
+class UserProfileTests(unittest.TestCase):
+    def test_normalizes_profile_and_renders_preference_block(self):
+        fields = user_profiles.normalize_profile({
+            "name": "  Анна  ",
+            "style": " ясно ",
+            "format": " абзацы ",
+            "constraints": " без Markdown ",
+        })
+        profile = user_profiles.profile_with_id("profile-1", fields)
+
+        self.assertEqual(fields, {
+            "name": "Анна",
+            "style": "ясно",
+            "format": "абзацы",
+            "constraints": "без Markdown",
+        })
+        self.assertTrue(user_profiles.valid_profile_collection([profile], "profile-1", 2))
+        block = user_profiles.profile_prompt_block(profile)
+        self.assertIn("[Профиль пользователя]", block)
+        self.assertIn("Имя: Анна", block)
+        self.assertIn("Стиль: ясно", block)
+        self.assertIn("Формат: абзацы", block)
+        self.assertIn("Ограничения: без Markdown", block)
+
+    def test_rejects_duplicate_normalized_names_and_more_than_twenty_profiles(self):
+        profile = user_profiles.profile_with_id("profile-1", user_profiles.normalize_profile({
+            "name": "Анна", "style": "ясно", "format": "абзацы", "constraints": "без Markdown",
+        }))
+        duplicate = user_profiles.profile_with_id("profile-2", user_profiles.normalize_profile({
+            "name": "анна", "style": "подробно", "format": "список", "constraints": "без Markdown",
+        }))
+
+        self.assertFalse(user_profiles.valid_profile_collection([profile, duplicate], "profile-1", 3))
+        profiles = [
+            user_profiles.profile_with_id(f"profile-{number}", {
+                "name": f"Пользователь {number}", "style": "ясно", "format": "абзацы", "constraints": "без Markdown",
+            })
+            for number in range(1, 22)
+        ]
+        self.assertFalse(user_profiles.valid_profile_collection(profiles, "profile-1", 22))
 
 
 class AgentTests(unittest.TestCase):
@@ -182,9 +225,7 @@ class AgentTests(unittest.TestCase):
             "max_tokens": 300,
             "stop": "<END>",
         })
-        self.assertEqual(result["metadata"]["systemPrompt"], (
-            default_settings()["systemPrompt"] + "\n\nВерни только валидный JSON без Markdown-разметки."
-        ))
+        self.assertEqual(result["metadata"]["systemPrompt"], default_settings()["systemPrompt"])
         self.assertEqual(result["metadata"]["payload"], {
             "model": "deepseek-v4-flash",
             "messages": [
@@ -196,6 +237,31 @@ class AgentTests(unittest.TestCase):
             "max_tokens": 300,
             "stop": "<END>",
         })
+
+    def test_respond_applies_profile_before_memory_without_json_prompt_text(self):
+        calls = []
+
+        def ask_model(payload, **options):
+            calls.append({"payload": payload, "options": options})
+            return "Готово"
+
+        context = agent.default_context()
+        context["memoryLayers"]["working"] = ["Пользователь готовит отчёт."]
+        profile = user_profiles.profile_with_id("profile-2", {
+            "name": "Анна", "style": "подробно", "format": "нумерованный список", "constraints": "без Markdown",
+        })
+        instance = Agent("agent-1", "Тест", {**default_settings(), "format": "json"}, ask_model, context=context)
+
+        result = instance.respond("Покажи план", profile=profile)
+
+        system_prompt = calls[0]["payload"]["messages"][0]["content"]
+        self.assertLess(system_prompt.index(default_settings()["systemPrompt"]), system_prompt.index("[Профиль пользователя]"))
+        self.assertLess(system_prompt.index("[Профиль пользователя]"), system_prompt.index(agent.MEMORY_DATA_INSTRUCTION))
+        self.assertNotIn("Верни только валидный JSON без Markdown-разметки.", system_prompt)
+        self.assertEqual(calls[0]["options"], {"response_format": {"type": "json_object"}})
+        self.assertEqual(result["metadata"]["userProfile"], profile)
+        profile["style"] = "кратко"
+        self.assertEqual(result["metadata"]["userProfile"]["style"], "подробно")
 
     def test_failed_response_keeps_user_message_and_records_error_metadata(self):
         def ask_model(payload, **options):
@@ -509,11 +575,58 @@ class AgentRegistryTests(unittest.TestCase):
         ])
         self.assertEqual(restored["metadata"]["status"], {"kind": "success", "label": "200 OK"})
         self.assertEqual(calls[0]["messages"], [
-            {"role": "system", "content": "Отвечай дружелюбно."},
+            {"role": "system", "content": "Отвечай дружелюбно.\n\n" + user_profiles.profile_prompt_block(user_profiles.default_profile())},
             {"role": "user", "content": "Меня зовут Маша"},
             {"role": "assistant", "content": "Рада познакомиться!"},
             {"role": "user", "content": "Как меня зовут?"},
         ])
+
+    def test_profiles_can_be_created_edited_activated_and_restored(self):
+        calls = []
+        registry = AgentRegistry(lambda payload, **options: calls.append(payload) or "Ответ", self.state_path)
+        created = registry.create_profile({
+            "name": "Анна Смирнова", "style": "деловой и тёплый",
+            "format": "короткие пункты", "constraints": "не использовать таблицы",
+        })
+
+        self.assertEqual(created["activeProfileId"], "profile-2")
+        self.assertEqual(registry.profiles()["profiles"][1]["name"], "Анна Смирнова")
+        registry.update_profile("profile-2", {
+            "name": "Анна Смирнова", "style": "строго и по делу",
+            "format": "один абзац", "constraints": "без эмодзи",
+        })
+        registry.activate_profile("profile-1")
+        registry.activate_profile("profile-2")
+        registry.respond("agent-1", "Привет")
+
+        self.assertIn("Имя: Анна Смирнова", calls[0]["messages"][0]["content"])
+        restored = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+        self.assertEqual(restored.profiles(), {
+            "profiles": [
+                user_profiles.default_profile(),
+                {"id": "profile-2", "name": "Анна Смирнова", "style": "строго и по делу",
+                 "format": "один абзац", "constraints": "без эмодзи"},
+            ],
+            "activeProfileId": "profile-2",
+        })
+
+    def test_registry_migrates_v7_state_to_the_default_profile(self):
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+        registry.respond("agent-1", "Привет")
+        state = registry._state()
+        state["version"] = 7
+        state.pop("profiles")
+        state.pop("activeProfileId")
+        state.pop("nextProfileId")
+        state["agents"][0]["metadata"].pop("userProfile")
+        self.state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+        restored = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(restored.profiles(), {
+            "profiles": [user_profiles.default_profile()], "activeProfileId": "profile-1",
+        })
+        self.assertIsNone(restored.get("agent-1").snapshot()["metadata"]["userProfile"])
 
     def test_registry_ignores_invalid_saved_state(self):
         self.state_path.write_text(json.dumps({

@@ -10,6 +10,7 @@ from unittest.mock import patch
 import agent
 import day_three
 import errors
+import user_profiles
 import web
 
 
@@ -146,6 +147,64 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertNotIn("format-instruction-input", body)
         self.assertNotIn("Инструкция свободного формата", body)
         self.assertIn("Метаданные", body)
+
+    def test_profile_api_creates_edits_activates_and_applies_the_profile(self):
+        status, profiles, _ = self.json_request("GET", "/api/profiles")
+        self.assertEqual(status, 200)
+        self.assertEqual(profiles["activeProfileId"], "profile-1")
+
+        fields = {
+            "name": "Анна Смирнова", "style": "деловой и тёплый",
+            "format": "короткие пункты", "constraints": "без таблиц",
+        }
+        status, created, _ = self.json_request("POST", "/api/profiles", fields)
+        self.assertEqual(status, 201)
+        self.assertEqual(created["activeProfileId"], "profile-2")
+        self.assertEqual(created["profile"]["name"], "Анна Смирнова")
+
+        fields["constraints"] = "без эмодзи"
+        status, updated, _ = self.json_request("PUT", "/api/profiles/profile-2", fields)
+        self.assertEqual(status, 200)
+        self.assertEqual(updated["profile"]["constraints"], "без эмодзи")
+        status, activated, _ = self.json_request("POST", "/api/profiles/profile-1/activate")
+        self.assertEqual(status, 200)
+        self.assertEqual(activated, {"activeProfileId": "profile-1"})
+        status, _, _ = self.json_request("POST", "/api/profiles/profile-2/activate")
+        self.assertEqual(status, 200)
+
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Привет"})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["metadata"]["userProfile"]["id"], "profile-2")
+        self.assertIn("Имя: Анна Смирнова", self.calls[-1]["payload"]["messages"][0]["content"])
+
+    def test_profile_api_rejects_invalid_body_and_unknown_profile(self):
+        status, body, _ = self.json_request("POST", "/api/profiles", {"name": "Только имя"})
+        self.assertEqual(status, 400)
+        self.assertEqual(body, {"error": "Профиль имеет неверный формат."})
+        status, body, _ = self.json_request("PUT", "/api/profiles/missing", {
+            "name": "Имя", "style": "Стиль", "format": "Формат", "constraints": "Ограничения",
+        })
+        self.assertEqual(status, 404)
+        self.assertEqual(body, {"error": "Профиль не найден."})
+
+    def test_profile_picker_uses_a_custom_menu_and_four_field_dialog(self):
+        status, page, _ = self.request("GET", "/")
+        static_script = Path(web.__file__).with_name("static") / "profile-controls.js"
+        script_status, controls, _ = self.request("GET", "/static/profile-controls.js")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(script_status, 200)
+        self.assertEqual(controls, static_script.read_text(encoding="utf-8"))
+        self.assertIn('class="profile-picker-menu"', controls)
+        self.assertIn("Новый профиль", controls)
+        self.assertIn('role="dialog"', controls)
+        self.assertIn('name="name"', controls)
+        self.assertIn('name="style"', controls)
+        self.assertIn('name="format"', controls)
+        self.assertIn('name="constraints"', controls)
+        self.assertNotIn("window.prompt", controls)
+        self.assertIn(".profile-picker-menu", page)
+        self.assertIn(".profile-editor-backdrop", page)
 
     def test_page_exposes_four_context_modes_and_summary_metrics(self):
         status, body, _ = self.request("GET", "/")
@@ -293,7 +352,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(self.calls[-1]["payload"], {
             "model": "deepseek-v4-pro",
             "messages": [
-                {"role": "system", "content": "Отвечай по имени."},
+                {"role": "system", "content": "Отвечай по имени.\n\n" + user_profiles.profile_prompt_block(user_profiles.default_profile())},
                 {"role": "user", "content": "Меня зовут Маша"},
                 {"role": "assistant", "content": "Тестовый ответ"},
                 {"role": "user", "content": "Как меня зовут?"},
@@ -592,7 +651,7 @@ class DeepSeekWebTests(unittest.TestCase):
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "  Привет  "})
 
         expected_messages = [
-            {"role": "system", "content": agent.SYSTEM_PROMPT},
+            {"role": "system", "content": agent.SYSTEM_PROMPT + "\n\n" + user_profiles.profile_prompt_block(user_profiles.default_profile())},
             {"role": "user", "content": "Привет"},
         ]
         self.assertEqual(status, 200)
@@ -609,7 +668,8 @@ class DeepSeekWebTests(unittest.TestCase):
             "temperature": 1,
         }, "kwargs": {}}])
         self.assertEqual(body["metadata"]["userPrompt"], "Привет")
-        self.assertEqual(body["metadata"]["systemPrompt"], agent.SYSTEM_PROMPT)
+        self.assertEqual(body["metadata"]["systemPrompt"], agent.SYSTEM_PROMPT + "\n\n" + user_profiles.profile_prompt_block(user_profiles.default_profile()))
+        self.assertEqual(body["metadata"]["userProfile"], user_profiles.default_profile())
         self.assertEqual(body["metadata"]["payload"], {
             "model": agent.MODEL, "messages": expected_messages, "temperature": 1,
         })
@@ -624,7 +684,7 @@ class DeepSeekWebTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertEqual(self.calls[-1]["payload"]["messages"], [
-            {"role": "system", "content": agent.SYSTEM_PROMPT},
+            {"role": "system", "content": agent.SYSTEM_PROMPT + "\n\n" + user_profiles.profile_prompt_block(user_profiles.default_profile())},
             {"role": "user", "content": "Первый"},
             {"role": "assistant", "content": "Тестовый ответ"},
             {"role": "user", "content": "Второй"},
@@ -651,14 +711,8 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(body["metadata"]["payload"]["response_format"], {"type": "json_object"})
         self.assertEqual(body["metadata"]["payload"]["max_tokens"], 300)
         self.assertEqual(body["metadata"]["payload"]["stop"], "<END>")
-        self.assertEqual(
-            body["metadata"]["systemPrompt"],
-            "Верни данные.\n\nВерни только валидный JSON без Markdown-разметки.",
-        )
-        self.assertEqual(
-            self.calls[-1]["payload"]["messages"][0]["content"],
-            "Верни данные.\n\nВерни только валидный JSON без Markdown-разметки.",
-        )
+        self.assertEqual(body["metadata"]["systemPrompt"], "Верни данные.\n\n" + user_profiles.profile_prompt_block(user_profiles.default_profile()))
+        self.assertEqual(self.calls[-1]["payload"]["messages"][0]["content"], "Верни данные.\n\n" + user_profiles.profile_prompt_block(user_profiles.default_profile()))
 
     def test_text_format_forwards_system_prompt_unchanged(self):
         settings = {
@@ -675,9 +729,9 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(
             self.calls[-1]["payload"]["messages"][0]["content"],
-            "Базовая инструкция.",
+            "Базовая инструкция.\n\n" + user_profiles.profile_prompt_block(user_profiles.default_profile()),
         )
-        self.assertEqual(body["metadata"]["systemPrompt"], "Базовая инструкция.")
+        self.assertEqual(body["metadata"]["systemPrompt"], "Базовая инструкция.\n\n" + user_profiles.profile_prompt_block(user_profiles.default_profile()))
 
     def test_text_settings_omit_optional_model_parameters(self):
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Привет"})
