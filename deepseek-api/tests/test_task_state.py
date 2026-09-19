@@ -59,6 +59,25 @@ class TaskStateTests(unittest.TestCase):
         done = apply_execution_markers("Проверено\n[[TASK_TRANSITION:DONE]]", final["task"])
         self.assertFalse(done["continueTask"])
 
+    def test_plan_uses_only_steps_section_when_other_numbered_lists_exist(self):
+        task = default_task_state("task-1", "Кафе")
+        answer = """[[TASK_PLAN]]
+# План
+## Критерии
+1. Средний чек
+2. Семейная атмосфера
+## Шаги
+1. Подобрать три кафе.
+2. Сравнить их.
+## Результат
+1. Таблица и вывод.
+[[/TASK_PLAN]]"""
+
+        extracted, _, _ = extract_task_plan(answer, task)
+
+        self.assertEqual(extracted["task"]["plan"], ["Подобрать три кафе.", "Сравнить их."])
+        self.assertEqual(extracted["task"]["total"], 2)
+
     def test_marker_not_on_last_line_does_not_change_state(self):
         task = default_task_state("task-1", "Лендинг")
         task = extract_task_plan("[[TASK_PLAN]]\n1. Шаг\n[[/TASK_PLAN]]", task)[0]["task"]

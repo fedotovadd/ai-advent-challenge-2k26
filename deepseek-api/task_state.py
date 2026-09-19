@@ -124,8 +124,24 @@ def apply_task_command(task, command, next_task_id):
 
 
 def _plan_steps(markdown):
+    lines = markdown.splitlines()
+    steps_heading = None
+    for index, line in enumerate(lines):
+        match = re.fullmatch(r"\s*(#{1,6})\s*шаги\s*#*\s*", line, re.IGNORECASE)
+        if match:
+            steps_heading = (index, len(match.group(1)))
+            break
+    if steps_heading is not None:
+        start, level = steps_heading
+        selected = []
+        for line in lines[start + 1:]:
+            heading = re.fullmatch(r"\s*(#{1,6})\s+.*", line)
+            if heading and len(heading.group(1)) <= level:
+                break
+            selected.append(line)
+        lines = selected
     steps = []
-    for line in markdown.splitlines():
+    for line in lines:
         match = re.fullmatch(r"\s*(?:(\d+)\.\s+|- \[[ xX]\]\s+)(.+?)\s*", line)
         if match:
             number, text = match.groups()

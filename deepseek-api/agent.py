@@ -322,12 +322,33 @@ class Agent:
 
     def apply_task_command(self, command):
         with self._lock:
+            if command.get("action") == "execute":
+                self._recover_task_plan_from_history()
             task, next_task_id, message = apply_task_command(
                 self._context["taskState"], command, self._context["nextTaskId"],
             )
             self._context["taskState"] = task
             self._context["nextTaskId"] = next_task_id
             return message
+
+    def _recover_task_plan_from_history(self):
+        """Restore a displayed plan that an earlier parser did not persist."""
+        task = self._context["taskState"]
+        if task is None or task["stage"] != "PLANNING" or task["plan"]:
+            return
+        for message in reversed(self._messages):
+            if message["role"] != "assistant":
+                continue
+            try:
+                extracted, _, _ = extract_task_plan(message["content"], task)
+            except TaskStateError:
+                continue
+            if extracted["markdown"] is None:
+                continue
+            restored = extracted["task"]
+            restored["planPath"] = self._write_task_plan(restored, task_plan_markdown(restored))
+            self._context["taskState"] = restored
+            return
 
     def _task_plan_path(self, task):
         name = f"{self._id}-{task['id']}.md"

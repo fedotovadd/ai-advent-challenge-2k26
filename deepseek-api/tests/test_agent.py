@@ -61,6 +61,27 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(snapshot["context"]["activeBranch"], "main")
         self.assertEqual(snapshot["context"]["branches"]["main"]["state"]["messages"], [])
 
+    def test_execute_recovers_a_previously_shown_plan_from_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            instance = Agent(
+                "agent-1", "Первый", default_settings(), lambda payload, **options: "Ответ",
+                task_plan_dir=Path(directory) / "task-plans",
+            )
+            instance.apply_task_command({"action": "task", "title": "Кафе"})
+            instance._messages.append({"role": "assistant", "content": """[[TASK_PLAN]]
+## Критерии
+1. Средний чек
+2. Атмосфера
+## Шаги
+1. Подобрать кафе.
+2. Сравнить кафе.
+[[/TASK_PLAN]]"""})
+
+            instance.apply_task_command({"action": "execute"})
+
+            task = instance.snapshot()["context"]["taskState"]
+            self.assertEqual((task["stage"], task["current"], task["total"]), ("EXECUTION", "Подобрать кафе.", 2))
+
     def test_estimate_payload_counts_system_messages_and_request_options(self):
         request = {
             "model": "deepseek-v4-flash",
