@@ -225,9 +225,7 @@ class AgentTests(unittest.TestCase):
             "max_tokens": 300,
             "stop": "<END>",
         })
-        self.assertEqual(result["metadata"]["systemPrompt"], (
-            default_settings()["systemPrompt"] + "\n\nВерни только валидный JSON без Markdown-разметки."
-        ))
+        self.assertEqual(result["metadata"]["systemPrompt"], default_settings()["systemPrompt"])
         self.assertEqual(result["metadata"]["payload"], {
             "model": "deepseek-v4-flash",
             "messages": [
@@ -239,6 +237,31 @@ class AgentTests(unittest.TestCase):
             "max_tokens": 300,
             "stop": "<END>",
         })
+
+    def test_respond_applies_profile_before_memory_without_json_prompt_text(self):
+        calls = []
+
+        def ask_model(payload, **options):
+            calls.append({"payload": payload, "options": options})
+            return "Готово"
+
+        context = agent.default_context()
+        context["memoryLayers"]["working"] = ["Пользователь готовит отчёт."]
+        profile = user_profiles.profile_with_id("profile-2", {
+            "name": "Анна", "style": "подробно", "format": "нумерованный список", "constraints": "без Markdown",
+        })
+        instance = Agent("agent-1", "Тест", {**default_settings(), "format": "json"}, ask_model, context=context)
+
+        result = instance.respond("Покажи план", profile=profile)
+
+        system_prompt = calls[0]["payload"]["messages"][0]["content"]
+        self.assertLess(system_prompt.index(default_settings()["systemPrompt"]), system_prompt.index("[Профиль пользователя]"))
+        self.assertLess(system_prompt.index("[Профиль пользователя]"), system_prompt.index(agent.MEMORY_DATA_INSTRUCTION))
+        self.assertNotIn("Верни только валидный JSON без Markdown-разметки.", system_prompt)
+        self.assertEqual(calls[0]["options"], {"response_format": {"type": "json_object"}})
+        self.assertEqual(result["metadata"]["userProfile"], profile)
+        profile["style"] = "кратко"
+        self.assertEqual(result["metadata"]["userProfile"]["style"], "подробно")
 
     def test_failed_response_keeps_user_message_and_records_error_metadata(self):
         def ask_model(payload, **options):
