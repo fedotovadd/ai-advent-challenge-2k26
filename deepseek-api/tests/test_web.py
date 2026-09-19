@@ -1001,6 +1001,42 @@ class DeepSeekWebTests(unittest.TestCase):
                 self.assertEqual(body, {"error": "Запрос с другого источника запрещён."})
         self.assertEqual(self.calls, [])
 
+    def test_memory_api_updates_each_layer_and_persists(self):
+        status, body, _ = self.json_request("PUT", "/api/agents/agent-1/memory/working", {
+            "task": "Каталог", "data": {"audience": "B2B"},
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["context"]["memoryLayers"]["working"]["task"], "Каталог")
+        status, body, _ = self.json_request("PUT", "/api/agents/agent-1/memory/long-term/profile", {
+            "entries": {"style": "кратко"},
+        })
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["context"]["memoryLayers"]["longTerm"]["profile"], {"style": "кратко"})
+
+        self.server.server_close()
+        self.server = web.ChatServer(("127.0.0.1", 0), self.ask_model, self.state_path)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        status, body, _ = self.json_request("GET", "/api/agents")
+        self.assertEqual(body["agents"][0]["context"]["memoryLayers"]["working"]["data"], {"audience": "B2B"})
+
+    def test_memory_api_rejects_bad_body_unknown_agent_and_foreign_origin(self):
+        for path, body, expected in [
+            ("/api/agents/agent-1/memory/working", {"task": "x"}, 400),
+            ("/api/agents/missing/memory/working", {"task": "", "data": {}}, 404),
+            ("/api/agents/agent-1/memory/long-term/unknown", {"entries": {}}, 404),
+        ]:
+            with self.subTest(path=path):
+                status, _, _ = self.json_request("PUT", path, body)
+                self.assertEqual(status, expected)
+        status, body, _ = self.json_request(
+            "PUT", "/api/agents/agent-1/memory/working", {"task": "", "data": {}},
+            {"Origin": "https://external.example"},
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(body, {"error": "Запрос с другого источника запрещён."})
+
     def test_matching_origin_is_accepted(self):
         status, _, _ = self.json_request(
             "POST", "/api/agents/agent-1/messages", {"text": "Привет"},
