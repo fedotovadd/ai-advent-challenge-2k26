@@ -1312,7 +1312,9 @@ class AgentRegistry:
             try:
                 message = agent.apply_task_command(command)
                 continue_task = False
-                if command.get("action") == "execute":
+                if command.get("action") == "task":
+                    snapshot = agent.respond(command["title"], DEFAULT_TEMPERATURE, self._active_profile())
+                elif command.get("action") == "execute":
                     snapshot, continue_task = agent.advance_task(DEFAULT_TEMPERATURE, self._active_profile())
                 else:
                     snapshot = agent.snapshot()
@@ -1325,6 +1327,8 @@ class AgentRegistry:
                     rollback = copy.deepcopy(before)
                     rollback[agent_id]["metadata"] = copy.deepcopy(agent.snapshot()["metadata"])
                     self._restore(rollback, self._shared_long_term)
+                    self._save()
+                elif command.get("action") == "task":
                     self._save()
                 raise
             result = {"agent": snapshot, "command": {"message": message}}

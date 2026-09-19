@@ -1151,11 +1151,15 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_task_commands_create_plan_execute_pause_and_resume_locally(self):
+        self.answers = ["Какая аудитория у статьи?"]
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/task Статья"})
         self.assertEqual(status, 200)
         self.assertEqual(body["agent"]["context"]["taskState"]["stage"], "PLANNING")
-        self.assertEqual(body["agent"]["messages"], [])
-        self.assertEqual(self.calls, [])
+        self.assertEqual(body["agent"]["messages"][:2], [
+            {"role": "user", "content": "Статья"},
+            {"role": "assistant", "content": "Какая аудитория у статьи?"},
+        ])
+        self.assertEqual(self.calls[-1]["payload"]["messages"][-1], {"role": "user", "content": "Статья"})
         self.answers = ["[[TASK_PLAN]]\n# План\n1. Исследовать\n2. Написать\n[[/TASK_PLAN]]"]
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Нужна статья"})
         self.assertEqual(status, 200)
