@@ -1241,6 +1241,9 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("const taskVersion=++state.taskChainVersion", page)
         self.assertIn("if(!text||!agentId||state.pendingAgentIds.has(agentId)||state.contextBusy)return", page)
         self.assertIn("if(count>=25){state.autoPendingAgentIds.delete(agentId);state.taskChainGuarded.add(agentId)", page)
+        created_notice = 'if(taskTitle)setChatStatus(agentId,"Создана задача: "+taskTitle+".","success")'
+        self.assertIn(created_notice, page)
+        self.assertLess(page.index(created_notice), page.index('await api("/api/agents/"+agentId+"/messages"'))
 
     def test_task_advance_missing_key_returns_503(self):
         self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/task Статья"})
