@@ -13,7 +13,7 @@ from context_memory import (
     apply_facts_patch, default_facts_usage, valid_facts, validate_context_settings, validate_name,
 )
 from memory_layers import (
-    MemoryCommandError, default_memory_layers, default_long_term, default_working, stable_block, valid_long_term,
+    MemoryCommandError, default_memory_layers, default_long_term, default_working, valid_long_term,
     valid_memory_layers, valid_working, working_has_content, long_term_has_content,
 )
 
@@ -483,14 +483,18 @@ class Agent:
         layers = context["memoryLayers"]
         working, long_term = layers["working"], layers["longTerm"]
         has_memory = working_has_content(working) or long_term_has_content(long_term)
-        messages = [{"role": "system", "content": system_prompt + (
-            f"\n\n{MEMORY_DATA_INSTRUCTION}" if has_memory else ""
+        if not has_memory:
+            return [{"role": "system", "content": system_prompt}]
+        lines = ["Контекст, который нужно учитывать:"]
+        if working["task"]:
+            lines.append(f"Текущая задача: {working['task']}")
+        lines.extend(f"{key}: {value}" for key, value in sorted(working["data"].items()))
+        lines.extend(f"{key}: {value}" for key, value in sorted(long_term["profile"].items()))
+        lines.extend(long_term["decisions"])
+        lines.extend(f"{key}: {value}" for key, value in sorted(long_term["knowledge"].items()))
+        return [{"role": "system", "content": system_prompt + (
+            f"\n\n{MEMORY_DATA_INSTRUCTION}\n\n" + "\n".join(lines)
         )}]
-        if working_has_content(working):
-            messages.append({"role": "system", "content": stable_block("WORKING_MEMORY", working)})
-        if long_term_has_content(long_term):
-            messages.append({"role": "system", "content": stable_block("LONG_TERM_MEMORY", long_term)})
-        return messages
 
     def _memory_trace(self, messages, context):
         layers = context["memoryLayers"]

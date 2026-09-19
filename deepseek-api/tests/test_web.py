@@ -158,6 +158,14 @@ class DeepSeekWebTests(unittest.TestCase):
         for label in ("Сжато сообщений", "Размер summary", "Токены: полная / сжатая история", "Стоимость summary"):
             self.assertIn(label, body)
 
+    def test_memory_panel_uses_compact_regular_disclosure_headings(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        summary_css = self.css_block(body, ".context-controls summary")
+        self.assertIn("font-size:12px", summary_css)
+        self.assertIn("font-weight:400", summary_css)
+
     def test_page_contains_model_and_usage_metadata(self):
         status, body, _ = self.request("GET", "/")
 
