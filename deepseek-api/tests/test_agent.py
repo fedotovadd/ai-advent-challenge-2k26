@@ -413,6 +413,47 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(result["metrics"]["totals"]["netSavingsUsd"], 0)
 
 
+    def test_memory_layers_are_injected_separately_and_traced(self):
+        calls = []
+
+        def ask_model(payload, **options):
+            calls.append(payload)
+            return "Ответ"
+
+        instance = Agent("agent-1", "Тест", default_settings(), ask_model)
+        instance.update_working_memory({"task": "Лендинг", "data": {"tone": "спокойный"}})
+        instance.update_long_term_memory("profile", {"style": "кратко"})
+        result = instance.respond("Сделай текст")
+
+        messages = calls[-1]["messages"]
+        self.assertIn("Данные памяти", messages[0]["content"])
+        self.assertEqual(messages[1], {
+            "role": "system",
+            "content": '[WORKING_MEMORY]\n{"data":{"tone":"спокойный"},"task":"Лендинг"}',
+        })
+        self.assertEqual(messages[2], {
+            "role": "system",
+            "content": '[LONG_TERM_MEMORY]\n{"decisions":[],"knowledge":{},"profile":{"style":"кратко"}}',
+        })
+        self.assertEqual(messages[-1], {"role": "user", "content": "Сделай текст"})
+        self.assertEqual(result["metadata"]["memoryLayers"], {
+            "shortTerm": [{"role": "user", "content": "Сделай текст"}],
+            "working": {"task": "Лендинг", "data": {"tone": "спокойный"}},
+            "longTerm": {"profile": {"style": "кратко"}, "decisions": [], "knowledge": {}},
+        })
+
+    def test_empty_memory_layers_do_not_change_existing_system_prompt(self):
+        calls = []
+        instance = Agent("agent-1", "Тест", default_settings(), lambda payload, **options: calls.append(payload) or "Ответ")
+
+        instance.respond("Привет")
+
+        self.assertEqual(calls[-1]["messages"], [
+            {"role": "system", "content": default_settings()["systemPrompt"]},
+            {"role": "user", "content": "Привет"},
+        ])
+
+
 class AgentRegistryTests(unittest.TestCase):
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory()
@@ -873,6 +914,18 @@ class AgentRegistryTests(unittest.TestCase):
 
         self.assertIsNotNone(registry.get("agent-1"))
         self.assertEqual(self.state_path.read_text(encoding="utf-8"), before)
+
+    def test_registry_persists_working_and_long_term_memory_across_restart(self):
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        registry.update_memory("agent-1", "working", {"task": "Каталог", "data": {"audience": "B2B"}})
+        registry.update_memory("agent-1", "profile", {"style": "кратко"})
+        restored = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(restored.get("agent-1").snapshot()["context"]["memoryLayers"], {
+            "working": {"task": "Каталог", "data": {"audience": "B2B"}},
+            "longTerm": {"profile": {"style": "кратко"}, "decisions": [], "knowledge": {}},
+        })
 
 
 if __name__ == "__main__":
