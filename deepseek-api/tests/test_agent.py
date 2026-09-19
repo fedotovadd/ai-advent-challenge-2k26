@@ -575,11 +575,58 @@ class AgentRegistryTests(unittest.TestCase):
         ])
         self.assertEqual(restored["metadata"]["status"], {"kind": "success", "label": "200 OK"})
         self.assertEqual(calls[0]["messages"], [
-            {"role": "system", "content": "Отвечай дружелюбно."},
+            {"role": "system", "content": "Отвечай дружелюбно.\n\n" + user_profiles.profile_prompt_block(user_profiles.default_profile())},
             {"role": "user", "content": "Меня зовут Маша"},
             {"role": "assistant", "content": "Рада познакомиться!"},
             {"role": "user", "content": "Как меня зовут?"},
         ])
+
+    def test_profiles_can_be_created_edited_activated_and_restored(self):
+        calls = []
+        registry = AgentRegistry(lambda payload, **options: calls.append(payload) or "Ответ", self.state_path)
+        created = registry.create_profile({
+            "name": "Анна Смирнова", "style": "деловой и тёплый",
+            "format": "короткие пункты", "constraints": "не использовать таблицы",
+        })
+
+        self.assertEqual(created["activeProfileId"], "profile-2")
+        self.assertEqual(registry.profiles()["profiles"][1]["name"], "Анна Смирнова")
+        registry.update_profile("profile-2", {
+            "name": "Анна Смирнова", "style": "строго и по делу",
+            "format": "один абзац", "constraints": "без эмодзи",
+        })
+        registry.activate_profile("profile-1")
+        registry.activate_profile("profile-2")
+        registry.respond("agent-1", "Привет")
+
+        self.assertIn("Имя: Анна Смирнова", calls[0]["messages"][0]["content"])
+        restored = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+        self.assertEqual(restored.profiles(), {
+            "profiles": [
+                user_profiles.default_profile(),
+                {"id": "profile-2", "name": "Анна Смирнова", "style": "строго и по делу",
+                 "format": "один абзац", "constraints": "без эмодзи"},
+            ],
+            "activeProfileId": "profile-2",
+        })
+
+    def test_registry_migrates_v7_state_to_the_default_profile(self):
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+        registry.respond("agent-1", "Привет")
+        state = registry._state()
+        state["version"] = 7
+        state.pop("profiles")
+        state.pop("activeProfileId")
+        state.pop("nextProfileId")
+        state["agents"][0]["metadata"].pop("userProfile")
+        self.state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+        restored = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+
+        self.assertEqual(restored.profiles(), {
+            "profiles": [user_profiles.default_profile()], "activeProfileId": "profile-1",
+        })
+        self.assertIsNone(restored.get("agent-1").snapshot()["metadata"]["userProfile"])
 
     def test_registry_ignores_invalid_saved_state(self):
         self.state_path.write_text(json.dumps({

@@ -19,6 +19,7 @@ from memory_layers import MemoryCommandError, parse_memory_command
 STATIC_PAGE = Path(__file__).with_name("static") / "index.html"
 STATIC_AGENT_STATE = Path(__file__).with_name("static") / "agent-state.js"
 STATIC_MEMORY_CONTROLS = Path(__file__).with_name("static") / "memory-controls.js"
+STATIC_PROFILE_CONTROLS = Path(__file__).with_name("static") / "profile-controls.js"
 MAX_MEMORY_REQUEST_BYTES = 65_536
 
 
@@ -36,6 +37,10 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_javascript(200, STATIC_PAGE.with_name("context-controls.js").read_text(encoding="utf-8"))
         elif path == "/static/memory-controls.js":
             self._send_javascript(200, STATIC_MEMORY_CONTROLS.read_text(encoding="utf-8"))
+        elif path == "/static/profile-controls.js":
+            self._send_javascript(200, STATIC_PROFILE_CONTROLS.read_text(encoding="utf-8"))
+        elif path == "/api/profiles":
+            self._send_json(200, self.server.registry.profiles())
         elif path == "/api/agents":
             self._send_json(200, {"agents": self.server.registry.agents()})
         elif path.startswith("/api/"):
@@ -63,6 +68,13 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(201, {"agent": created})
             return
+        if path == "/api/profiles":
+            self._handle_profile_create()
+            return
+        profile_parts = path.split("/")
+        if len(profile_parts) == 5 and profile_parts[:3] == ["", "api", "profiles"] and profile_parts[4] == "activate":
+            self._handle_profile_activate(profile_parts[3])
+            return
         if path == "/api/agents/bulk":
             self._handle_bulk_create()
             return
@@ -84,6 +96,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if len(parts) == 5 and parts[:3] == ["", "api", "agents"] and parts[4] == "settings":
             self._handle_settings(parts[3])
             return
+        if len(parts) == 4 and parts[:3] == ["", "api", "profiles"]:
+            self._handle_profile_update(parts[3])
+            return
         if len(parts) == 6 and parts[:3] == ["", "api", "agents"] and parts[4:] == ["memory", "working"]:
             self._handle_memory_update(parts[3], "working")
             return
@@ -91,6 +106,51 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._handle_memory_update(parts[3], "long-term")
             return
         self._send_json(404, {"error": "Маршрут не найден."})
+
+    def _handle_profile_create(self):
+        data = self._read_memory_json_body()
+        if data is None:
+            return
+        try:
+            result = self.server.registry.create_profile(data)
+        except ValueError as error:
+            self._send_json(400, {"error": str(error)})
+            return
+        except PersistenceError:
+            self._send_storage_error()
+            return
+        self._send_json(201, result)
+
+    def _handle_profile_update(self, profile_id):
+        data = self._read_memory_json_body()
+        if data is None:
+            return
+        try:
+            profile = self.server.registry.update_profile(profile_id, data)
+        except ValueError as error:
+            self._send_json(400, {"error": str(error)})
+            return
+        except PersistenceError:
+            self._send_storage_error()
+            return
+        if profile is None:
+            self._send_json(404, {"error": "Профиль не найден."})
+            return
+        self._send_json(200, {"profile": profile})
+
+    def _handle_profile_activate(self, profile_id):
+        if self.headers.get("Transfer-Encoding") is not None or self.headers.get("Content-Length", "0") not in {"", "0"}:
+            self._send_json(400, {"error": "Активация не принимает тело запроса."})
+            return
+        try:
+            result = self.server.registry.activate_profile(profile_id)
+        except PersistenceError:
+            self._send_storage_error()
+            return
+        if result is None:
+            self._send_json(404, {"error": "Профиль не найден."})
+            return
+        self._send_json(200, result)
 
     def do_DELETE(self):
         if not self._same_origin():
