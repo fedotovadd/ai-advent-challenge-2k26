@@ -17,35 +17,25 @@ class MemoryLayerTests(unittest.TestCase):
         second = default_memory_layers()
 
         self.assertEqual(first, {
-            "working": {"task": "", "data": {}},
-            "longTerm": {"profile": {}, "decisions": [], "knowledge": {}},
+            "working": [],
+            "longTerm": [],
         })
-        first["working"]["data"]["goal"] = "catalog"
-        self.assertEqual(second["working"]["data"], {})
+        first["working"].append("catalog")
+        self.assertEqual(second["working"], [])
 
-    def test_working_requires_a_bounded_string_dictionary(self):
-        self.assertTrue(valid_working({"task": "", "data": {}}))
-        self.assertTrue(valid_working({"task": "Catalog", "data": {"audience": "B2B"}}))
-        self.assertFalse(valid_working({"task": "Catalog", "data": {"audience": []}}))
-        self.assertFalse(valid_working({"task": "Catalog", "data": {" ": "B2B"}}))
-        self.assertFalse(valid_working({"task": "x" * 301, "data": {}}))
-        self.assertFalse(valid_working({"task": "Catalog", "data": {
-            f"key-{index}": "value" for index in range(25)
-        }}))
+    def test_working_requires_a_bounded_list_of_text_items(self):
+        self.assertTrue(valid_working([]))
+        self.assertTrue(valid_working(["Catalog", "B2B"] ))
+        self.assertFalse(valid_working({"task": "Catalog", "data": {}}))
+        self.assertFalse(valid_working([" "]))
+        self.assertFalse(valid_working(["x" * 501]))
+        self.assertFalse(valid_working([f"item-{index}" for index in range(25)]))
 
-    def test_long_term_keeps_categories_and_limits_separate(self):
-        self.assertTrue(valid_long_term({
-            "profile": {"style": "brief"},
-            "decisions": ["Free APIs only"],
-            "knowledge": {"product": "catalog"},
-        }))
-        self.assertFalse(valid_long_term({"profile": {}, "decisions": [], "knowledge": {}, "extra": {}}))
-        self.assertFalse(valid_long_term({"profile": {}, "decisions": [" "], "knowledge": {}}))
-        self.assertFalse(valid_long_term({"profile": {}, "decisions": ["x"] * 21, "knowledge": {}}))
-        self.assertFalse(valid_long_term({
-            "profile": {f"key-{index}": "value" for index in range(17)},
-            "decisions": [], "knowledge": {},
-        }))
+    def test_long_term_requires_a_bounded_list_of_text_items(self):
+        self.assertTrue(valid_long_term(["Free APIs only", "catalog"] ))
+        self.assertFalse(valid_long_term({"profile": {}, "decisions": [], "knowledge": {}}))
+        self.assertFalse(valid_long_term([" "]))
+        self.assertFalse(valid_long_term([f"item-{index}" for index in range(53)]))
 
     def test_memory_layer_validation_and_stable_block(self):
         layers = default_memory_layers()
@@ -61,36 +51,14 @@ class MemoryLayerTests(unittest.TestCase):
         self.assertEqual(parse_memory_command("/working Дизайнерский проект"), {
             "action": "working", "text": "Дизайнерский проект",
         })
-        self.assertEqual(parse_memory_command("/working-data Дедлайн: 20 октября"), {
-            "action": "working-data", "key": "Дедлайн", "value": "20 октября",
-        })
-        self.assertEqual(parse_memory_command("/working-data Встреча в четверг"), {
-            "action": "working-data", "value": "Встреча в четверг",
-        })
-        self.assertEqual(parse_memory_command("/profile Имя: Диана"), {
-            "action": "profile", "key": "Имя", "value": "Диана",
-        })
-        self.assertEqual(parse_memory_command("/profile Диана"), {
-            "action": "profile", "value": "Диана",
-        })
-        self.assertEqual(parse_memory_command("/decision Используем светлую палитру"), {
-            "action": "decision", "text": "Используем светлую палитру",
-        })
-        self.assertEqual(parse_memory_command("/knowledge Figma: основной инструмент"), {
-            "action": "knowledge", "key": "Figma", "value": "основной инструмент",
-        })
-        self.assertEqual(parse_memory_command("/knowledge Любит минимализм"), {
-            "action": "knowledge", "value": "Любит минимализм",
+        self.assertEqual(parse_memory_command("/long Меня зовут Диана"), {
+            "action": "long", "text": "Меня зовут Диана",
         })
         self.assertEqual(parse_memory_command("/clear-working"), {"action": "clear-working"})
-        self.assertEqual(parse_memory_command("/clear-working-data"), {"action": "clear-working-data"})
-        self.assertEqual(parse_memory_command("/clear-profile"), {"action": "clear-profile"})
-        self.assertEqual(parse_memory_command("/clear-decisions"), {"action": "clear-decisions"})
-        self.assertEqual(parse_memory_command("/clear-knowledge"), {"action": "clear-knowledge"})
         self.assertEqual(parse_memory_command("/clear-long"), {"action": "clear-long"})
         self.assertEqual(parse_memory_command("/clear-memory"), {"action": "clear-memory"})
-        self.assertIsNone(parse_memory_command("/long Меня зовут Диана"))
-        for command in ("/working", "/working-data ", "/profile : Диана", "/decision ", "/clear-long extra"):
+        self.assertIsNone(parse_memory_command("/profile Имя: Диана"))
+        for command in ("/working", "/long ", "/clear-long extra"):
             with self.subTest(command=command), self.assertRaises(MemoryCommandError):
                 parse_memory_command(command)
 

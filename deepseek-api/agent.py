@@ -13,7 +13,7 @@ from context_memory import (
     apply_facts_patch, default_facts_usage, valid_facts, validate_context_settings, validate_name,
 )
 from memory_layers import (
-    MAX_LONG_TERM_FIELDS, MAX_WORKING_FIELDS, MemoryCommandError, default_memory_layers, default_long_term, default_working, valid_long_term,
+    MemoryCommandError, default_memory_layers, default_long_term, default_working, valid_long_term,
     valid_memory_layers, valid_working, working_has_content, long_term_has_content,
 )
 
@@ -58,7 +58,7 @@ DEFAULT_SETTINGS = {
     "windowSize": 10,
 }
 MAX_BULK_AGENTS = 100
-STATE_VERSION = 6
+STATE_VERSION = 7
 DEFAULT_STATE_PATH = Path(__file__).with_name("data") / "agents.json"
 METADATA_FIELDS = {
     "userPrompt",
@@ -188,14 +188,6 @@ def estimate_payload_tokens(payload):
     return 3 + message_tokens + option_tokens
 
 
-def _next_note_key(entries, maximum):
-    for number in range(1, maximum + 1):
-        key = f"note-{number}"
-        if key not in entries:
-            return key
-    return None
-
-
 def request_usage_and_cost(model, usage, estimated_prompt_tokens=None, estimated_completion_tokens=None):
     prompt_tokens = _usage_value(usage, "prompt_tokens")
     completion_tokens = _usage_value(usage, "completion_tokens")
@@ -273,15 +265,11 @@ class Agent:
             self._context["memoryLayers"]["working"] = copy.deepcopy(working)
             return self.snapshot()
 
-    def update_long_term_memory(self, category, entries):
+    def update_long_term_memory(self, entries):
         with self._lock:
-            if category not in {"profile", "decisions", "knowledge"}:
-                raise ValueError("Неизвестная категория долговременной памяти.")
-            candidate = copy.deepcopy(self._context["memoryLayers"]["longTerm"])
-            candidate[category] = copy.deepcopy(entries)
-            if not valid_long_term(candidate):
+            if not valid_long_term(entries):
                 raise ValueError("Долговременная память имеет неверный формат.")
-            self._context["memoryLayers"]["longTerm"] = candidate
+            self._context["memoryLayers"]["longTerm"] = copy.deepcopy(entries)
             return self.snapshot()
 
     def replace_long_term_memory(self, long_term):
@@ -298,53 +286,21 @@ class Agent:
             layers = self._context["memoryLayers"]
             if action == "working":
                 candidate = copy.deepcopy(layers["working"])
-                candidate["task"] = command["text"]
+                candidate.append(command["text"])
                 if not valid_working(candidate):
-                    raise MemoryCommandError("Текст рабочей памяти слишком длинный.")
+                    raise MemoryCommandError("Рабочая память заполнена или текст слишком длинный.")
                 layers["working"] = candidate
                 return "Рабочая память сохранена."
-            if action == "working-data":
-                candidate = copy.deepcopy(layers["working"])
-                key = command.get("key") or _next_note_key(candidate["data"], MAX_WORKING_FIELDS)
-                if key is None:
-                    raise MemoryCommandError("Данные рабочей памяти заполнены.")
-                candidate["data"][key] = command["value"]
-                if not valid_working(candidate):
-                    raise MemoryCommandError("Данные рабочей памяти имеют неверный формат или заполнены.")
-                layers["working"] = candidate
-                return "Данные рабочей памяти сохранены."
-            if action in {"profile", "knowledge"}:
+            if action == "long":
                 candidate = copy.deepcopy(layers["longTerm"])
-                key = command.get("key") or _next_note_key(candidate[action], MAX_LONG_TERM_FIELDS)
-                if key is None:
-                    raise MemoryCommandError("Долговременная память заполнена.")
-                candidate[action][key] = command["value"]
+                candidate.append(command["text"])
                 if not valid_long_term(candidate):
-                    raise MemoryCommandError("Долговременная память имеет неверный формат или заполнена.")
+                    raise MemoryCommandError("Долговременная память заполнена или текст слишком длинный.")
                 layers["longTerm"] = candidate
-                return "Профиль сохранён." if action == "profile" else "Знание сохранено."
-            if action == "decision":
-                candidate = copy.deepcopy(layers["longTerm"])
-                candidate["decisions"].append(command["text"])
-                if not valid_long_term(candidate):
-                    raise MemoryCommandError("Список решений заполнен или содержит слишком длинный текст.")
-                layers["longTerm"] = candidate
-                return "Решение сохранено."
+                return "Долговременная память сохранена."
             if action == "clear-working":
                 layers["working"] = default_working()
                 return "Рабочая память очищена."
-            if action == "clear-working-data":
-                layers["working"]["data"] = {}
-                return "Данные рабочей памяти очищены."
-            if action == "clear-profile":
-                layers["longTerm"]["profile"] = {}
-                return "Профиль очищен."
-            if action == "clear-decisions":
-                layers["longTerm"]["decisions"] = []
-                return "Список решений очищен."
-            if action == "clear-knowledge":
-                layers["longTerm"]["knowledge"] = {}
-                return "Знания очищены."
             if action == "clear-long":
                 layers["longTerm"] = default_long_term()
                 return "Долговременная память очищена."
@@ -507,12 +463,8 @@ class Agent:
         if not has_memory:
             return [{"role": "system", "content": system_prompt}]
         lines = ["Контекст, который нужно учитывать:"]
-        if working["task"]:
-            lines.append(f"Текущая задача: {working['task']}")
-        lines.extend(value for _, value in sorted(working["data"].items()))
-        lines.extend(value for _, value in sorted(long_term["profile"].items()))
-        lines.extend(long_term["decisions"])
-        lines.extend(value for _, value in sorted(long_term["knowledge"].items()))
+        lines.extend(working)
+        lines.extend(long_term)
         return [{"role": "system", "content": system_prompt + (
             f"\n\n{MEMORY_DATA_INSTRUCTION}\n\n" + "\n".join(lines)
         )}]
@@ -997,22 +949,80 @@ def _valid_agent_snapshot(snapshot):
     )
 
 
+def _legacy_working_items(value):
+    if valid_working(value):
+        return copy.deepcopy(value)
+    if not isinstance(value, dict) or set(value) != {"task", "data"}:
+        return None
+    items = []
+    if isinstance(value["task"], str) and value["task"].strip():
+        items.append(value["task"])
+    if not isinstance(value["data"], dict):
+        return None
+    items.extend(entry for entry in value["data"].values() if isinstance(entry, str) and entry.strip())
+    return items if valid_working(items) else None
+
+
+def _legacy_long_term_items(value):
+    if valid_long_term(value):
+        return copy.deepcopy(value)
+    if not isinstance(value, dict) or set(value) != {"profile", "decisions", "knowledge"}:
+        return None
+    profile, decisions, knowledge = value["profile"], value["decisions"], value["knowledge"]
+    if not isinstance(profile, dict) or not isinstance(decisions, list) or not isinstance(knowledge, dict):
+        return None
+    items = [
+        *(entry for entry in profile.values() if isinstance(entry, str) and entry.strip()),
+        *(entry for entry in decisions if isinstance(entry, str) and entry.strip()),
+        *(entry for entry in knowledge.values() if isinstance(entry, str) and entry.strip()),
+    ]
+    return items if valid_long_term(items) else None
+
+
 def _merged_long_term_from_snapshots(snapshots):
     merged = default_long_term()
     for snapshot in snapshots:
         context = snapshot.get("context") if isinstance(snapshot, dict) else None
         layers = context.get("memoryLayers") if isinstance(context, dict) else None
         long_term = layers.get("longTerm") if isinstance(layers, dict) else None
-        if not valid_long_term(long_term):
+        items = _legacy_long_term_items(long_term)
+        if items is None:
             continue
-        for category in ("profile", "knowledge"):
-            for key, value in long_term[category].items():
-                if key not in merged[category] and len(merged[category]) < 16:
-                    merged[category][key] = value
-        for decision in long_term["decisions"]:
-            if decision not in merged["decisions"] and len(merged["decisions"]) < 20:
-                merged["decisions"].append(decision)
+        for item in items:
+            if item not in merged and len(merged) < 52:
+                merged.append(item)
     return merged
+
+
+def _snapshot_contexts(snapshot):
+    context = snapshot.get("context") if isinstance(snapshot, dict) else None
+    contexts = [context] if isinstance(context, dict) else []
+    if isinstance(context, dict):
+        branches = context.get("branches")
+        checkpoints = context.get("checkpoints")
+        for item in [*(branches.values() if isinstance(branches, dict) else []),
+                     *(checkpoints.values() if isinstance(checkpoints, dict) else [])]:
+            if isinstance(item, dict) and isinstance(item.get("state"), dict):
+                contexts.append(item["state"])
+    return contexts
+
+
+def _migrate_memory_trace(metadata):
+    if not isinstance(metadata, dict) or not isinstance(metadata.get("memoryLayers"), dict):
+        return
+    layers = metadata["memoryLayers"]
+    if set(layers) != {"shortTerm", "working", "longTerm"}:
+        return
+    working = layers["working"]
+    long_term = layers["longTerm"]
+    if working is not None:
+        migrated = _legacy_working_items(working)
+        if migrated is not None:
+            layers["working"] = migrated
+    if long_term is not None:
+        migrated = _legacy_long_term_items(long_term)
+        if migrated is not None:
+            layers["longTerm"] = migrated
 
 
 class AgentRegistry:
@@ -1109,10 +1119,12 @@ class AgentRegistry:
             before_shared = copy.deepcopy(self._shared_long_term)
             if scope == "working":
                 snapshot = agent.update_working_memory(entries)
-            else:
-                snapshot = agent.update_long_term_memory(scope, entries)
+            elif scope == "long-term":
+                snapshot = agent.update_long_term_memory(entries)
                 self._sync_shared_long_term(snapshot["context"]["memoryLayers"]["longTerm"])
                 snapshot = agent.snapshot()
+            else:
+                raise ValueError("Неизвестный слой памяти.")
             try:
                 self._save()
             except PersistenceError:
@@ -1128,7 +1140,7 @@ class AgentRegistry:
             before = self._snapshots()
             before_shared = copy.deepcopy(self._shared_long_term)
             message = agent.apply_memory_command(command)
-            if command.get("action") not in {"working", "working-data", "clear-working", "clear-working-data"}:
+            if command.get("action") in {"long", "clear-long", "clear-memory"}:
                 self._sync_shared_long_term(agent.snapshot()["context"]["memoryLayers"]["longTerm"])
             try:
                 self._save()
@@ -1272,7 +1284,9 @@ class AgentRegistry:
         if isinstance(version, int) and not isinstance(version, bool) and version in {4, 5} and isinstance(state.get("agents"), list):
             for snapshot in state["agents"]:
                 context = snapshot.get("context") if isinstance(snapshot, dict) else None
-                if isinstance(context, dict) and not valid_memory_layers(context.get("memoryLayers")):
+                if isinstance(context, dict) and _legacy_working_items(
+                    context.get("memoryLayers", {}).get("working") if isinstance(context.get("memoryLayers"), dict) else None
+                ) is None:
                     context["memoryLayers"] = default_memory_layers()
             if version == 4:
                 for snapshot in state["agents"]:
@@ -1302,10 +1316,29 @@ class AgentRegistry:
                     context = snapshot.get("context") if isinstance(snapshot, dict) else None
                     layers = context.get("memoryLayers") if isinstance(context, dict) else None
                     if isinstance(layers, dict):
+                        working = _legacy_working_items(layers.get("working"))
+                        layers["working"] = working if working is not None else default_working()
                         layers["longTerm"] = copy.deepcopy(shared_long_term)
                 state["sharedLongTerm"] = shared_long_term
                 state["version"] = STATE_VERSION
                 version = STATE_VERSION
+        if isinstance(state, dict) and state.get("version") == 6 and isinstance(state.get("agents"), list):
+            shared_long_term = _legacy_long_term_items(state.get("sharedLongTerm"))
+            if shared_long_term is None:
+                return None
+            for snapshot in state["agents"]:
+                context = snapshot.get("context") if isinstance(snapshot, dict) else None
+                layers = context.get("memoryLayers") if isinstance(context, dict) else None
+                if not isinstance(layers, dict):
+                    return None
+                working = _legacy_working_items(layers.get("working"))
+                if working is None:
+                    return None
+                layers["working"] = working
+                layers["longTerm"] = copy.deepcopy(shared_long_term)
+            state["sharedLongTerm"] = shared_long_term
+            state["version"] = STATE_VERSION
+            version = STATE_VERSION
         if isinstance(state, dict) and state.get("version") == STATE_VERSION and valid_long_term(state.get("sharedLongTerm")):
             for snapshot in state.get("agents", []):
                 context = snapshot.get("context") if isinstance(snapshot, dict) else None
@@ -1314,6 +1347,8 @@ class AgentRegistry:
                     layers["longTerm"] = copy.deepcopy(state["sharedLongTerm"])
         if isinstance(state, dict) and state.get("version") == STATE_VERSION and isinstance(state.get("agents"), list):
             for snapshot in state["agents"]:
+                for item in [snapshot, *_snapshot_contexts(snapshot)]:
+                    _migrate_memory_trace(item.get("metadata") if isinstance(item, dict) else None)
                 metrics = snapshot.get("metrics") if isinstance(snapshot, dict) else None
                 if isinstance(metrics, dict):
                     calls = metrics.get("calls")

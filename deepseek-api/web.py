@@ -87,10 +87,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if len(parts) == 6 and parts[:3] == ["", "api", "agents"] and parts[4:] == ["memory", "working"]:
             self._handle_memory_update(parts[3], "working")
             return
-        if len(parts) == 7 and parts[:3] == ["", "api", "agents"] and parts[4:6] == ["memory", "long-term"]:
-            if parts[6] in {"profile", "decisions", "knowledge"}:
-                self._handle_memory_update(parts[3], parts[6])
-                return
+        if len(parts) == 6 and parts[:3] == ["", "api", "agents"] and parts[4:] == ["memory", "long-term"]:
+            self._handle_memory_update(parts[3], "long-term")
+            return
         self._send_json(404, {"error": "Маршрут не найден."})
 
     def do_DELETE(self):
@@ -365,7 +364,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         data = self._read_memory_json_body()
         if data is None:
             return
-        entries = data if scope == "working" else data.get("entries") if isinstance(data, dict) and set(data) == {"entries"} else None
+        entries = data if scope in {"working", "long-term"} else None
         if entries is None:
             self._send_json(400, {"error": "Память имеет неверный формат."})
             return
