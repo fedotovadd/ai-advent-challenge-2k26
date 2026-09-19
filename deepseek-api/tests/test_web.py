@@ -166,6 +166,20 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("font-size:12px", summary_css)
         self.assertIn("font-weight:400", summary_css)
 
+    def test_composer_exposes_a_toggleable_memory_command_help(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        for marker in (
+            'id="memory-command-help-button"', 'id="memory-command-help"',
+            '<strong>/working</strong> — сохранить текущую задачу',
+            '<strong>/profile</strong> — сохранить поле профиля',
+            '<strong>/clear-memory</strong> — очистить рабочую и долговременную память',
+            'toggleAttribute("hidden")', 'aria-expanded',
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, body)
+
     def test_page_contains_model_and_usage_metadata(self):
         status, body, _ = self.request("GET", "/")
 
