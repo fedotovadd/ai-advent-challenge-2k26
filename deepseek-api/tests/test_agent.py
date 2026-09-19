@@ -5,7 +5,50 @@ from pathlib import Path
 from unittest.mock import patch
 
 import agent
+import user_profiles
 from agent import Agent, AgentRegistry, MAX_BULK_AGENTS, PersistenceError, default_settings
+
+
+class UserProfileTests(unittest.TestCase):
+    def test_normalizes_profile_and_renders_preference_block(self):
+        fields = user_profiles.normalize_profile({
+            "name": "  Анна  ",
+            "style": " ясно ",
+            "format": " абзацы ",
+            "constraints": " без Markdown ",
+        })
+        profile = user_profiles.profile_with_id("profile-1", fields)
+
+        self.assertEqual(fields, {
+            "name": "Анна",
+            "style": "ясно",
+            "format": "абзацы",
+            "constraints": "без Markdown",
+        })
+        self.assertTrue(user_profiles.valid_profile_collection([profile], "profile-1", 2))
+        block = user_profiles.profile_prompt_block(profile)
+        self.assertIn("[Профиль пользователя]", block)
+        self.assertIn("Имя: Анна", block)
+        self.assertIn("Стиль: ясно", block)
+        self.assertIn("Формат: абзацы", block)
+        self.assertIn("Ограничения: без Markdown", block)
+
+    def test_rejects_duplicate_normalized_names_and_more_than_twenty_profiles(self):
+        profile = user_profiles.profile_with_id("profile-1", user_profiles.normalize_profile({
+            "name": "Анна", "style": "ясно", "format": "абзацы", "constraints": "без Markdown",
+        }))
+        duplicate = user_profiles.profile_with_id("profile-2", user_profiles.normalize_profile({
+            "name": "анна", "style": "подробно", "format": "список", "constraints": "без Markdown",
+        }))
+
+        self.assertFalse(user_profiles.valid_profile_collection([profile, duplicate], "profile-1", 3))
+        profiles = [
+            user_profiles.profile_with_id(f"profile-{number}", {
+                "name": f"Пользователь {number}", "style": "ясно", "format": "абзацы", "constraints": "без Markdown",
+            })
+            for number in range(1, 22)
+        ]
+        self.assertFalse(user_profiles.valid_profile_collection(profiles, "profile-1", 22))
 
 
 class AgentTests(unittest.TestCase):
