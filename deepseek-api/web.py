@@ -13,10 +13,13 @@ from day_three import (
 )
 from errors import MissingApiKeyError
 from context_memory import FactsUpdateError, validate_context_settings
+from memory_layers import MemoryCommandError, parse_memory_command
 
 
 STATIC_PAGE = Path(__file__).with_name("static") / "index.html"
 STATIC_AGENT_STATE = Path(__file__).with_name("static") / "agent-state.js"
+STATIC_MEMORY_CONTROLS = Path(__file__).with_name("static") / "memory-controls.js"
+MAX_MEMORY_REQUEST_BYTES = 65_536
 
 
 class ChatRequestHandler(BaseHTTPRequestHandler):
@@ -31,6 +34,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_javascript(200, STATIC_AGENT_STATE.read_text(encoding="utf-8"))
         elif path == "/static/context-controls.js":
             self._send_javascript(200, STATIC_PAGE.with_name("context-controls.js").read_text(encoding="utf-8"))
+        elif path == "/static/memory-controls.js":
+            self._send_javascript(200, STATIC_MEMORY_CONTROLS.read_text(encoding="utf-8"))
         elif path == "/api/agents":
             self._send_json(200, {"agents": self.server.registry.agents()})
         elif path.startswith("/api/"):
@@ -78,6 +83,12 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         parts = urlparse(self.path).path.split("/")
         if len(parts) == 5 and parts[:3] == ["", "api", "agents"] and parts[4] == "settings":
             self._handle_settings(parts[3])
+            return
+        if len(parts) == 6 and parts[:3] == ["", "api", "agents"] and parts[4:] == ["memory", "working"]:
+            self._handle_memory_update(parts[3], "working")
+            return
+        if len(parts) == 6 and parts[:3] == ["", "api", "agents"] and parts[4:] == ["memory", "long-term"]:
+            self._handle_memory_update(parts[3], "long-term")
             return
         self._send_json(404, {"error": "Маршрут не найден."})
 
@@ -222,6 +233,25 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         if not isinstance(data, dict) or "text" not in data or not isinstance(data["text"], str):
             self._send_json(400, {"error": "Поле text должно быть непустой строкой."})
             return
+        try:
+            command = parse_memory_command(data["text"])
+        except MemoryCommandError as error:
+            self._send_json(400, {"error": str(error)})
+            return
+        if command is not None:
+            try:
+                result = self.server.registry.apply_memory_command(agent_id, command)
+            except MemoryCommandError as error:
+                self._send_json(400, {"error": str(error)})
+                return
+            except PersistenceError:
+                self._send_storage_error()
+                return
+            if result is None:
+                self._send_json(404, {"error": "Агент не найден."})
+                return
+            self._send_json(200, result)
+            return
         temperature = data.get("temperature", DEFAULT_TEMPERATURE)
         agent = self.server.registry.get(agent_id)
         if not agent:
@@ -304,6 +334,45 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         try:
             snapshot = self.server.registry.update_settings(agent_id, settings)
+        except PersistenceError:
+            self._send_storage_error()
+            return
+        if snapshot is None:
+            self._send_json(404, {"error": "Агент не найден."})
+            return
+        self._send_json(200, {"agent": snapshot})
+
+    def _read_memory_json_body(self):
+        if self.headers.get("Transfer-Encoding") is not None:
+            self._send_json(400, {"error": "Transfer-Encoding не поддерживается."})
+            return None
+        lengths = self.headers.get_all("Content-Length", [])
+        if len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdigit():
+            self._send_json(400, {"error": "Некорректный Content-Length."})
+            return None
+        length = int(lengths[0])
+        if not 0 < length <= MAX_MEMORY_REQUEST_BYTES:
+            self._send_json(400, {"error": "Некорректный размер запроса."})
+            return None
+        try:
+            return json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            self._send_json(400, {"error": "Некорректный JSON."})
+            return None
+
+    def _handle_memory_update(self, agent_id, scope):
+        data = self._read_memory_json_body()
+        if data is None:
+            return
+        entries = data if scope in {"working", "long-term"} else None
+        if entries is None:
+            self._send_json(400, {"error": "Память имеет неверный формат."})
+            return
+        try:
+            snapshot = self.server.registry.update_memory(agent_id, scope, entries)
+        except ValueError as error:
+            self._send_json(400, {"error": str(error)})
+            return
         except PersistenceError:
             self._send_storage_error()
             return

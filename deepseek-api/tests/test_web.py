@@ -158,6 +158,28 @@ class DeepSeekWebTests(unittest.TestCase):
         for label in ("Сжато сообщений", "Размер summary", "Токены: полная / сжатая история", "Стоимость summary"):
             self.assertIn(label, body)
 
+    def test_memory_panel_uses_compact_regular_disclosure_headings(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        summary_css = self.css_block(body, ".context-controls summary")
+        self.assertIn("font-size:12px", summary_css)
+        self.assertIn("font-weight:400", summary_css)
+
+    def test_composer_exposes_a_toggleable_memory_command_help(self):
+        status, body, _ = self.request("GET", "/")
+
+        self.assertEqual(status, 200)
+        for marker in (
+            'id="memory-command-help-button"', 'id="memory-command-help"',
+            '<strong>/working</strong> — сохранить в рабочую память',
+            '<strong>/long</strong> — сохранить в долговременную память',
+            '<strong>/clear-memory</strong> — очистить рабочую и долговременную память',
+            'toggleAttribute("hidden")', 'aria-expanded',
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, body)
+
     def test_page_contains_model_and_usage_metadata(self):
         status, body, _ = self.request("GET", "/")
 
@@ -999,6 +1021,79 @@ class DeepSeekWebTests(unittest.TestCase):
                 status, body, _ = self.json_request("POST", path, payload, headers)
                 self.assertEqual(status, 403)
                 self.assertEqual(body, {"error": "Запрос с другого источника запрещён."})
+        self.assertEqual(self.calls, [])
+
+    def test_memory_api_updates_each_layer_and_persists(self):
+        status, body, _ = self.json_request("PUT", "/api/agents/agent-1/memory/working", ["Каталог", "B2B"])
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["context"]["memoryLayers"]["working"], ["Каталог", "B2B"])
+        status, body, _ = self.json_request("PUT", "/api/agents/agent-1/memory/long-term", ["кратко"])
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["context"]["memoryLayers"]["longTerm"], ["кратко"])
+
+        self.server.server_close()
+        self.server = web.ChatServer(("127.0.0.1", 0), self.ask_model, self.state_path)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        status, body, _ = self.json_request("GET", "/api/agents")
+        self.assertEqual(body["agents"][0]["context"]["memoryLayers"]["working"], ["Каталог", "B2B"])
+
+    def test_memory_api_rejects_bad_body_unknown_agent_and_foreign_origin(self):
+        for path, body, expected in [
+            ("/api/agents/agent-1/memory/working", {"item": "x"}, 400),
+            ("/api/agents/missing/memory/working", [], 404),
+            ("/api/agents/agent-1/memory/long-term/unknown", [], 404),
+        ]:
+            with self.subTest(path=path):
+                status, _, _ = self.json_request("PUT", path, body)
+                self.assertEqual(status, expected)
+        status, body, _ = self.json_request(
+            "PUT", "/api/agents/agent-1/memory/working", [],
+            {"Origin": "https://external.example"},
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(body, {"error": "Запрос с другого источника запрещён."})
+
+    def test_memory_commands_are_local_persistent_and_clear_only_the_requested_layer(self):
+        self.server.registry.create()
+        status, body, _ = self.json_request(
+            "POST", "/api/agents/agent-1/messages", {"text": "/working Дизайнерский проект"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["command"]["message"], "Рабочая память сохранена.")
+        self.assertEqual(body["agent"]["messages"], [])
+        self.assertEqual(body["agent"]["context"]["memoryLayers"]["working"], ["Дизайнерский проект"])
+        self.assertEqual(self.calls, [])
+
+        status, body, _ = self.json_request(
+            "POST", "/api/agents/agent-1/messages", {"text": "/long Диана"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["context"]["memoryLayers"]["longTerm"], ["Диана"])
+        self.assertEqual(body["sharedLongTerm"], ["Диана"])
+        status, agents, _ = self.json_request("GET", "/api/agents")
+        self.assertEqual(status, 200)
+        self.assertEqual(agents["agents"][1]["context"]["memoryLayers"]["longTerm"], ["Диана"])
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/clear-working"})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["context"]["memoryLayers"]["working"], [])
+        self.assertTrue(body["agent"]["context"]["memoryLayers"]["longTerm"])
+
+        self.server.server_close()
+        self.server = web.ChatServer(("127.0.0.1", 0), self.ask_model, self.state_path)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        status, body, _ = self.json_request("GET", "/api/agents")
+        self.assertTrue(body["agents"][0]["context"]["memoryLayers"]["longTerm"])
+
+    def test_memory_commands_reject_incomplete_or_extra_arguments(self):
+        for text in ("/working", "/long", "/clear-long лишнее"):
+            with self.subTest(text=text):
+                status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": text})
+                self.assertEqual(status, 400)
+                self.assertTrue(body["error"])
         self.assertEqual(self.calls, [])
 
     def test_matching_origin_is_accepted(self):

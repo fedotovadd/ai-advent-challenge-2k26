@@ -12,7 +12,7 @@ const ContextControls = (() => {
     panel.id = 'context-controls';
     panel.className = 'context-controls';
     panel.innerHTML = `
-      <h2>Управление контекстом · День 10</h2>
+      <h2>Управление контекстом</h2>
       <label class="setting-field">Стратегия
         <select id="context-strategy" aria-label="Стратегия контекста">
           <option value="sliding_window">Sliding Window — последние N</option>
