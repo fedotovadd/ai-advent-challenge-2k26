@@ -14,6 +14,7 @@ from day_three import (
 from errors import MissingApiKeyError
 from context_memory import FactsUpdateError, validate_context_settings
 from memory_layers import MemoryCommandError, parse_memory_command
+from task_state import TaskStateError, parse_task_command
 
 
 STATIC_PAGE = Path(__file__).with_name("static") / "index.html"
@@ -312,6 +313,25 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(200, result)
             return
+        try:
+            task_command = parse_task_command(data["text"])
+        except TaskStateError as error:
+            self._send_json(400, {"error": str(error)})
+            return
+        if task_command is not None:
+            try:
+                result = self.server.registry.apply_task_command(agent_id, task_command)
+            except TaskStateError as error:
+                self._send_json(400, {"error": str(error)})
+                return
+            except PersistenceError:
+                self._send_storage_error()
+                return
+            if result is None:
+                self._send_json(404, {"error": "Агент не найден."})
+                return
+            self._send_json(200, result)
+            return
         temperature = data.get("temperature", DEFAULT_TEMPERATURE)
         agent = self.server.registry.get(agent_id)
         if not agent:
@@ -321,6 +341,10 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             snapshot = self.server.registry.respond(agent_id, data["text"], temperature)
         except PersistenceError:
             self._send_storage_error()
+            return
+        except TaskStateError as error:
+            snapshot = agent.snapshot()
+            self._send_json(400, {"agent": snapshot, "error": str(error), "metadata": snapshot["metadata"], "accepted": False})
             return
         except MissingApiKeyError as error:
             snapshot = agent.snapshot()

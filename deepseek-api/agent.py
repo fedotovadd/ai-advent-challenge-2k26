@@ -16,6 +16,10 @@ from memory_layers import (
     MemoryCommandError, default_memory_layers, default_long_term, default_working, valid_long_term,
     valid_memory_layers, valid_working, working_has_content, long_term_has_content,
 )
+from task_state import (
+    TaskStateError, apply_execution_markers, apply_task_command, extract_task_plan,
+    task_prompt_block, valid_task_state,
+)
 from user_profiles import (
     MAX_USER_PROFILES, default_profile, normalize_profile, profile_prompt_block,
     profile_with_id, valid_profile, valid_profile_collection,
@@ -61,7 +65,7 @@ DEFAULT_SETTINGS = {
     "windowSize": 10,
 }
 MAX_BULK_AGENTS = 100
-STATE_VERSION = 8
+STATE_VERSION = 9
 DEFAULT_STATE_PATH = Path(__file__).with_name("data") / "agents.json"
 METADATA_FIELDS = {
     "userPrompt",
@@ -133,6 +137,8 @@ def default_context():
             "last": None,
         },
         "memoryLayers": default_memory_layers(),
+        "taskState": None,
+        "nextTaskId": 1,
     }
 
 
@@ -220,7 +226,7 @@ def request_usage_and_cost(model, usage, estimated_prompt_tokens=None, estimated
 
 
 class Agent:
-    def __init__(self, agent_id, name, settings, ask_model, messages=None, metadata=None, metrics=None, context=None):
+    def __init__(self, agent_id, name, settings, ask_model, messages=None, metadata=None, metrics=None, context=None, task_plan_dir=None):
         self._lock = threading.RLock()
         self._id = agent_id
         self._name = name
@@ -230,6 +236,7 @@ class Agent:
         self._metadata = copy.deepcopy(metadata)
         self._metrics = copy.deepcopy(metrics) if metrics is not None else default_metrics()
         self._context = copy.deepcopy(context) if context is not None else default_context()
+        self._task_plan_dir = Path(task_plan_dir) if task_plan_dir is not None else DEFAULT_STATE_PATH.parent / "task-plans"
         validate_context_settings(self._settings)
         self._trim_messages()
 
@@ -312,11 +319,49 @@ class Agent:
                 return "Рабочая и долговременная память очищены."
             raise MemoryCommandError("Неизвестная команда памяти.")
 
+    def apply_task_command(self, command):
+        with self._lock:
+            task, next_task_id, message = apply_task_command(
+                self._context["taskState"], command, self._context["nextTaskId"],
+            )
+            self._context["taskState"] = task
+            self._context["nextTaskId"] = next_task_id
+            return message
+
+    def _task_plan_path(self, task):
+        name = f"{self._id}-{task['id']}.md"
+        return self._task_plan_dir / name, name
+
+    def _read_task_plan(self, task):
+        if task is None or not task["planPath"]:
+            return None
+        path = self._task_plan_dir / Path(task["planPath"]).name
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+
+    def _write_task_plan(self, task, markdown):
+        path, name = self._task_plan_path(task)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as file:
+                file.write(markdown)
+                temporary = Path(file.name)
+            os.replace(temporary, path)
+        except OSError as error:
+            try:
+                temporary.unlink(missing_ok=True)
+            except (OSError, UnboundLocalError):
+                pass
+            raise PersistenceError("Не удалось сохранить план задачи.") from error
+        return name
+
     def _branch_state(self):
         return copy.deepcopy({
             "messages": self._messages, "metadata": self._metadata, "metrics": self._metrics,
             "memory": {key: value for key, value in self._context.items()
-                       if key not in {"activeBranch", "branches", "checkpoints", "memoryLayers"}},
+                       if key not in {"activeBranch", "branches", "checkpoints", "memoryLayers", "taskState", "nextTaskId"}},
         })
 
     def _save_active_branch(self):
@@ -502,12 +547,17 @@ class Agent:
 
         with self._lock:
             text = text.strip()
+            if self._context["taskState"] is not None and self._context["taskState"]["paused"]:
+                raise TaskStateError("Задача на паузе. Используйте /resume или /status.")
             history_before_tokens = estimate_payload_tokens({"messages": self._messages})
             if profile is not None and not valid_profile(profile):
                 raise ValueError("Профиль имеет неверный формат.")
             system_prompt = self._settings["systemPrompt"]
             if profile is not None:
                 system_prompt = f"{system_prompt}\n\n{profile_prompt_block(profile)}"
+            task = self._context["taskState"]
+            if task is not None:
+                system_prompt = f"{system_prompt}\n\n{task_prompt_block(task, self._read_task_plan(task))}"
             options = {}
             if self._settings["format"] == "json":
                 options["response_format"] = {"type": "json_object"}
@@ -598,8 +648,23 @@ class Agent:
                 raise
             if overflow:
                 self._messages.append({"role": "user", "content": text})
+            visible_answer = answer
+            if self._context["taskState"] is not None:
+                try:
+                    extracted, visible_answer, _ = extract_task_plan(answer, self._context["taskState"])
+                    if extracted["markdown"] is not None:
+                        task = extracted["task"]
+                        task["planPath"] = self._write_task_plan(task, extracted["markdown"])
+                        self._context["taskState"] = task
+                    marker_result = apply_execution_markers(visible_answer, self._context["taskState"])
+                    self._context["taskState"] = marker_result["task"]
+                    visible_answer = marker_result["visible"]
+                    if marker_result["notice"]:
+                        visible_answer = f"{visible_answer}\n\n{marker_result['notice']}".strip()
+                except TaskStateError:
+                    pass
             self._metadata = metadata
-            self._messages.append({"role": "assistant", "content": answer})
+            self._messages.append({"role": "assistant", "content": visible_answer})
             self._trim_messages()
             if strategy == "summary":
                 self._context = candidate_context
@@ -802,9 +867,11 @@ def _valid_context(context):
     if not isinstance(context, dict) or set(context) != set(default_context()):
         return False
     memory = {key: value for key, value in context.items()
-              if key not in {"activeBranch", "branches", "checkpoints", "memoryLayers"}}
+              if key not in {"activeBranch", "branches", "checkpoints", "memoryLayers", "taskState", "nextTaskId"}}
     branches, checkpoints = context["branches"], context["checkpoints"]
     if not (_valid_memory(memory) and valid_memory_layers(context["memoryLayers"])
+            and valid_task_state(context["taskState"])
+            and _valid_positive_int(context["nextTaskId"])
             and isinstance(branches, dict) and branches
             and isinstance(checkpoints, dict) and isinstance(context["activeBranch"], str)
             and context["activeBranch"] in branches):
@@ -1038,10 +1105,11 @@ class AgentRegistry:
         self._lock = threading.RLock()
         self._ask_model = ask_model
         self._state_path = Path(state_path) if state_path is not None else DEFAULT_STATE_PATH
+        self._task_plan_dir = self._state_path.parent / "task-plans"
         restored = self._load()
         if restored is None:
             self._agents = {
-                "agent-1": Agent("agent-1", "Агент 1", default_settings(), ask_model),
+                "agent-1": Agent("agent-1", "Агент 1", default_settings(), ask_model, task_plan_dir=self._task_plan_dir),
             }
             self._next_id = 2
             self._shared_long_term = default_long_term()
@@ -1059,7 +1127,7 @@ class AgentRegistry:
         self._agents = {
             snapshot["id"]: Agent(
                 snapshot["id"], snapshot["name"], snapshot["settings"], self._ask_model,
-                snapshot["messages"], snapshot["metadata"], snapshot["metrics"], snapshot["context"],
+                snapshot["messages"], snapshot["metadata"], snapshot["metrics"], snapshot["context"], self._task_plan_dir,
             )
             for snapshot in snapshots.values()
         }
@@ -1136,7 +1204,7 @@ class AgentRegistry:
         with self._lock:
             agent_id = f"agent-{self._next_id}"
             self._next_id += 1
-            agent = Agent(agent_id, f"Агент {agent_id[6:]}", default_settings(), self._ask_model)
+            agent = Agent(agent_id, f"Агент {agent_id[6:]}", default_settings(), self._ask_model, task_plan_dir=self._task_plan_dir)
             agent.replace_long_term_memory(self._shared_long_term)
             self._agents[agent_id] = agent
             snapshot = agent.snapshot()
@@ -1151,7 +1219,7 @@ class AgentRegistry:
             for _ in range(count):
                 agent_number = self._next_id
                 agent_id = f"agent-{agent_number}"
-                agent = Agent(agent_id, f"Агент {agent_number}", default_settings(), self._ask_model)
+                agent = Agent(agent_id, f"Агент {agent_number}", default_settings(), self._ask_model, task_plan_dir=self._task_plan_dir)
                 agent.replace_long_term_memory(self._shared_long_term)
                 self._agents[agent_id] = agent
                 self._next_id += 1
@@ -1170,7 +1238,7 @@ class AgentRegistry:
                 self._save()
             except PersistenceError:
                 self._agents[agent_id] = Agent(before["id"], before["name"], before["settings"], self._ask_model,
-                                               before["messages"], before["metadata"], before["metrics"], before["context"])
+                                               before["messages"], before["metadata"], before["metrics"], before["context"], self._task_plan_dir)
                 raise
             return snapshot
 
@@ -1215,6 +1283,20 @@ class AgentRegistry:
                 "agent": agent.snapshot(), "command": {"message": message},
                 "sharedLongTerm": copy.deepcopy(self._shared_long_term),
             }
+
+    def apply_task_command(self, agent_id, command):
+        with self._lock:
+            agent = self._agents.get(agent_id)
+            if agent is None:
+                return None
+            before = self._snapshots()
+            message = agent.apply_task_command(command)
+            try:
+                self._save()
+            except PersistenceError:
+                self._restore(before, self._shared_long_term)
+                raise
+            return {"agent": agent.snapshot(), "command": {"message": message}}
 
     def respond(self, agent_id, text, temperature=DEFAULT_TEMPERATURE):
         with self._lock:
@@ -1345,7 +1427,7 @@ class AgentRegistry:
                                 "metadata": copy.deepcopy(snapshot.get("metadata")),
                                 "metrics": copy.deepcopy(snapshot.get("metrics")),
                                 "memory": {k: copy.deepcopy(v) for k, v in context.items()
-                                           if k not in {"activeBranch", "branches", "checkpoints", "memoryLayers"}},
+                                           if k not in {"activeBranch", "branches", "checkpoints", "memoryLayers", "taskState", "nextTaskId"}},
                             }
             state["version"] = 4
             version = 4
@@ -1457,6 +1539,13 @@ class AgentRegistry:
                 "version": STATE_VERSION, "profiles": [default_profile()],
                 "activeProfileId": "profile-1", "nextProfileId": 2,
             })
+        if isinstance(state, dict) and state.get("version") == 8 and isinstance(state.get("agents"), list):
+            for snapshot in state["agents"]:
+                context = snapshot.get("context") if isinstance(snapshot, dict) else None
+                if isinstance(context, dict):
+                    context.setdefault("taskState", None)
+                    context.setdefault("nextTaskId", 1)
+            state["version"] = STATE_VERSION
         if (
             not isinstance(state, dict)
             or set(state) != {"version", "nextId", "sharedLongTerm", "profiles", "activeProfileId", "nextProfileId", "agents"}
@@ -1482,6 +1571,7 @@ class AgentRegistry:
                 snapshot["metadata"],
                 snapshot["metrics"],
                 snapshot["context"],
+                self._task_plan_dir,
             )
             for snapshot in state["agents"]
         }, state["nextId"], copy.deepcopy(state["sharedLongTerm"]), copy.deepcopy(state["profiles"]), state["activeProfileId"], state["nextProfileId"]

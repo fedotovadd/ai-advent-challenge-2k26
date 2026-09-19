@@ -1150,6 +1150,25 @@ class DeepSeekWebTests(unittest.TestCase):
                 self.assertTrue(body["error"])
         self.assertEqual(self.calls, [])
 
+    def test_task_commands_create_plan_execute_pause_and_resume_locally(self):
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/task Статья"})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["context"]["taskState"]["stage"], "PLANNING")
+        self.assertEqual(self.calls, [])
+        self.answers = ["[[TASK_PLAN]]\n# План\n1. Исследовать\n2. Написать\n[[/TASK_PLAN]]"]
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Нужна статья"})
+        self.assertEqual(status, 200)
+        self.assertIn("# План", body["agent"]["messages"][-1]["content"])
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/execute"})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["context"]["taskState"]["stage"], "EXECUTION")
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/pause"})
+        self.assertEqual(status, 200)
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Продолжай"})
+        self.assertEqual(status, 400)
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/resume"})
+        self.assertEqual(status, 200)
+
     def test_matching_origin_is_accepted(self):
         status, _, _ = self.json_request(
             "POST", "/api/agents/agent-1/messages", {"text": "Привет"},

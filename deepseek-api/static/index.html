@@ -125,6 +125,7 @@
     elements.input.addEventListener("input",()=>{if(state.activeId)state.drafts[state.activeId]=elements.input.value;syncSendButton();});
     elements.input.addEventListener("keydown",(event)=>{if((event.metaKey||event.ctrlKey)&&event.key==="Enter")document.querySelector("#composer").requestSubmit();});
     syncSendButton();
+    const taskCommandHelp=document.querySelector("#memory-command-help");taskCommandHelp.querySelector("h2").textContent="Команды памяти и задачи";const taskCommands=document.createElement("ul");["/task Название — начать опрос и подготовку плана","/execute — подтвердить план и начать выполнение","/planning — вернуться к уточнениям","/pause · /resume · /status — управлять сохранённым состоянием"].forEach(text=>{const item=document.createElement("li");item.textContent=text;taskCommands.append(item);});taskCommandHelp.prepend(taskCommands);
     setView("chat");
     loadAgents().catch((error)=>setChatStatus(null,error.message));
   </script>
