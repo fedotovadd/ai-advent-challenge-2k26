@@ -1234,6 +1234,8 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(page.count("function renderTaskState("), 1)
         self.assertEqual(page.count("function continueTaskChain("), 1)
+        self.assertIn("title.textContent=task.title", page)
+        self.assertIn("detail.textContent=`Этап: ${stageOrder.indexOf(task.stage)+1}/4 ${task.stage} · Шаг: ${task.step}/${task.total}`", page)
         self.assertIn("autoPendingAgentIds", page)
         self.assertIn("state.autoPendingAgentIds.add(agentId);render();try {const {response,body}=await api(\"/api/agents/\"+agentId+\"/task/advance\"", page)
         self.assertIn("const taskVersion=++state.taskChainVersion", page)
