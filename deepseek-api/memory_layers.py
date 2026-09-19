@@ -18,17 +18,33 @@ def parse_memory_command(text):
     """Return a structured local memory command, or None for a chat message."""
     if not isinstance(text, str):
         return None
-    command, separator, argument = text.strip().partition(" ")
-    if command not in {"/working", "/long", "/clear-working", "/clear-long", "/clear-memory"}:
+    parts = text.strip().split(maxsplit=1)
+    if not parts:
         return None
-    argument = argument.strip()
-    if command in {"/working", "/long"}:
-        if not separator or not argument:
+    command, argument = parts[0], parts[1].strip() if len(parts) == 2 else ""
+    text_commands = {"/working": "working", "/decision": "decision"}
+    pair_commands = {
+        "/working-data": "working-data", "/profile": "profile", "/knowledge": "knowledge",
+    }
+    clear_commands = {
+        "/clear-working": "clear-working", "/clear-working-data": "clear-working-data",
+        "/clear-profile": "clear-profile", "/clear-decisions": "clear-decisions",
+        "/clear-knowledge": "clear-knowledge", "/clear-long": "clear-long", "/clear-memory": "clear-memory",
+    }
+    if command not in {*text_commands, *pair_commands, *clear_commands}:
+        return None
+    if command in text_commands:
+        if not argument:
             raise MemoryCommandError(f"После {command} укажите текст для сохранения.")
-        return {"action": command[1:], "text": argument}
+        return {"action": text_commands[command], "text": argument}
+    if command in pair_commands:
+        key, separator, value = argument.partition(":")
+        if not separator or not key.strip() or not value.strip():
+            raise MemoryCommandError(f"После {command} укажите пару «ключ: значение».")
+        return {"action": pair_commands[command], "key": key.strip(), "value": value.strip()}
     if argument:
         raise MemoryCommandError(f"Команда {command} не принимает дополнительный текст.")
-    return {"action": command[1:]}
+    return {"action": clear_commands[command]}
 
 
 def default_working():

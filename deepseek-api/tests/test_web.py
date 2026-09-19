@@ -1048,10 +1048,15 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
         status, body, _ = self.json_request(
-            "POST", "/api/agents/agent-1/messages", {"text": "/long Меня зовут Диана"},
+            "POST", "/api/agents/agent-1/messages", {"text": "/profile Имя: Диана"},
         )
         self.assertEqual(status, 200)
-        self.assertIn("Меня зовут Диана", body["agent"]["context"]["memoryLayers"]["longTerm"]["profile"].values())
+        self.assertEqual(body["agent"]["context"]["memoryLayers"]["longTerm"]["profile"], {"Имя": "Диана"})
+        status, body, _ = self.json_request(
+            "POST", "/api/agents/agent-1/messages", {"text": "/decision Используем светлую палитру"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["context"]["memoryLayers"]["longTerm"]["decisions"], ["Используем светлую палитру"])
         status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/clear-working"})
         self.assertEqual(status, 200)
         self.assertEqual(body["agent"]["context"]["memoryLayers"]["working"], {"task": "", "data": {}})
@@ -1066,7 +1071,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertTrue(body["agents"][0]["context"]["memoryLayers"]["longTerm"]["profile"])
 
     def test_memory_commands_reject_incomplete_or_extra_arguments(self):
-        for text in ("/working", "/long ", "/clear-long лишнее"):
+        for text in ("/working", "/working-data без разделителя", "/profile Имя", "/clear-long лишнее"):
             with self.subTest(text=text):
                 status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": text})
                 self.assertEqual(status, 400)

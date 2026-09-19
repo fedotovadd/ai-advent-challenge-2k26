@@ -13,7 +13,7 @@ from context_memory import (
     apply_facts_patch, default_facts_usage, valid_facts, validate_context_settings, validate_name,
 )
 from memory_layers import (
-    MAX_LONG_TERM_FIELDS, MemoryCommandError, default_memory_layers, default_long_term, default_working, stable_block, valid_long_term,
+    MemoryCommandError, default_memory_layers, default_long_term, default_working, stable_block, valid_long_term,
     valid_memory_layers, valid_working, working_has_content, long_term_has_content,
 )
 
@@ -288,21 +288,42 @@ class Agent:
                     raise MemoryCommandError("Текст рабочей памяти слишком длинный.")
                 layers["working"] = candidate
                 return "Рабочая память сохранена."
-            if action == "long":
-                profile = layers["longTerm"]["profile"]
-                for number in range(1, MAX_LONG_TERM_FIELDS + 1):
-                    key = f"note-{number}"
-                    if key not in profile:
-                        candidate = copy.deepcopy(layers["longTerm"])
-                        candidate["profile"][key] = command["text"]
-                        if not valid_long_term(candidate):
-                            raise MemoryCommandError("Долговременная память заполнена.")
-                        layers["longTerm"] = candidate
-                        return "Долговременная память сохранена."
-                raise MemoryCommandError("Долговременная память заполнена.")
+            if action == "working-data":
+                candidate = copy.deepcopy(layers["working"])
+                candidate["data"][command["key"]] = command["value"]
+                if not valid_working(candidate):
+                    raise MemoryCommandError("Данные рабочей памяти имеют неверный формат или заполнены.")
+                layers["working"] = candidate
+                return "Данные рабочей памяти сохранены."
+            if action in {"profile", "knowledge"}:
+                candidate = copy.deepcopy(layers["longTerm"])
+                candidate[action][command["key"]] = command["value"]
+                if not valid_long_term(candidate):
+                    raise MemoryCommandError("Долговременная память имеет неверный формат или заполнена.")
+                layers["longTerm"] = candidate
+                return "Профиль сохранён." if action == "profile" else "Знание сохранено."
+            if action == "decision":
+                candidate = copy.deepcopy(layers["longTerm"])
+                candidate["decisions"].append(command["text"])
+                if not valid_long_term(candidate):
+                    raise MemoryCommandError("Список решений заполнен или содержит слишком длинный текст.")
+                layers["longTerm"] = candidate
+                return "Решение сохранено."
             if action == "clear-working":
                 layers["working"] = default_working()
                 return "Рабочая память очищена."
+            if action == "clear-working-data":
+                layers["working"]["data"] = {}
+                return "Данные рабочей памяти очищены."
+            if action == "clear-profile":
+                layers["longTerm"]["profile"] = {}
+                return "Профиль очищен."
+            if action == "clear-decisions":
+                layers["longTerm"]["decisions"] = []
+                return "Список решений очищен."
+            if action == "clear-knowledge":
+                layers["longTerm"]["knowledge"] = {}
+                return "Знания очищены."
             if action == "clear-long":
                 layers["longTerm"] = default_long_term()
                 return "Долговременная память очищена."

@@ -458,13 +458,23 @@ class AgentTests(unittest.TestCase):
         instance = Agent("agent-1", "Тест", default_settings(), lambda payload, **options: calls.append(payload) or "Ответ")
 
         self.assertEqual(instance.apply_memory_command({"action": "working", "text": "Дизайнерский проект"}), "Рабочая память сохранена.")
-        self.assertEqual(instance.apply_memory_command({"action": "long", "text": "Меня зовут Диана"}), "Долговременная память сохранена.")
+        self.assertEqual(instance.apply_memory_command({"action": "working-data", "key": "Дедлайн", "value": "20 октября"}), "Данные рабочей памяти сохранены.")
+        self.assertEqual(instance.apply_memory_command({"action": "profile", "key": "Имя", "value": "Диана"}), "Профиль сохранён.")
+        self.assertEqual(instance.apply_memory_command({"action": "decision", "text": "Используем светлую палитру"}), "Решение сохранено.")
+        self.assertEqual(instance.apply_memory_command({"action": "knowledge", "key": "Figma", "value": "основной инструмент"}), "Знание сохранено.")
         self.assertEqual(instance.snapshot()["context"]["memoryLayers"]["working"]["task"], "Дизайнерский проект")
-        self.assertIn("Меня зовут Диана", instance.snapshot()["context"]["memoryLayers"]["longTerm"]["profile"].values())
+        self.assertEqual(instance.snapshot()["context"]["memoryLayers"]["working"]["data"], {"Дедлайн": "20 октября"})
+        self.assertEqual(instance.snapshot()["context"]["memoryLayers"]["longTerm"], {
+            "profile": {"Имя": "Диана"},
+            "decisions": ["Используем светлую палитру"],
+            "knowledge": {"Figma": "основной инструмент"},
+        })
         self.assertEqual(calls, [])
-        instance.apply_memory_command({"action": "clear-working"})
-        self.assertEqual(instance.snapshot()["context"]["memoryLayers"]["working"], {"task": "", "data": {}})
+        instance.apply_memory_command({"action": "clear-decisions"})
+        self.assertEqual(instance.snapshot()["context"]["memoryLayers"]["longTerm"]["decisions"], [])
         self.assertTrue(instance.snapshot()["context"]["memoryLayers"]["longTerm"]["profile"])
+        instance.apply_memory_command({"action": "clear-working-data"})
+        self.assertEqual(instance.snapshot()["context"]["memoryLayers"]["working"], {"task": "Дизайнерский проект", "data": {}})
         instance.apply_memory_command({"action": "clear-memory"})
         self.assertEqual(instance.snapshot()["context"]["memoryLayers"], {
             "working": {"task": "", "data": {}},
