@@ -509,10 +509,10 @@ class Agent:
         lines = ["Контекст, который нужно учитывать:"]
         if working["task"]:
             lines.append(f"Текущая задача: {working['task']}")
-        lines.extend(f"{key}: {value}" for key, value in sorted(working["data"].items()))
-        lines.extend(f"{key}: {value}" for key, value in sorted(long_term["profile"].items()))
+        lines.extend(value for _, value in sorted(working["data"].items()))
+        lines.extend(value for _, value in sorted(long_term["profile"].items()))
         lines.extend(long_term["decisions"])
-        lines.extend(f"{key}: {value}" for key, value in sorted(long_term["knowledge"].items()))
+        lines.extend(value for _, value in sorted(long_term["knowledge"].items()))
         return [{"role": "system", "content": system_prompt + (
             f"\n\n{MEMORY_DATA_INSTRUCTION}\n\n" + "\n".join(lines)
         )}]
