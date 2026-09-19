@@ -10,6 +10,27 @@ MAX_KEY_LENGTH = 80
 MAX_VALUE_LENGTH = 500
 
 
+class MemoryCommandError(ValueError):
+    """Raised when a recognized memory command has an invalid form."""
+
+
+def parse_memory_command(text):
+    """Return a structured local memory command, or None for a chat message."""
+    if not isinstance(text, str):
+        return None
+    command, separator, argument = text.strip().partition(" ")
+    if command not in {"/working", "/long", "/clear-working", "/clear-long", "/clear-memory"}:
+        return None
+    argument = argument.strip()
+    if command in {"/working", "/long"}:
+        if not separator or not argument:
+            raise MemoryCommandError(f"После {command} укажите текст для сохранения.")
+        return {"action": command[1:], "text": argument}
+    if argument:
+        raise MemoryCommandError(f"Команда {command} не принимает дополнительный текст.")
+    return {"action": command[1:]}
+
+
 def default_working():
     return {"task": "", "data": {}}
 

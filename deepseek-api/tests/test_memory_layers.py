@@ -2,6 +2,8 @@ import unittest
 
 from memory_layers import (
     default_memory_layers,
+    MemoryCommandError,
+    parse_memory_command,
     stable_block,
     valid_long_term,
     valid_memory_layers,
@@ -54,6 +56,21 @@ class MemoryLayerTests(unittest.TestCase):
             stable_block("WORKING_MEMORY", {"z": "last", "a": "first"}),
             '[WORKING_MEMORY]\n{"a":"first","z":"last"}',
         )
+
+    def test_parse_memory_commands_and_reject_incomplete_ones(self):
+        self.assertEqual(parse_memory_command("/working Дизайнерский проект"), {
+            "action": "working", "text": "Дизайнерский проект",
+        })
+        self.assertEqual(parse_memory_command("/long Меня зовут Диана"), {
+            "action": "long", "text": "Меня зовут Диана",
+        })
+        self.assertEqual(parse_memory_command("/clear-working"), {"action": "clear-working"})
+        self.assertEqual(parse_memory_command("/clear-long"), {"action": "clear-long"})
+        self.assertEqual(parse_memory_command("/clear-memory"), {"action": "clear-memory"})
+        self.assertIsNone(parse_memory_command("/help"))
+        for command in ("/working", "/long ", "/clear-long extra"):
+            with self.subTest(command=command), self.assertRaises(MemoryCommandError):
+                parse_memory_command(command)
 
 
 if __name__ == "__main__":

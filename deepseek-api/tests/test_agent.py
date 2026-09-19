@@ -453,6 +453,24 @@ class AgentTests(unittest.TestCase):
             {"role": "user", "content": "Привет"},
         ])
 
+    def test_memory_commands_change_only_target_layers_without_calling_model(self):
+        calls = []
+        instance = Agent("agent-1", "Тест", default_settings(), lambda payload, **options: calls.append(payload) or "Ответ")
+
+        self.assertEqual(instance.apply_memory_command({"action": "working", "text": "Дизайнерский проект"}), "Рабочая память сохранена.")
+        self.assertEqual(instance.apply_memory_command({"action": "long", "text": "Меня зовут Диана"}), "Долговременная память сохранена.")
+        self.assertEqual(instance.snapshot()["context"]["memoryLayers"]["working"]["task"], "Дизайнерский проект")
+        self.assertIn("Меня зовут Диана", instance.snapshot()["context"]["memoryLayers"]["longTerm"]["profile"].values())
+        self.assertEqual(calls, [])
+        instance.apply_memory_command({"action": "clear-working"})
+        self.assertEqual(instance.snapshot()["context"]["memoryLayers"]["working"], {"task": "", "data": {}})
+        self.assertTrue(instance.snapshot()["context"]["memoryLayers"]["longTerm"]["profile"])
+        instance.apply_memory_command({"action": "clear-memory"})
+        self.assertEqual(instance.snapshot()["context"]["memoryLayers"], {
+            "working": {"task": "", "data": {}},
+            "longTerm": {"profile": {}, "decisions": [], "knowledge": {}},
+        })
+
 
 class AgentRegistryTests(unittest.TestCase):
     def setUp(self):

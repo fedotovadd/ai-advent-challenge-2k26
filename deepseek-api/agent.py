@@ -13,7 +13,7 @@ from context_memory import (
     apply_facts_patch, default_facts_usage, valid_facts, validate_context_settings, validate_name,
 )
 from memory_layers import (
-    default_memory_layers, default_long_term, stable_block, valid_long_term,
+    MAX_LONG_TERM_FIELDS, MemoryCommandError, default_memory_layers, default_long_term, default_working, stable_block, valid_long_term,
     valid_memory_layers, valid_working, working_has_content, long_term_has_content,
 )
 
@@ -275,6 +275,41 @@ class Agent:
                 raise ValueError("Долговременная память имеет неверный формат.")
             self._context["memoryLayers"]["longTerm"] = candidate
             return self.snapshot()
+
+    def apply_memory_command(self, command):
+        """Apply a local command without sending it to the provider or dialogue history."""
+        with self._lock:
+            action = command.get("action") if isinstance(command, dict) else None
+            layers = self._context["memoryLayers"]
+            if action == "working":
+                candidate = copy.deepcopy(layers["working"])
+                candidate["task"] = command["text"]
+                if not valid_working(candidate):
+                    raise MemoryCommandError("Текст рабочей памяти слишком длинный.")
+                layers["working"] = candidate
+                return "Рабочая память сохранена."
+            if action == "long":
+                profile = layers["longTerm"]["profile"]
+                for number in range(1, MAX_LONG_TERM_FIELDS + 1):
+                    key = f"note-{number}"
+                    if key not in profile:
+                        candidate = copy.deepcopy(layers["longTerm"])
+                        candidate["profile"][key] = command["text"]
+                        if not valid_long_term(candidate):
+                            raise MemoryCommandError("Долговременная память заполнена.")
+                        layers["longTerm"] = candidate
+                        return "Долговременная память сохранена."
+                raise MemoryCommandError("Долговременная память заполнена.")
+            if action == "clear-working":
+                layers["working"] = default_working()
+                return "Рабочая память очищена."
+            if action == "clear-long":
+                layers["longTerm"] = default_long_term()
+                return "Долговременная память очищена."
+            if action == "clear-memory":
+                self._context["memoryLayers"] = default_memory_layers()
+                return "Рабочая и долговременная память очищены."
+            raise MemoryCommandError("Неизвестная команда памяти.")
 
     def _branch_state(self):
         return copy.deepcopy({
@@ -995,6 +1030,21 @@ class AgentRegistry:
                                                before["messages"], before["metadata"], before["metrics"], before["context"])
                 raise
             return snapshot
+
+    def apply_memory_command(self, agent_id, command):
+        with self._lock:
+            agent = self._agents.get(agent_id)
+            if agent is None:
+                return None
+            before = agent.snapshot()
+            message = agent.apply_memory_command(command)
+            try:
+                self._save()
+            except PersistenceError:
+                self._agents[agent_id] = Agent(before["id"], before["name"], before["settings"], self._ask_model,
+                                               before["messages"], before["metadata"], before["metrics"], before["context"])
+                raise
+            return {"agent": agent.snapshot(), "command": {"message": message}}
 
     def respond(self, agent_id, text, temperature=DEFAULT_TEMPERATURE):
         with self._lock:

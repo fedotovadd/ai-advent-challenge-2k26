@@ -13,6 +13,7 @@ from day_three import (
 )
 from errors import MissingApiKeyError
 from context_memory import FactsUpdateError, validate_context_settings
+from memory_layers import MemoryCommandError, parse_memory_command
 
 
 STATIC_PAGE = Path(__file__).with_name("static") / "index.html"
@@ -232,6 +233,25 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         if not isinstance(data, dict) or "text" not in data or not isinstance(data["text"], str):
             self._send_json(400, {"error": "Поле text должно быть непустой строкой."})
+            return
+        try:
+            command = parse_memory_command(data["text"])
+        except MemoryCommandError as error:
+            self._send_json(400, {"error": str(error)})
+            return
+        if command is not None:
+            try:
+                result = self.server.registry.apply_memory_command(agent_id, command)
+            except MemoryCommandError as error:
+                self._send_json(400, {"error": str(error)})
+                return
+            except PersistenceError:
+                self._send_storage_error()
+                return
+            if result is None:
+                self._send_json(404, {"error": "Агент не найден."})
+                return
+            self._send_json(200, result)
             return
         temperature = data.get("temperature", DEFAULT_TEMPERATURE)
         agent = self.server.registry.get(agent_id)

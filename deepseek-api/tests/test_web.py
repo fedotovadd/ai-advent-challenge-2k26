@@ -1037,6 +1037,42 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 403)
         self.assertEqual(body, {"error": "Запрос с другого источника запрещён."})
 
+    def test_memory_commands_are_local_persistent_and_clear_only_the_requested_layer(self):
+        status, body, _ = self.json_request(
+            "POST", "/api/agents/agent-1/messages", {"text": "/working Дизайнерский проект"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["command"]["message"], "Рабочая память сохранена.")
+        self.assertEqual(body["agent"]["messages"], [])
+        self.assertEqual(body["agent"]["context"]["memoryLayers"]["working"]["task"], "Дизайнерский проект")
+        self.assertEqual(self.calls, [])
+
+        status, body, _ = self.json_request(
+            "POST", "/api/agents/agent-1/messages", {"text": "/long Меня зовут Диана"},
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("Меня зовут Диана", body["agent"]["context"]["memoryLayers"]["longTerm"]["profile"].values())
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/clear-working"})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["context"]["memoryLayers"]["working"], {"task": "", "data": {}})
+        self.assertTrue(body["agent"]["context"]["memoryLayers"]["longTerm"]["profile"])
+
+        self.server.server_close()
+        self.server = web.ChatServer(("127.0.0.1", 0), self.ask_model, self.state_path)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        status, body, _ = self.json_request("GET", "/api/agents")
+        self.assertTrue(body["agents"][0]["context"]["memoryLayers"]["longTerm"]["profile"])
+
+    def test_memory_commands_reject_incomplete_or_extra_arguments(self):
+        for text in ("/working", "/long ", "/clear-long лишнее"):
+            with self.subTest(text=text):
+                status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": text})
+                self.assertEqual(status, 400)
+                self.assertTrue(body["error"])
+        self.assertEqual(self.calls, [])
+
     def test_matching_origin_is_accepted(self):
         status, _, _ = self.json_request(
             "POST", "/api/agents/agent-1/messages", {"text": "Привет"},

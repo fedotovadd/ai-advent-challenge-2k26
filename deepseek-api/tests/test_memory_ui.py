@@ -6,17 +6,18 @@ SOURCE = Path(__file__).parents[1] / "static" / "memory-controls.js"
 
 
 class MemoryUiTests(unittest.TestCase):
-    def test_panel_exposes_three_layers_and_explicit_save_actions(self):
+    def test_panel_exposes_three_read_only_layers(self):
         source = SOURCE.read_text(encoding="utf-8")
 
         for text in (
-            "memory-controls", "Краткосрочная память", "Рабочая память", "Долговременная память",
-            "Сохранить рабочую память", "Очистить рабочую память", "Сохранить профиль",
-            "Сохранить решения", "Сохранить знания", "/memory/working",
-            "/memory/long-term/profile", "/memory/long-term/decisions", "/memory/long-term/knowledge",
+            "memory-controls", "<h2>Память</h2>", "Краткосрочная память", "Рабочая память", "Долговременная память",
+            "memory-short", "memory-working", "memory-long-term", "memory-trace",
         ):
             with self.subTest(text=text):
                 self.assertIn(text, source)
+        for text in ("<input", "<textarea", "<button", "/memory/working", "Сохранить", "Очистить"):
+            with self.subTest(absent=text):
+                self.assertNotIn(text, source)
 
 
 if __name__ == "__main__":
