@@ -58,7 +58,7 @@ DEFAULT_SETTINGS = {
     "windowSize": 10,
 }
 MAX_BULK_AGENTS = 100
-STATE_VERSION = 5
+STATE_VERSION = 6
 DEFAULT_STATE_PATH = Path(__file__).with_name("data") / "agents.json"
 METADATA_FIELDS = {
     "userPrompt",
@@ -282,6 +282,13 @@ class Agent:
             if not valid_long_term(candidate):
                 raise ValueError("Долговременная память имеет неверный формат.")
             self._context["memoryLayers"]["longTerm"] = candidate
+            return self.snapshot()
+
+    def replace_long_term_memory(self, long_term):
+        with self._lock:
+            if not valid_long_term(long_term):
+                raise ValueError("Долговременная память имеет неверный формат.")
+            self._context["memoryLayers"]["longTerm"] = copy.deepcopy(long_term)
             return self.snapshot()
 
     def apply_memory_command(self, command):
@@ -990,6 +997,24 @@ def _valid_agent_snapshot(snapshot):
     )
 
 
+def _merged_long_term_from_snapshots(snapshots):
+    merged = default_long_term()
+    for snapshot in snapshots:
+        context = snapshot.get("context") if isinstance(snapshot, dict) else None
+        layers = context.get("memoryLayers") if isinstance(context, dict) else None
+        long_term = layers.get("longTerm") if isinstance(layers, dict) else None
+        if not valid_long_term(long_term):
+            continue
+        for category in ("profile", "knowledge"):
+            for key, value in long_term[category].items():
+                if key not in merged[category] and len(merged[category]) < 16:
+                    merged[category][key] = value
+        for decision in long_term["decisions"]:
+            if decision not in merged["decisions"] and len(merged["decisions"]) < 20:
+                merged["decisions"].append(decision)
+    return merged
+
+
 class AgentRegistry:
     def __init__(self, ask_model, state_path=None):
         self._lock = threading.RLock()
@@ -1001,8 +1026,29 @@ class AgentRegistry:
                 "agent-1": Agent("agent-1", "Агент 1", default_settings(), ask_model),
             }
             self._next_id = 2
+            self._shared_long_term = default_long_term()
         else:
-            self._agents, self._next_id = restored
+            self._agents, self._next_id, self._shared_long_term = restored
+
+    def _snapshots(self):
+        return {agent_id: agent.snapshot() for agent_id, agent in self._agents.items()}
+
+    def _restore(self, snapshots, shared_long_term):
+        self._agents = {
+            snapshot["id"]: Agent(
+                snapshot["id"], snapshot["name"], snapshot["settings"], self._ask_model,
+                snapshot["messages"], snapshot["metadata"], snapshot["metrics"], snapshot["context"],
+            )
+            for snapshot in snapshots.values()
+        }
+        self._shared_long_term = copy.deepcopy(shared_long_term)
+
+    def _sync_shared_long_term(self, long_term):
+        if not valid_long_term(long_term):
+            raise ValueError("Долговременная память имеет неверный формат.")
+        self._shared_long_term = copy.deepcopy(long_term)
+        for agent in self._agents.values():
+            agent.replace_long_term_memory(self._shared_long_term)
 
     def agents(self):
         with self._lock:
@@ -1017,6 +1063,7 @@ class AgentRegistry:
             agent_id = f"agent-{self._next_id}"
             self._next_id += 1
             agent = Agent(agent_id, f"Агент {agent_id[6:]}", default_settings(), self._ask_model)
+            agent.replace_long_term_memory(self._shared_long_term)
             self._agents[agent_id] = agent
             snapshot = agent.snapshot()
             self._save()
@@ -1031,6 +1078,7 @@ class AgentRegistry:
                 agent_number = self._next_id
                 agent_id = f"agent-{agent_number}"
                 agent = Agent(agent_id, f"Агент {agent_number}", default_settings(), self._ask_model)
+                agent.replace_long_term_memory(self._shared_long_term)
                 self._agents[agent_id] = agent
                 self._next_id += 1
                 created.append(agent.snapshot())
@@ -1057,16 +1105,18 @@ class AgentRegistry:
             agent = self._agents.get(agent_id)
             if agent is None:
                 return None
-            before = agent.snapshot()
+            before = self._snapshots()
+            before_shared = copy.deepcopy(self._shared_long_term)
             if scope == "working":
                 snapshot = agent.update_working_memory(entries)
             else:
                 snapshot = agent.update_long_term_memory(scope, entries)
+                self._sync_shared_long_term(snapshot["context"]["memoryLayers"]["longTerm"])
+                snapshot = agent.snapshot()
             try:
                 self._save()
             except PersistenceError:
-                self._agents[agent_id] = Agent(before["id"], before["name"], before["settings"], self._ask_model,
-                                               before["messages"], before["metadata"], before["metrics"], before["context"])
+                self._restore(before, before_shared)
                 raise
             return snapshot
 
@@ -1075,15 +1125,20 @@ class AgentRegistry:
             agent = self._agents.get(agent_id)
             if agent is None:
                 return None
-            before = agent.snapshot()
+            before = self._snapshots()
+            before_shared = copy.deepcopy(self._shared_long_term)
             message = agent.apply_memory_command(command)
+            if command.get("action") not in {"working", "working-data", "clear-working", "clear-working-data"}:
+                self._sync_shared_long_term(agent.snapshot()["context"]["memoryLayers"]["longTerm"])
             try:
                 self._save()
             except PersistenceError:
-                self._agents[agent_id] = Agent(before["id"], before["name"], before["settings"], self._ask_model,
-                                               before["messages"], before["metadata"], before["metrics"], before["context"])
+                self._restore(before, before_shared)
                 raise
-            return {"agent": agent.snapshot(), "command": {"message": message}}
+            return {
+                "agent": agent.snapshot(), "command": {"message": message},
+                "sharedLongTerm": copy.deepcopy(self._shared_long_term),
+            }
 
     def respond(self, agent_id, text, temperature=DEFAULT_TEMPERATURE):
         with self._lock:
@@ -1135,6 +1190,7 @@ class AgentRegistry:
             state = {
                 "version": STATE_VERSION,
                 "nextId": self._next_id,
+                "sharedLongTerm": copy.deepcopy(self._shared_long_term),
                 "agents": [current_agent.snapshot() for current_agent in remaining_agents.values()],
             }
             self._save_state(state)
@@ -1146,6 +1202,7 @@ class AgentRegistry:
             return {
                 "version": STATE_VERSION,
                 "nextId": self._next_id,
+                "sharedLongTerm": copy.deepcopy(self._shared_long_term),
                 "agents": [agent.snapshot() for agent in self._agents.values()],
             }
 
@@ -1237,7 +1294,24 @@ class AgentRegistry:
                             metadata.setdefault("memoryLayers", {
                                 "shortTerm": [], "working": None, "longTerm": None,
                             })
+                state["version"] = 5
+                version = 5
+            if version == 5:
+                shared_long_term = _merged_long_term_from_snapshots(state["agents"])
+                for snapshot in state["agents"]:
+                    context = snapshot.get("context") if isinstance(snapshot, dict) else None
+                    layers = context.get("memoryLayers") if isinstance(context, dict) else None
+                    if isinstance(layers, dict):
+                        layers["longTerm"] = copy.deepcopy(shared_long_term)
+                state["sharedLongTerm"] = shared_long_term
                 state["version"] = STATE_VERSION
+                version = STATE_VERSION
+        if isinstance(state, dict) and state.get("version") == STATE_VERSION and valid_long_term(state.get("sharedLongTerm")):
+            for snapshot in state.get("agents", []):
+                context = snapshot.get("context") if isinstance(snapshot, dict) else None
+                layers = context.get("memoryLayers") if isinstance(context, dict) else None
+                if isinstance(layers, dict):
+                    layers["longTerm"] = copy.deepcopy(state["sharedLongTerm"])
         if isinstance(state, dict) and state.get("version") == STATE_VERSION and isinstance(state.get("agents"), list):
             for snapshot in state["agents"]:
                 metrics = snapshot.get("metrics") if isinstance(snapshot, dict) else None
@@ -1263,9 +1337,10 @@ class AgentRegistry:
                             _backfill_compression_metric_record(nested_metrics.get("lastMessage"))
         if (
             not isinstance(state, dict)
-            or set(state) != {"version", "nextId", "agents"}
+            or set(state) != {"version", "nextId", "sharedLongTerm", "agents"}
             or state["version"] != STATE_VERSION
             or not _valid_positive_int(state["nextId"])
+            or not valid_long_term(state["sharedLongTerm"])
             or not isinstance(state["agents"], list)
             or not all(_valid_agent_snapshot(snapshot) for snapshot in state["agents"])
         ):
@@ -1286,4 +1361,4 @@ class AgentRegistry:
                 snapshot["context"],
             )
             for snapshot in state["agents"]
-        }, state["nextId"]
+        }, state["nextId"], copy.deepcopy(state["sharedLongTerm"])

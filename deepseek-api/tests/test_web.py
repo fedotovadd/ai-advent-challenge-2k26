@@ -1060,6 +1060,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(body, {"error": "Запрос с другого источника запрещён."})
 
     def test_memory_commands_are_local_persistent_and_clear_only_the_requested_layer(self):
+        self.server.registry.create()
         status, body, _ = self.json_request(
             "POST", "/api/agents/agent-1/messages", {"text": "/working Дизайнерский проект"},
         )
@@ -1074,6 +1075,10 @@ class DeepSeekWebTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["agent"]["context"]["memoryLayers"]["longTerm"]["profile"], {"Имя": "Диана"})
+        self.assertEqual(body["sharedLongTerm"]["profile"], {"Имя": "Диана"})
+        status, agents, _ = self.json_request("GET", "/api/agents")
+        self.assertEqual(status, 200)
+        self.assertEqual(agents["agents"][1]["context"]["memoryLayers"]["longTerm"]["profile"], {"Имя": "Диана"})
         status, body, _ = self.json_request(
             "POST", "/api/agents/agent-1/messages", {"text": "/knowledge Любит минимализм"},
         )

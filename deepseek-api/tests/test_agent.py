@@ -958,6 +958,24 @@ class AgentRegistryTests(unittest.TestCase):
             "longTerm": {"profile": {"style": "кратко"}, "decisions": [], "knowledge": {}},
         })
 
+    def test_registry_shares_long_term_memory_between_agents_and_after_restart(self):
+        registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+        registry.create()
+
+        registry.update_memory("agent-1", "profile", {"Имя": "Диана"})
+        self.assertEqual(registry.get("agent-2").snapshot()["context"]["memoryLayers"]["longTerm"]["profile"], {"Имя": "Диана"})
+        registry.apply_memory_command("agent-2", {"action": "decision", "text": "Используем светлую палитру"})
+        self.assertEqual(registry.get("agent-1").snapshot()["context"]["memoryLayers"]["longTerm"]["decisions"], ["Используем светлую палитру"])
+
+        restored = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
+        self.assertEqual(restored.get("agent-1").snapshot()["context"]["memoryLayers"]["longTerm"], {
+            "profile": {"Имя": "Диана"}, "decisions": ["Используем светлую палитру"], "knowledge": {},
+        })
+        self.assertEqual(
+            restored.get("agent-2").snapshot()["context"]["memoryLayers"]["longTerm"],
+            restored.get("agent-1").snapshot()["context"]["memoryLayers"]["longTerm"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
