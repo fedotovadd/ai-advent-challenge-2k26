@@ -41,9 +41,49 @@ class TaskStateTests(unittest.TestCase):
         result = apply_execution_markers("Последний шаг\n[[TASK_STEP_DONE]]", result["task"])
         self.assertEqual(result["task"]["stage"], "VALIDATION")
         self.assertIn("EXECUTION", result["notice"])
-        result = apply_execution_markers("Проверено\n[[TASK_TRANSITION:DONE]]", result["task"])
+        result = apply_execution_markers("Проверено\n[[TASK_VALIDATION_PASSED]]", result["task"])
         self.assertEqual(result["task"]["stage"], "DONE")
         self.assertNotIn("[[", result["visible"])
+
+    def test_validation_requires_a_distinct_pass_marker(self):
+        task = default_task_state("task-1", "Лендинг")
+        task = extract_task_plan("[[TASK_PLAN]]\n1. Первый\n[[/TASK_PLAN]]", task)[0]["task"]
+        task = apply_task_command(task, {"action": "execute"}, 2)[0]
+        validation = apply_execution_markers("Шаг завершён\n[[TASK_STEP_DONE]]", task)["task"]
+
+        rejected = apply_execution_markers("Проверено\n[[TASK_TRANSITION:DONE]]", validation)
+
+        self.assertEqual(rejected["task"], validation)
+        self.assertEqual(rejected["visible"], "Проверено")
+        self.assertIn("Сначала завершите проверку результата", rejected["notice"])
+
+    def test_rejected_markers_are_all_hidden_without_changing_the_task(self):
+        task = default_task_state("task-1", "Лендинг")
+        answer = """Ответ
+[[TASK_STEP_DONE]]
+[[TASK_TRANSITION:DONE]]
+[[TASK_VALIDATION_PASSED]]
+[[TASK_VALIDATION_FAILED:1]]"""
+
+        rejected = apply_execution_markers(answer, task)
+
+        self.assertEqual(rejected["task"], task)
+        self.assertNotIn("[[", rejected["visible"])
+        self.assertIn("Текущий этап", rejected["notice"])
+
+    def test_validation_failure_returns_to_the_requested_step(self):
+        task = default_task_state("task-1", "Лендинг")
+        task = extract_task_plan("[[TASK_PLAN]]\n1. Первый\n2. Второй\n[[/TASK_PLAN]]", task)[0]["task"]
+        task = apply_task_command(task, {"action": "execute"}, 2)[0]
+        task = apply_execution_markers("Первый готов\n[[TASK_STEP_DONE]]", task)["task"]
+        validation = apply_execution_markers("Второй готов\n[[TASK_STEP_DONE]]", task)["task"]
+
+        rework = apply_execution_markers("Нужна доработка\n[[TASK_VALIDATION_FAILED:2]]", validation)
+
+        self.assertEqual((rework["task"]["stage"], rework["task"]["step"], rework["task"]["done"]),
+                         ("EXECUTION", 2, ["Первый"]))
+        self.assertEqual(rework["task"]["current"], "Второй")
+        self.assertTrue(rework["continueTask"])
 
     def test_checklist_marks_completed_prefix_and_marker_requests_continuation(self):
         task = default_task_state("task-1", "Лендинг")
@@ -78,13 +118,14 @@ class TaskStateTests(unittest.TestCase):
         self.assertEqual(extracted["task"]["plan"], ["Подобрать три кафе.", "Сравнить их."])
         self.assertEqual(extracted["task"]["total"], 2)
 
-    def test_marker_not_on_last_line_does_not_change_state(self):
+    def test_marker_not_on_last_line_is_hidden_without_changing_state(self):
         task = default_task_state("task-1", "Лендинг")
         task = extract_task_plan("[[TASK_PLAN]]\n1. Шаг\n[[/TASK_PLAN]]", task)[0]["task"]
         task = apply_task_command(task, {"action": "execute"}, 2)[0]
         result = apply_execution_markers("[[TASK_STEP_DONE]]\nНо работа продолжается", task)
         self.assertEqual(result["task"], task)
-        self.assertIn("[[TASK_STEP_DONE]]", result["visible"])
+        self.assertNotIn("[[TASK_STEP_DONE]]", result["visible"])
+        self.assertIn("последней строкой", result["notice"])
 
     def test_revised_plan_keeps_completed_prefix_and_prompt_has_current_state(self):
         task = default_task_state("task-1", "Лендинг")
@@ -94,7 +135,10 @@ class TaskStateTests(unittest.TestCase):
         task = apply_task_command(task, {"action": "planning"}, 2)[0]
         task = extract_task_plan("[[TASK_PLAN]]\n1. Первый\n2. Уточнённый\n[[/TASK_PLAN]]", task)[0]["task"]
         self.assertEqual((task["step"], task["current"], task["done"]), (2, "Уточнённый", ["Первый"]))
-        self.assertIn("[TASK_STATE]", task_prompt_block(task, "# План"))
+        prompt = task_prompt_block(task, "# План")
+        self.assertIn("[TASK_STATE]", prompt)
+        self.assertIn("[[TASK_VALIDATION_PASSED]]", prompt)
+        self.assertIn("[[TASK_VALIDATION_FAILED:<номер шага>]]", prompt)
         with self.assertRaises(TaskStateError):
             extract_task_plan("[[TASK_PLAN]]\n1. Другой\n[[/TASK_PLAN]]", task)
 

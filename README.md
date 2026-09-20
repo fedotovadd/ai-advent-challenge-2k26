@@ -5,5 +5,3 @@ AI Advent Challenge by Alexey Gladkov
 
 - [День 1 — минимальный CLI-клиент DeepSeek](deepseek-api/) — ветка `main`.
 - Остальные дни — ветки `day-XX`.
-- [День 10 — Sliding Window, Facts, Branching и Summary](deepseek-api/README.md#день-10--стратегии-контекста) — ветка `day-10`.
-- [День 14 — инварианты и ограничения состояния](docs/day-14/invariants-results.md) — ветка `day-14`.

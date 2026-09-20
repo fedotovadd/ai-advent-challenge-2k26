@@ -4,10 +4,22 @@ import re
 
 
 TASK_STAGES = ("PLANNING", "EXECUTION", "VALIDATION", "DONE")
+TASK_TRANSITIONS = {
+    "PLANNING": ("EXECUTION",),
+    "EXECUTION": ("PLANNING", "VALIDATION"),
+    "VALIDATION": ("EXECUTION", "DONE"),
+    "DONE": (),
+}
 TASK_PLAN_OPEN = "[[TASK_PLAN]]"
 TASK_PLAN_CLOSE = "[[/TASK_PLAN]]"
 TASK_STEP_DONE = "[[TASK_STEP_DONE]]"
 TASK_DONE = "[[TASK_TRANSITION:DONE]]"
+TASK_VALIDATION_PASSED = "[[TASK_VALIDATION_PASSED]]"
+TASK_VALIDATION_FAILED_PREFIX = "[[TASK_VALIDATION_FAILED:"
+TASK_MARKER_PATTERN = re.compile(
+    r"\[\[TASK_STEP_DONE\]\]|\[\[TASK_TRANSITION:DONE\]\]|"
+    r"\[\[TASK_VALIDATION_PASSED\]\]|\[\[TASK_VALIDATION_FAILED:[^\]\r\n]*\]\]"
+)
 MAX_TITLE_LENGTH = 300
 MAX_STEPS = 24
 MAX_STEP_LENGTH = 500
@@ -81,6 +93,16 @@ def _require_task(task):
         raise TaskStateError("Сначала создайте задачу командой /task Название.")
 
 
+def _transition(task, target):
+    if target not in TASK_TRANSITIONS[task["stage"]]:
+        if task["stage"] == "DONE":
+            raise TaskStateError("Задача уже завершена. Создайте новую через /task Название.")
+        raise TaskStateError(f"Переход из {task['stage']} в {target} не разрешён.")
+    candidate = copy.deepcopy(task)
+    candidate["stage"] = target
+    return candidate
+
+
 def apply_task_command(task, command, next_task_id):
     action = command.get("action") if isinstance(command, dict) else None
     if not isinstance(next_task_id, int) or isinstance(next_task_id, bool) or next_task_id < 1:
@@ -109,7 +131,7 @@ def apply_task_command(task, command, next_task_id):
     if action == "execute":
         if candidate["stage"] != "PLANNING" or not candidate["plan"] or candidate["planPath"] is None:
             raise TaskStateError("Сначала получите и прочитайте Markdown-план задачи.")
-        candidate["stage"] = "EXECUTION"
+        candidate = _transition(candidate, "EXECUTION")
         candidate["step"] = len(candidate["done"]) + 1
         candidate["current"] = candidate["plan"][candidate["step"] - 1]
         candidate["expectedAction"] = "Выполнить текущий шаг плана."
@@ -117,7 +139,7 @@ def apply_task_command(task, command, next_task_id):
     if action == "planning":
         if candidate["stage"] != "EXECUTION":
             raise TaskStateError("В планирование можно вернуться только из выполнения.")
-        candidate["stage"] = "PLANNING"
+        candidate = _transition(candidate, "PLANNING")
         candidate["expectedAction"] = "Уточните требования; агент подготовит обновлённый план."
         return candidate, next_task_id, "Завершён этап EXECUTION. Начат этап PLANNING."
     raise TaskStateError("Неизвестная команда состояния задачи.")
@@ -199,29 +221,61 @@ def _last_nonempty_line(answer):
     return None, None
 
 
+def _visible_without_markers(answer):
+    lines = TASK_MARKER_PATTERN.sub("", answer).splitlines()
+    return "\n".join(line for line in lines if line.strip()).strip()
+
+
+def _marker_result(task, visible, notice, continue_task=False, accepted=False):
+    return {"task": task, "visible": visible, "notice": notice,
+            "continueTask": continue_task, "accepted": accepted}
+
+
 def apply_execution_markers(answer, task):
     _require_task(task)
     candidate = copy.deepcopy(task)
+    matches = list(TASK_MARKER_PATTERN.finditer(answer))
+    if not matches:
+        return _marker_result(candidate, answer, None)
+    visible = _visible_without_markers(answer)
     index, marker = _last_nonempty_line(answer)
-    if marker not in {TASK_STEP_DONE, TASK_DONE}:
-        return {"task": candidate, "visible": answer, "notice": None, "continueTask": False}
+    if len(matches) != 1 or marker != matches[0].group(0):
+        return _marker_result(candidate, visible,
+                              "Текущий этап не позволяет выполнить служебный переход: метка должна быть единственной последней строкой.")
     if marker == TASK_STEP_DONE and candidate["stage"] == "EXECUTION":
-        visible = "\n".join(answer.splitlines()[:index] + answer.splitlines()[index + 1:]).strip()
         candidate["done"].append(candidate["current"])
         if candidate["step"] == candidate["total"]:
-            candidate.update({"stage": "VALIDATION", "current": "Проверить результат", "expectedAction": "Агент проверяет результат."})
+            candidate = _transition(candidate, "VALIDATION")
+            candidate.update({"current": "Проверить результат", "expectedAction": "Агент проверяет результат."})
             notice = "Завершён этап EXECUTION. Начат этап VALIDATION."
         else:
             candidate["step"] += 1
             candidate["current"] = candidate["plan"][candidate["step"] - 1]
             notice = f"Завершён шаг {candidate['step'] - 1}. Начат шаг {candidate['step']}."
-        return {"task": candidate, "visible": visible, "notice": notice,
-                "continueTask": not candidate["paused"] and candidate["stage"] in {"EXECUTION", "VALIDATION"}}
-    if marker == TASK_DONE and candidate["stage"] == "VALIDATION":
-        visible = "\n".join(answer.splitlines()[:index] + answer.splitlines()[index + 1:]).strip()
-        candidate.update({"stage": "DONE", "paused": False, "current": "Задача завершена", "expectedAction": "Создайте новую задачу командой /task Название."})
-        return {"task": candidate, "visible": visible, "notice": "Завершён этап VALIDATION. Задача завершена.", "continueTask": False}
-    return {"task": candidate, "visible": answer, "notice": None, "continueTask": False}
+        return _marker_result(candidate, visible, notice,
+                              not candidate["paused"] and candidate["stage"] in {"EXECUTION", "VALIDATION"}, True)
+    if marker == TASK_DONE:
+        return _marker_result(candidate, visible, "Сначала завершите проверку результата.")
+    if marker == TASK_VALIDATION_PASSED and candidate["stage"] == "VALIDATION":
+        candidate = _transition(candidate, "DONE")
+        candidate.update({"paused": False, "current": "Задача завершена", "expectedAction": "Создайте новую задачу командой /task Название."})
+        return _marker_result(candidate, visible, "Завершён этап VALIDATION. Задача завершена.", False, True)
+    failure = re.fullmatch(r"\[\[TASK_VALIDATION_FAILED:(\d+)\]\]", marker or "")
+    if failure and candidate["stage"] == "VALIDATION":
+        step = int(failure.group(1))
+        if 1 <= step <= candidate["total"]:
+            candidate = _transition(candidate, "EXECUTION")
+            candidate["done"] = candidate["plan"][:step - 1]
+            candidate["step"] = step
+            candidate["current"] = candidate["plan"][step - 1]
+            candidate["expectedAction"] = "Выполнить текущий шаг плана."
+            return _marker_result(candidate, visible, f"Проверка вернула задачу к шагу {step}.",
+                                  not candidate["paused"], True)
+    if marker.startswith(TASK_VALIDATION_FAILED_PREFIX):
+        return _marker_result(candidate, visible,
+                              "Нельзя вернуть задачу на доработку: укажите существующий шаг после начала валидации.")
+    return _marker_result(candidate, visible,
+                          "Текущий этап не позволяет выполнить служебный переход. Следуйте ожидаемому действию задачи.")
 
 
 def task_prompt_block(task, plan_markdown):
@@ -235,7 +289,8 @@ def task_prompt_block(task, plan_markdown):
             f"План:\n{plan}\n\n"
             "Не пропускай этапы. В PLANNING собери требования и при готовности верни Markdown в [[TASK_PLAN]]...[[/TASK_PLAN]]. "
             "В EXECUTION ставь [[TASK_STEP_DONE]] только последней непустой строкой после завершения текущего шага. "
-            "В VALIDATION ставь [[TASK_TRANSITION:DONE]] только последней непустой строкой после проверки.")
+            "В VALIDATION ставь [[TASK_VALIDATION_PASSED]] только последней непустой строкой после успешной проверки, "
+            "или [[TASK_VALIDATION_FAILED:<номер шага>]] для возврата на доработку.")
 
 
 def task_status(task):
