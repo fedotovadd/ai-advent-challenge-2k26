@@ -61,6 +61,27 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(snapshot["context"]["activeBranch"], "main")
         self.assertEqual(snapshot["context"]["branches"]["main"]["state"]["messages"], [])
 
+    def test_execute_recovers_a_previously_shown_plan_from_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            instance = Agent(
+                "agent-1", "Первый", default_settings(), lambda payload, **options: "Ответ",
+                task_plan_dir=Path(directory) / "task-plans",
+            )
+            instance.apply_task_command({"action": "task", "title": "Кафе"})
+            instance._messages.append({"role": "assistant", "content": """[[TASK_PLAN]]
+## Критерии
+1. Средний чек
+2. Атмосфера
+## Шаги
+1. Подобрать кафе.
+2. Сравнить кафе.
+[[/TASK_PLAN]]"""})
+
+            instance.apply_task_command({"action": "execute"})
+
+            task = instance.snapshot()["context"]["taskState"]
+            self.assertEqual((task["stage"], task["current"], task["total"]), ("EXECUTION", "Подобрать кафе.", 2))
+
     def test_estimate_payload_counts_system_messages_and_request_options(self):
         request = {
             "model": "deepseek-v4-flash",
@@ -549,6 +570,28 @@ class AgentRegistryTests(unittest.TestCase):
 
     def tearDown(self):
         self.temporary_directory.cleanup()
+
+    def test_execute_provider_failure_rolls_back_transition_and_persists_error_metadata(self):
+        answers = ["[[TASK_PLAN]]\n1. Исследовать\n[[/TASK_PLAN]]"]
+
+        def ask_model(payload, **options):
+            if answers:
+                return answers.pop(0)
+            raise ValueError("provider unavailable")
+
+        registry = AgentRegistry(ask_model, self.state_path)
+        registry.apply_task_command("agent-1", {"action": "task", "title": "Статья"})
+        registry.respond("agent-1", "Подготовь план")
+
+        with self.assertRaises(ValueError):
+            registry.apply_task_command("agent-1", {"action": "execute"})
+
+        failed = registry.get("agent-1").snapshot()
+        self.assertEqual(failed["context"]["taskState"]["stage"], "PLANNING")
+        self.assertEqual(failed["metadata"]["status"]["kind"], "error")
+        restored = AgentRegistry(ask_model, self.state_path).get("agent-1").snapshot()
+        self.assertEqual(restored["context"]["taskState"]["stage"], "PLANNING")
+        self.assertEqual(restored["metadata"]["status"]["kind"], "error")
 
     def test_registry_restores_messages_settings_and_context(self):
         first_registry = AgentRegistry(lambda payload, **options: "Рада познакомиться!", self.state_path)
