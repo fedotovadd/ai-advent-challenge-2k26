@@ -152,13 +152,13 @@ def test_invariants_survive_registry_restart_and_rollback_after_save_failure(sel
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd deepseek-api && python3 -m unittest tests.test_agent.AgentTests.test_invariants_are_agent_global_across_branch_switches tests.test_agent.AgentTests.test_registry_migrates_version_nine_state_without_invariants tests.test_agent.AgentTests.test_registry_recovers_from_malformed_version_ten_invariants tests.test_agent.AgentTests.test_invariants_survive_registry_restart_and_rollback_after_save_failure -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_agent.AgentRegistryTests.test_invariants_are_agent_global_across_branch_switches tests.test_agent.AgentRegistryTests.test_registry_migrates_version_nine_state_without_invariants tests.test_agent.AgentRegistryTests.test_registry_recovers_from_malformed_version_ten_invariants tests.test_agent.AgentRegistryTests.test_invariants_survive_registry_restart_and_rollback_after_save_failure -v`
 
 Expected: FAIL because the registry exposes no invariant operation.
 
 - [ ] **Step 3: Implement persistence and injection**
 
-Add `invariants: []` to `default_context`, exclude it from `_save_active_branch` and branch-state restoration, and include `valid_invariants` in `_valid_context`. Raise `STATE_VERSION` to 10 and migrate v9 root contexts by supplying `invariants: []` before validation. Import invariant helpers, add `Agent.apply_invariant_command`, then add an atomic `AgentRegistry.apply_invariant_command` using the existing `_snapshots()` / `_restore(before, shared_long_term)` seam around `_save()`. Append the invariant prompt block immediately after the base system prompt and before `profile_prompt_block` and `task_prompt_block`.
+Add `invariants: []` to `default_context`, exclude it from `_save_active_branch` and branch-state restoration, and include `valid_invariants` in `_valid_context`. Raise `STATE_VERSION` to 10 and supply `invariants: []` in every legacy migration path that upgrades directly to the current version (including v6, v7/v8, and native v9) before exact context validation. Retain and run the existing categorized-v6-memory migration test in the full suite. Import invariant helpers, add `Agent.apply_invariant_command`, then add an atomic `AgentRegistry.apply_invariant_command` using the existing `_snapshots()` / `_restore(before, shared_long_term)` seam around `_save()`. Append the invariant prompt block immediately after the base system prompt and before `profile_prompt_block` and `task_prompt_block`.
 
 - [ ] **Step 4: Run focused tests**
 
