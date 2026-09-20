@@ -30,24 +30,23 @@
 - [ ] **Step 1: Write failing command and schema tests**
 
 ```python
-from invariants import InvariantCommandError, parse_invariant_command, valid_invariants
+class InvariantCommandTests(unittest.TestCase):
+    def test_free_form_add_and_local_commands(self):
+        self.assertEqual(parse_invariant_command("/invariant Не использовать Python"), {
+            "action": "add", "text": "Не использовать Python"
+        })
+        self.assertEqual(parse_invariant_command("/invariants"), {"action": "list"})
+        self.assertEqual(parse_invariant_command("/remove-invariant 2"), {"action": "remove", "number": 2})
+        self.assertEqual(parse_invariant_command("/clear-invariants"), {"action": "clear"})
 
-def test_free_form_add_and_local_commands():
-    assert parse_invariant_command("/invariant Не использовать Python") == {
-        "action": "add", "text": "Не использовать Python"
-    }
-    assert parse_invariant_command("/invariants") == {"action": "list"}
-    assert parse_invariant_command("/remove-invariant 2") == {"action": "remove", "number": 2}
-    assert parse_invariant_command("/clear-invariants") == {"action": "clear"}
-
-def test_schema_normalizes_and_rejects_duplicate_or_oversized_values():
-    assert valid_invariants(["Только Kotlin"])
-    assert not valid_invariants(["Kotlin", "kotlin"])
+    def test_schema_normalizes_and_rejects_duplicate_or_oversized_values(self):
+        self.assertTrue(valid_invariants(["Только Kotlin"]))
+        self.assertFalse(valid_invariants(["Kotlin", "kotlin"]))
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `python3 -m unittest tests.test_invariants -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_invariants -v`
 
 Expected: FAIL with `ModuleNotFoundError: No module named 'invariants'`.
 
@@ -57,7 +56,7 @@ Create constants `MAX_INVARIANTS = 24` and `MAX_INVARIANT_LENGTH = 500`; add `In
 
 - [ ] **Step 4: Run the unit tests**
 
-Run: `python3 -m unittest tests.test_invariants -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_invariants -v`
 
 Expected: PASS.
 
@@ -93,7 +92,7 @@ def test_prompt_block_marks_rules_as_higher_priority_than_context():
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `python3 -m unittest tests.test_invariants.InvariantConstraintTests -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_invariants.InvariantConstraintTests -v`
 
 Expected: FAIL because constraint helpers do not exist.
 
@@ -103,7 +102,7 @@ Parse `использовать`, `только`, `не использовать
 
 - [ ] **Step 4: Run the focused tests**
 
-Run: `python3 -m unittest tests.test_invariants -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_invariants -v`
 
 Expected: PASS.
 
@@ -123,10 +122,13 @@ git commit -m "feat: validate stack invariants"
 - [ ] **Step 1: Write failing agent tests**
 
 ```python
-def test_invariants_are_agent_global_and_restore_from_version_nine_state(self):
+def test_invariants_are_agent_global_across_branch_switches(self):
     registry = AgentRegistry(lambda payload, **options: "Ответ", self.state_path)
     registry.apply_invariant_command("agent-1", {"action": "add", "text": "Только Kotlin"})
-    registry.context_action("agent-1", "branch", {"checkpointId": None, "name": "ветка"})
+    registry.update_settings("agent-1", {**default_settings(), "contextStrategy": "branching"})
+    checkpoint = registry.context_action("agent-1", "checkpoint", {"name": "до ветки"})
+    branch = registry.context_action("agent-1", "branch", {"checkpointId": checkpoint["checkpointId"], "name": "ветка"})
+    registry.context_action("agent-1", "switch", {"branchId": branch["branchId"]})
     self.assertEqual(registry.get("agent-1").snapshot()["context"]["invariants"], ["Только Kotlin"])
 
 def test_prompt_places_invariants_after_base_prompt_and_before_profile_and_task(self):
@@ -136,17 +138,17 @@ def test_prompt_places_invariants_after_base_prompt_and_before_profile_and_task(
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `python3 -m unittest tests.test_agent.AgentTests.test_invariants_are_agent_global_and_restore_from_version_nine_state -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_agent.AgentTests.test_invariants_are_agent_global_across_branch_switches -v`
 
 Expected: FAIL because the registry exposes no invariant operation.
 
 - [ ] **Step 3: Implement persistence and injection**
 
-Add `invariants: []` to `default_context`, exclude it from `_save_active_branch` and branch-state restoration, and include `valid_invariants` in `_valid_context`. Raise `STATE_VERSION` to 10 and migrate v9 root contexts by supplying `invariants: []` before validation. Import invariant helpers, add `Agent.apply_invariant_command`, then add an atomic `AgentRegistry.apply_invariant_command` that restores the prior list if `_persist()` fails. Append the invariant prompt block immediately after the base system prompt and before `profile_prompt_block` and `task_prompt_block`.
+Add `invariants: []` to `default_context`, exclude it from `_save_active_branch` and branch-state restoration, and include `valid_invariants` in `_valid_context`. Raise `STATE_VERSION` to 10 and migrate v9 root contexts by supplying `invariants: []` before validation. Write a genuine v9 state file without that field, reopen `AgentRegistry`, and assert the restored state is valid v10; also assert a malformed v10 invariant list triggers safe recovery. Import invariant helpers, add `Agent.apply_invariant_command`, then add an atomic `AgentRegistry.apply_invariant_command` using the existing `_snapshots()` / `_restore(before, shared_long_term)` seam around `_save()`. Inject an `OSError` through `_save_state` in a test and assert the prior invariant array is restored. Append the invariant prompt block immediately after the base system prompt and before `profile_prompt_block` and `task_prompt_block`; restart the registry to prove persistence.
 
 - [ ] **Step 4: Run focused tests**
 
-Run: `python3 -m unittest tests.test_agent.AgentTests -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_agent.AgentTests -v`
 
 Expected: PASS.
 
@@ -180,11 +182,20 @@ def test_model_response_with_forbidden_solution_is_replaced_by_refusal(self):
     instance.apply_invariant_command({"action": "add", "text": "Не использовать Python"})
     result = instance.respond("Предложи решение")
     self.assertIn("не может предложить", result["messages"][-1]["content"])
+
+def test_positive_and_only_stack_rules_filter_explicit_solutions(self):
+    # Verify request and model-response rejection for missing Ktor under
+    # «Использовать Kotlin и Ktor» and Java under «Только Kotlin».
+    ...
+
+def test_question_about_rule_is_not_an_explicit_solution_request(self):
+    # «Почему Python запрещён?» must still reach the provider.
+    ...
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `python3 -m unittest tests.test_agent.AgentTests.test_conflicting_user_request_does_not_call_provider_or_change_history tests.test_agent.AgentTests.test_model_response_with_forbidden_solution_is_replaced_by_refusal -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_agent.AgentTests.test_conflicting_user_request_does_not_call_provider_or_change_history tests.test_agent.AgentTests.test_model_response_with_forbidden_solution_is_replaced_by_refusal tests.test_agent.AgentTests.test_positive_and_only_stack_rules_filter_explicit_solutions tests.test_agent.AgentTests.test_question_about_rule_is_not_an_explicit_solution_request -v`
 
 Expected: FAIL because `respond` still calls the provider and stores the raw answer.
 
@@ -194,7 +205,7 @@ Add a dedicated `InvariantViolationError` carrying the prebuilt refusal. At the 
 
 - [ ] **Step 4: Run focused tests**
 
-Run: `python3 -m unittest tests.test_agent.AgentTests -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_agent.AgentTests -v`
 
 Expected: PASS.
 
@@ -229,7 +240,7 @@ def test_conflicting_message_returns_400_without_history_mutation(self):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `python3 -m unittest tests.test_web -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_web -v`
 
 Expected: FAIL because the handler does not parse invariant commands or catch invariant violations.
 
@@ -239,7 +250,7 @@ In `_handle_message`, parse invariant commands before task commands, call the re
 
 - [ ] **Step 4: Run HTTP and static tests**
 
-Run: `python3 -m unittest tests.test_web tests.test_memory_ui -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_web tests.test_memory_ui -v`
 
 Expected: PASS.
 
@@ -266,7 +277,7 @@ Add concise Russian usage examples and state the deliberate scope of the determi
 
 - [ ] **Step 3: Run all automated checks**
 
-Run: `python3 -m unittest discover -s deepseek-api/tests -v`
+Run: `cd deepseek-api && python3 -m unittest discover -s tests -v`
 
 Expected: PASS with no failures.
 
