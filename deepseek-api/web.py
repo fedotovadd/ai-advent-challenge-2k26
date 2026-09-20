@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from agent import AgentRegistry, ContextOverflowError, ContextSummaryError, DEFAULT_TEMPERATURE, MODELS, MODEL_CAPABILITIES, OverflowProbeError, PersistenceError
+from agent import AgentRegistry, ContextOverflowError, ContextSummaryError, DEFAULT_TEMPERATURE, InvariantViolationError, MODELS, MODEL_CAPABILITIES, OverflowProbeError, PersistenceError
 from day_three import (
     DAY_THREE_TASKS,
     MAX_DAY_THREE_REQUEST_BYTES,
@@ -14,6 +14,7 @@ from day_three import (
 from errors import MissingApiKeyError
 from context_memory import FactsUpdateError, validate_context_settings
 from memory_layers import MemoryCommandError, parse_memory_command
+from invariants import InvariantCommandError, parse_invariant_command
 from task_state import TaskStateError, parse_task_command
 
 
@@ -298,6 +299,25 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "Поле text должно быть непустой строкой."})
             return
         try:
+            invariant_command = parse_invariant_command(data["text"])
+        except InvariantCommandError as error:
+            self._send_json(400, {"error": str(error)})
+            return
+        if invariant_command is not None:
+            try:
+                result = self.server.registry.apply_invariant_command(agent_id, invariant_command)
+            except InvariantCommandError as error:
+                self._send_json(400, {"error": str(error)})
+                return
+            except PersistenceError:
+                self._send_storage_error()
+                return
+            if result is None:
+                self._send_json(404, {"error": "Агент не найден."})
+                return
+            self._send_json(200, result)
+            return
+        try:
             command = parse_memory_command(data["text"])
         except MemoryCommandError as error:
             self._send_json(400, {"error": str(error)})
@@ -354,6 +374,10 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         except TaskStateError as error:
             snapshot = agent.snapshot()
             self._send_json(400, {"agent": snapshot, "error": str(error), "metadata": snapshot["metadata"], "accepted": False})
+            return
+        except InvariantViolationError as error:
+            snapshot = agent.snapshot()
+            self._send_json(400, {"agent": snapshot, "error": error.refusal, "accepted": False})
             return
         except MissingApiKeyError as error:
             snapshot = agent.snapshot()
