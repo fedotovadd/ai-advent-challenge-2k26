@@ -29,6 +29,7 @@ class InvariantConstraintTests(unittest.TestCase):
         self.assertIn("Не использовать Python", violations_for_solution("Реализуйте на Python", rules))
         self.assertIn("Использовать Kotlin и Ktor", violations_for_solution("Реализуйте на Kotlin", rules))
         self.assertTrue(conflict_for_addition(["Только Kotlin"], "Использовать Java"))
+        self.assertIn("Только Kotlin", violations_for_solution("Реализуйте на Java", ["Только Kotlin"]))
 
     def test_prompt_block_marks_rules_as_higher_priority_than_context(self):
         block = invariant_prompt_block(["Только Kotlin"])

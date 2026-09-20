@@ -234,6 +234,8 @@ class DeepSeekWebTests(unittest.TestCase):
             '<strong>/working</strong> — сохранить в рабочую память',
             '<strong>/long</strong> — сохранить в долговременную память',
             '<strong>/clear-memory</strong> — очистить рабочую и долговременную память',
+            '"/invariant Правило — добавить инвариант"',
+            '"/invariants — показать инварианты"',
             'toggleAttribute("hidden")', 'aria-expanded',
         ):
             with self.subTest(marker=marker):
@@ -1263,6 +1265,28 @@ class DeepSeekWebTests(unittest.TestCase):
             {"Origin": f"http://127.0.0.1:{self.port}"},
         )
         self.assertEqual(status, 200)
+
+    def test_invariant_commands_are_local_and_return_current_rules(self):
+        status, body, _ = self.json_request(
+            "POST", "/api/agents/agent-1/messages", {"text": "/invariant Не использовать Python"},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body["invariants"], ["Не использовать Python"])
+        self.assertEqual(self.calls, [])
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/invariants"})
+        self.assertEqual(status, 200)
+        self.assertIn("1. Не использовать Python", body["command"]["message"])
+
+    def test_conflicting_message_returns_400_without_history_mutation(self):
+        self.json_request("POST", "/api/agents/agent-1/messages", {"text": "/invariant Не использовать Python"})
+
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Реализуй на Python"})
+
+        self.assertEqual(status, 400)
+        self.assertFalse(body["accepted"])
+        self.assertEqual(body["agent"]["messages"], [])
+        self.assertIn("Не использовать Python", body["error"])
 
 
 if __name__ == "__main__":

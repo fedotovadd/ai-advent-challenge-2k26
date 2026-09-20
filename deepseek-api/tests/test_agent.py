@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import agent
 import user_profiles
-from agent import Agent, AgentRegistry, MAX_BULK_AGENTS, PersistenceError, default_settings
+from agent import Agent, AgentRegistry, InvariantViolationError, MAX_BULK_AGENTS, PersistenceError, default_settings
 
 
 class UserProfileTests(unittest.TestCase):
@@ -52,6 +52,38 @@ class UserProfileTests(unittest.TestCase):
 
 
 class AgentTests(unittest.TestCase):
+    def test_conflicting_user_request_does_not_call_provider_or_change_history(self):
+        calls = []
+        instance = Agent("agent-1", "Тест", default_settings(), lambda *args, **kwargs: calls.append(1))
+        instance.apply_invariant_command({"action": "add", "text": "Не использовать Python"})
+
+        with self.assertRaisesRegex(InvariantViolationError, "Не использовать Python"):
+            instance.respond("Реализуй на Python")
+
+        self.assertEqual(calls, [])
+        self.assertEqual(instance.snapshot()["messages"], [])
+
+    def test_model_response_with_forbidden_solution_is_replaced_by_refusal(self):
+        instance = Agent("agent-1", "Тест", default_settings(), lambda *_args, **_kwargs: "Используйте Python")
+        instance.apply_invariant_command({"action": "add", "text": "Не использовать Python"})
+
+        result = instance.respond("Предложи решение")
+
+        self.assertIn("Не могу предложить", result["messages"][-1]["content"])
+        self.assertNotIn("Используйте Python", result["messages"][-1]["content"])
+
+    def test_invariants_are_injected_after_base_prompt_and_before_profile(self):
+        calls = []
+        instance = Agent("agent-1", "Тест", default_settings(), lambda payload, **options: calls.append(payload) or "Ответ")
+        instance.apply_invariant_command({"action": "add", "text": "Только Kotlin"})
+
+        instance.respond("Привет", profile=user_profiles.default_profile())
+
+        prompt = calls[0]["messages"][0]["content"]
+        self.assertLess(prompt.index(default_settings()["systemPrompt"]), prompt.index("[ИНВАРИАНТЫ]"))
+        self.assertLess(prompt.index("[ИНВАРИАНТЫ]"), prompt.index("[Профиль пользователя]"))
+        self.assertEqual(instance.snapshot()["context"]["invariants"], ["Только Kotlin"])
+
     def test_new_agent_defaults_to_window_with_empty_memories(self):
         snapshot = Agent("agent-1", "Первый", default_settings(), lambda payload, **options: "Ответ").snapshot()
         self.assertEqual(snapshot["settings"]["contextStrategy"], "sliding_window")

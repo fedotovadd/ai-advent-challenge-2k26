@@ -16,6 +16,10 @@ from memory_layers import (
     MemoryCommandError, default_memory_layers, default_long_term, default_working, valid_long_term,
     valid_memory_layers, valid_working, working_has_content, long_term_has_content,
 )
+from invariants import (
+    apply_invariant_command, invariant_prompt_block, invariant_refusal,
+    valid_invariants, violations_for_solution,
+)
 from task_state import (
     TaskStateError, apply_execution_markers, apply_task_command, extract_task_plan,
     task_plan_markdown, task_prompt_block, valid_task_state,
@@ -65,7 +69,7 @@ DEFAULT_SETTINGS = {
     "windowSize": 10,
 }
 MAX_BULK_AGENTS = 100
-STATE_VERSION = 9
+STATE_VERSION = 10
 DEFAULT_STATE_PATH = Path(__file__).with_name("data") / "agents.json"
 METADATA_FIELDS = {
     "userPrompt",
@@ -81,6 +85,15 @@ METADATA_FIELDS = {
 
 class PersistenceError(Exception):
     pass
+
+
+class InvariantViolationError(ValueError):
+    """Raised before a provider call when a request conflicts with invariants."""
+
+    def __init__(self, violations):
+        self.violations = list(violations)
+        self.refusal = invariant_refusal(self.violations)
+        super().__init__(self.refusal)
 
 
 class ContextOverflowError(ValueError):
@@ -137,6 +150,7 @@ def default_context():
             "last": None,
         },
         "memoryLayers": default_memory_layers(),
+        "invariants": [],
         "taskState": None,
         "nextTaskId": 1,
     }
@@ -320,6 +334,12 @@ class Agent:
                 return "Рабочая и долговременная память очищены."
             raise MemoryCommandError("Неизвестная команда памяти.")
 
+    def apply_invariant_command(self, command):
+        with self._lock:
+            result = apply_invariant_command(self._context["invariants"], command)
+            self._context["invariants"] = result["invariants"]
+            return result
+
     def apply_task_command(self, command):
         with self._lock:
             if command.get("action") == "execute":
@@ -383,7 +403,7 @@ class Agent:
         return copy.deepcopy({
             "messages": self._messages, "metadata": self._metadata, "metrics": self._metrics,
             "memory": {key: value for key, value in self._context.items()
-                       if key not in {"activeBranch", "branches", "checkpoints", "memoryLayers", "taskState", "nextTaskId"}},
+                       if key not in {"activeBranch", "branches", "checkpoints", "memoryLayers", "invariants", "taskState", "nextTaskId"}},
         })
 
     def _save_active_branch(self):
@@ -582,10 +602,17 @@ class Agent:
             text = text.strip() if isinstance(text, str) else ""
             if self._context["taskState"] is not None and self._context["taskState"]["paused"]:
                 raise TaskStateError("Задача на паузе. Используйте /resume или /status.")
+            if not _task_advance:
+                violations = violations_for_solution(text, self._context["invariants"])
+                if violations:
+                    raise InvariantViolationError(violations)
             history_before_tokens = estimate_payload_tokens({"messages": self._messages})
             if profile is not None and not valid_profile(profile):
                 raise ValueError("Профиль имеет неверный формат.")
             system_prompt = self._settings["systemPrompt"]
+            invariants_block = invariant_prompt_block(self._context["invariants"])
+            if invariants_block:
+                system_prompt = f"{system_prompt}\n\n{invariants_block}"
             if profile is not None:
                 system_prompt = f"{system_prompt}\n\n{profile_prompt_block(profile)}"
             task = self._context["taskState"]
@@ -684,6 +711,9 @@ class Agent:
             if overflow and not _task_advance:
                 self._messages.append({"role": "user", "content": text})
             visible_answer = answer
+            violations = violations_for_solution(answer, self._context["invariants"])
+            if violations:
+                visible_answer = invariant_refusal(violations)
             if self._context["taskState"] is not None:
                 try:
                     extracted, visible_answer, _ = extract_task_plan(answer, self._context["taskState"])
@@ -907,9 +937,10 @@ def _valid_context(context):
     if not isinstance(context, dict) or set(context) != set(default_context()):
         return False
     memory = {key: value for key, value in context.items()
-              if key not in {"activeBranch", "branches", "checkpoints", "memoryLayers", "taskState", "nextTaskId"}}
+              if key not in {"activeBranch", "branches", "checkpoints", "memoryLayers", "invariants", "taskState", "nextTaskId"}}
     branches, checkpoints = context["branches"], context["checkpoints"]
     if not (_valid_memory(memory) and valid_memory_layers(context["memoryLayers"])
+            and valid_invariants(context["invariants"])
             and valid_task_state(context["taskState"])
             and _valid_positive_int(context["nextTaskId"])
             and isinstance(branches, dict) and branches
@@ -1324,6 +1355,23 @@ class AgentRegistry:
                 "sharedLongTerm": copy.deepcopy(self._shared_long_term),
             }
 
+    def apply_invariant_command(self, agent_id, command):
+        with self._lock:
+            agent = self._agents.get(agent_id)
+            if agent is None:
+                return None
+            before = self._snapshots()
+            result = agent.apply_invariant_command(command)
+            try:
+                self._save()
+            except PersistenceError:
+                self._restore(before, self._shared_long_term)
+                raise
+            return {
+                "agent": agent.snapshot(), "command": {"message": result["message"]},
+                "invariants": copy.deepcopy(result["invariants"]),
+            }
+
     def apply_task_command(self, agent_id, command):
         with self._lock:
             agent = self._agents.get(agent_id)
@@ -1503,7 +1551,7 @@ class AgentRegistry:
                                 "metadata": copy.deepcopy(snapshot.get("metadata")),
                                 "metrics": copy.deepcopy(snapshot.get("metrics")),
                                 "memory": {k: copy.deepcopy(v) for k, v in context.items()
-                                           if k not in {"activeBranch", "branches", "checkpoints", "memoryLayers", "taskState", "nextTaskId"}},
+                                           if k not in {"activeBranch", "branches", "checkpoints", "memoryLayers", "invariants", "taskState", "nextTaskId"}},
                             }
             state["version"] = 4
             version = 4
@@ -1621,6 +1669,14 @@ class AgentRegistry:
                 if isinstance(context, dict):
                     context.setdefault("taskState", None)
                     context.setdefault("nextTaskId", 1)
+            state["version"] = STATE_VERSION
+        if (isinstance(state, dict) and isinstance(state.get("version"), int)
+                and not isinstance(state.get("version"), bool)
+                and state["version"] in {9, STATE_VERSION} and isinstance(state.get("agents"), list)):
+            for snapshot in state["agents"]:
+                context = snapshot.get("context") if isinstance(snapshot, dict) else None
+                if isinstance(context, dict):
+                    context.setdefault("invariants", [])
             state["version"] = STATE_VERSION
         if (
             not isinstance(state, dict)

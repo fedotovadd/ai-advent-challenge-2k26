@@ -82,6 +82,10 @@ def invariant_prompt_block(invariants):
 
 
 _SOLUTION_ACTION = re.compile(r"\b(?:использ\w*|добав\w*|реализ\w*|перепиш\w*|созда\w*)\b", re.IGNORECASE)
+_RECOMMENDED_TERM = re.compile(
+    r"\b(?:использ\w*|добав\w*|реализ\w*|перепиш\w*|созда\w*)\b\s+(?:на\s+)?([\w.+#-]+)",
+    re.IGNORECASE,
+)
 
 
 def _mentioned_terms(text, terms):
@@ -89,12 +93,16 @@ def _mentioned_terms(text, terms):
     return {term for term in terms if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", folded)}
 
 
+def _recommended_terms(text):
+    return {match.group(1).casefold() for match in _RECOMMENDED_TERM.finditer(text)}
+
+
 def violations_for_solution(text, invariants):
     if not isinstance(text, str) or not _SOLUTION_ACTION.search(text):
         return []
     required, banned, only = _constraints(invariants)
     known = required | banned | (only or set())
-    mentioned = _mentioned_terms(text, known)
+    mentioned = _mentioned_terms(text, known) | _recommended_terms(text)
     violations = []
     for rule in invariants:
         rule_required, rule_banned, rule_only = _constraints([rule])
@@ -115,7 +123,10 @@ def invariant_refusal(violations):
 def parse_invariant_command(text):
     if not isinstance(text, str):
         return None
-    command, *tail = text.strip().split(maxsplit=1)
+    parts = text.strip().split(maxsplit=1)
+    if not parts:
+        return None
+    command, *tail = parts
     argument = tail[0].strip() if tail else ""
     if command == "/invariant":
         return {"action": "add", "text": normalize_invariant(argument)}
