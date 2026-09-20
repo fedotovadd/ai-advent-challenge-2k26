@@ -162,7 +162,7 @@ Add `invariants: []` to `default_context`, exclude it from `_save_active_branch`
 
 - [ ] **Step 4: Run focused tests**
 
-Run: `cd deepseek-api && python3 -m unittest tests.test_agent.AgentTests -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_agent.AgentTests tests.test_agent.AgentRegistryTests -v`
 
 Expected: PASS.
 
