@@ -29,7 +29,7 @@
 
 - [ ] **Step 1: Write failing unit tests for guarded transitions.**
 
-Add tests that import the graph/transition API and assert that it permits only `PLANNING → EXECUTION`, `EXECUTION → PLANNING|VALIDATION`, and `VALIDATION → EXECUTION|DONE`; assert that `/execute` without a saved plan has the exact explanatory refusal and that invalid requests leave a deep-equal state.
+Add independent scenarios for `PLANNING → EXECUTION`, `EXECUTION → PLANNING`, completion of the final step as `EXECUTION → VALIDATION`, valid validation rework as `VALIDATION → EXECUTION`, valid validation pass as `VALIDATION → DONE`, and rejection of every transition out of `DONE`. Assert that `/execute` without a saved plan has the exact explanatory refusal and that every invalid request leaves a deep-equal state.
 
 - [ ] **Step 2: Run the new tests to verify they fail.**
 
@@ -49,7 +49,9 @@ Expected: PASS.
 
 - [ ] **Step 5: Write failing tests for model-marker controls.**
 
-Add tests for `[[TASK_TRANSITION:DONE]]` from `EXECUTION`, `[[TASK_STEP_DONE]]` from `PLANNING`, `[[TASK_VALIDATION_PASSED]]` from `EXECUTION`, and a marker not in the final nonempty line. Each must remove the technical marker, retain the original state, and return an explanatory `notice`. Add a success path for `[[TASK_VALIDATION_PASSED]]` only in `VALIDATION`.
+Add tests for `[[TASK_TRANSITION:DONE]]` from both `EXECUTION` and `VALIDATION`, `[[TASK_STEP_DONE]]` from `PLANNING`, and `[[TASK_VALIDATION_PASSED]]` from `EXECUTION`. Add parameterized cases for `[[TASK_VALIDATION_FAILED:<number>]]` outside `VALIDATION`, with `0`, a number above `total`, nonnumeric content, and a non-final placement. Each must remove the technical marker, retain the original state, and return the specified explanatory `notice`. Add one success path for `[[TASK_VALIDATION_PASSED]]` only in `VALIDATION` and one for valid validation failure.
+
+Also add marker-cleanup cases for every one of the four marker families in non-final positions and an answer containing multiple markers. The visible text must remove every recognized marker, and only a single, valid, final marker may request a state change.
 
 - [ ] **Step 6: Run the new marker tests to verify they fail.**
 
@@ -59,7 +61,7 @@ Expected: FAIL because current code exposes rejected/non-final markers and accep
 
 - [ ] **Step 7: Implement safe marker extraction and validation outcomes.**
 
-Declare `TASK_VALIDATION_PASSED` and a bounded parser for `[[TASK_VALIDATION_FAILED:<number>]]`. Strip every recognized marker from the visible text. Only one marker on the final nonempty line may request an action; otherwise return a no-change refusal. Make `TASK_VALIDATION_PASSED` the sole `VALIDATION → DONE` signal. For a valid failure marker, transition to `EXECUTION`, truncate `done` before its 1-based step, set `step`, `current` and `expectedAction`, and retain a valid completed prefix. Return a uniform result containing the copied task, visible text, `notice`, `continueTask`, acceptance state and next-action guidance.
+Declare `TASK_VALIDATION_PASSED` and a bounded parser for `[[TASK_VALIDATION_FAILED:<number>]]`. Strip every recognized marker from the visible text. Only one marker on the final nonempty line may request an action; otherwise return a no-change refusal. Make `TASK_VALIDATION_PASSED` the sole `VALIDATION → DONE` signal, explicitly rejecting the legacy `[[TASK_TRANSITION:DONE]]` even in `VALIDATION`. For a valid failure marker, transition to `EXECUTION`, truncate `done` before its 1-based step, set `step`, `current` and `expectedAction`, and retain a valid completed prefix. Return a uniform result containing the copied task, visible text, `notice`, `continueTask`, acceptance state and next-action guidance.
 
 - [ ] **Step 8: Run all task-state tests.**
 
@@ -103,7 +105,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Write failing HTTP-flow tests.**
 
-Extend the existing task tests with a full flow: validate that `DONE` during execution is visible as a refusal, complete the final execution step, return `[[TASK_VALIDATION_FAILED:2]]`, confirm the task resumes at step 2 after `/pause` and `/resume`, then complete the remaining step and return `[[TASK_VALIDATION_PASSED]]` to reach `DONE`.
+Extend the existing task tests with a full flow: validate that `/execute` before a stored plan returns HTTP `400` with the same explanatory `error` that the existing composer renders as a chat-status error; validate that `DONE` during execution is visible as a refusal; complete the final execution step; return `[[TASK_VALIDATION_FAILED:2]]`; pause at step 2; create a new `AgentRegistry` from the persisted `agents.json`; resume and advance the task; assert that the provider receives the unchanged second current step without a new plan or stage jump; then complete the remaining work and return `[[TASK_VALIDATION_PASSED]]` to reach `DONE`.
 
 - [ ] **Step 6: Run the HTTP-flow test to verify it fails.**
 
