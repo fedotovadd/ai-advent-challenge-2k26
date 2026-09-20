@@ -581,7 +581,6 @@ class AgentRegistryTests(unittest.TestCase):
 
         registry = AgentRegistry(ask_model, self.state_path)
         registry.apply_task_command("agent-1", {"action": "task", "title": "Статья"})
-        registry.respond("agent-1", "Подготовь план")
 
         with self.assertRaises(ValueError):
             registry.apply_task_command("agent-1", {"action": "execute"})
