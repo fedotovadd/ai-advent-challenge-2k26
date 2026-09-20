@@ -20,6 +20,7 @@
 - Modify: `deepseek-api/tests/test_agent.py` — persistence, prompt order, provider-free conflicts, output filtering and rollback.
 - Modify: `deepseek-api/tests/test_web.py` — HTTP command and refusal contracts.
 - Create: `docs/day-14/invariants-results.md` — usage examples and conflict-test results.
+- Modify: `README.md` — link the Day 14 result from the project task list.
 
 ### Task 1: Define the invariant contract
 
@@ -76,18 +77,17 @@ git commit -m "feat: add invariant command contract"
 - [ ] **Step 1: Write failing constraint tests**
 
 ```python
-from invariants import conflict_for_addition, invariant_prompt_block, violations_for_solution
+class InvariantConstraintTests(unittest.TestCase):
+    def test_stack_rules_reject_python_and_require_kotlin_and_ktor(self):
+        rules = ["Использовать Kotlin и Ktor", "Не использовать Python"]
+        self.assertIn("Python", violations_for_solution("Реализуйте на Python", rules))
+        self.assertIn("Ktor", violations_for_solution("Реализуйте на Kotlin", rules))
+        self.assertTrue(conflict_for_addition(["Только Kotlin"], "Использовать Java"))
 
-def test_stack_rules_reject_python_and_require_kotlin_and_ktor():
-    rules = ["Использовать Kotlin и Ktor", "Не использовать Python"]
-    assert "Python" in violations_for_solution("Реализуйте на Python", rules)
-    assert "Ktor" in violations_for_solution("Реализуйте на Kotlin", rules)
-    assert conflict_for_addition(["Только Kotlin"], "Использовать Java")
-
-def test_prompt_block_marks_rules_as_higher_priority_than_context():
-    block = invariant_prompt_block(["Только Kotlin"])
-    assert "[ИНВАРИАНТЫ]" in block
-    assert "высшего приоритета" in block
+    def test_prompt_block_marks_rules_as_higher_priority_than_context(self):
+        block = invariant_prompt_block(["Только Kotlin"])
+        self.assertIn("[ИНВАРИАНТЫ]", block)
+        self.assertIn("высшего приоритета", block)
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -134,17 +134,31 @@ def test_invariants_are_agent_global_across_branch_switches(self):
 def test_prompt_places_invariants_after_base_prompt_and_before_profile_and_task(self):
     # Capture payload and assert base prompt < [ИНВАРИАНТЫ] < profile/task text.
     ...
+
+def test_registry_migrates_version_nine_state_without_invariants(self):
+    # Write a valid v9 JSON fixture, instantiate AgentRegistry, and assert a v10
+    # snapshot with context["invariants"] == [].
+    ...
+
+def test_registry_recovers_from_malformed_version_ten_invariants(self):
+    # Persist a v10 state with a non-list invariant value and assert safe default recovery.
+    ...
+
+def test_invariants_survive_registry_restart_and_rollback_after_save_failure(self):
+    # Restart after a successful add; then patch _save_state to raise OSError and
+    # assert the attempted command did not change the in-memory array.
+    ...
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cd deepseek-api && python3 -m unittest tests.test_agent.AgentTests.test_invariants_are_agent_global_across_branch_switches -v`
+Run: `cd deepseek-api && python3 -m unittest tests.test_agent.AgentTests.test_invariants_are_agent_global_across_branch_switches tests.test_agent.AgentTests.test_registry_migrates_version_nine_state_without_invariants tests.test_agent.AgentTests.test_registry_recovers_from_malformed_version_ten_invariants tests.test_agent.AgentTests.test_invariants_survive_registry_restart_and_rollback_after_save_failure -v`
 
 Expected: FAIL because the registry exposes no invariant operation.
 
 - [ ] **Step 3: Implement persistence and injection**
 
-Add `invariants: []` to `default_context`, exclude it from `_save_active_branch` and branch-state restoration, and include `valid_invariants` in `_valid_context`. Raise `STATE_VERSION` to 10 and migrate v9 root contexts by supplying `invariants: []` before validation. Write a genuine v9 state file without that field, reopen `AgentRegistry`, and assert the restored state is valid v10; also assert a malformed v10 invariant list triggers safe recovery. Import invariant helpers, add `Agent.apply_invariant_command`, then add an atomic `AgentRegistry.apply_invariant_command` using the existing `_snapshots()` / `_restore(before, shared_long_term)` seam around `_save()`. Inject an `OSError` through `_save_state` in a test and assert the prior invariant array is restored. Append the invariant prompt block immediately after the base system prompt and before `profile_prompt_block` and `task_prompt_block`; restart the registry to prove persistence.
+Add `invariants: []` to `default_context`, exclude it from `_save_active_branch` and branch-state restoration, and include `valid_invariants` in `_valid_context`. Raise `STATE_VERSION` to 10 and migrate v9 root contexts by supplying `invariants: []` before validation. Import invariant helpers, add `Agent.apply_invariant_command`, then add an atomic `AgentRegistry.apply_invariant_command` using the existing `_snapshots()` / `_restore(before, shared_long_term)` seam around `_save()`. Append the invariant prompt block immediately after the base system prompt and before `profile_prompt_block` and `task_prompt_block`.
 
 - [ ] **Step 4: Run focused tests**
 
@@ -236,6 +250,17 @@ def test_conflicting_message_returns_400_without_history_mutation(self):
     self.assertEqual(status, 400)
     self.assertFalse(body["accepted"])
     self.assertEqual(body["agent"]["messages"], [])
+
+def test_invariant_command_endpoint_reports_list_mutation_and_errors(self):
+    # Exercise /invariants, /remove-invariant 1, /clear-invariants, invalid or
+    # out-of-range number, blank /invariant, unknown /remove-invariant syntax,
+    # and a contradictory add; assert each error is HTTP 400 {"error": ...}.
+    ...
+
+def test_invariant_command_save_failure_rolls_back_and_never_calls_provider(self):
+    # Inject persistence failure, assert the original invariants remain, a 500 is
+    # returned, and the provider call counter is still zero for every local command.
+    ...
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -246,7 +271,7 @@ Expected: FAIL because the handler does not parse invariant commands or catch in
 
 - [ ] **Step 3: Implement endpoint handling and command help**
 
-In `_handle_message`, parse invariant commands before task commands, call the registry method, and return `{agent, command, invariants}`. Catch command errors as HTTP 400. Catch `InvariantViolationError` around `registry.respond` and return HTTP 400 `{agent: snapshot, error: refusal, accepted: false}`. Add the four invariant commands to the existing “Команды памяти и задачи” panel; no client-state code changes are needed because it already renders non-OK `body.error`.
+In `_handle_message`, parse invariant commands before task commands, call the registry method, and return `{agent, command, invariants}`. Catch blank, malformed, out-of-range and contradictory commands as HTTP 400 `{error}`. Preserve the existing storage-error mapping when an atomic local command cannot persist. Catch `InvariantViolationError` around `registry.respond` and return HTTP 400 `{agent: snapshot, error: refusal, accepted: false}`. Add the four invariant commands to the existing “Команды памяти и задачи” panel; no client-state code changes are needed because it already renders non-OK `body.error`.
 
 - [ ] **Step 4: Run HTTP and static tests**
 
@@ -266,6 +291,7 @@ git commit -m "feat: expose invariant commands"
 **Files:**
 - Create: `docs/day-14/invariants-results.md`
 - Modify: `deepseek-api/README.md`
+- Modify: `README.md`
 
 - [ ] **Step 1: Write documentation expectations**
 
