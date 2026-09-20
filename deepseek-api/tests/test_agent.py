@@ -624,6 +624,52 @@ class AgentRegistryTests(unittest.TestCase):
         self.assertEqual(restored["context"]["taskState"]["stage"], "PLANNING")
         self.assertEqual(restored["metadata"]["status"]["kind"], "error")
 
+    def test_invalid_task_transition_is_explained_and_persisted(self):
+        answers = [
+            "Уточните формат статьи.",
+            "[[TASK_PLAN]]\n1. Исследовать\n[[/TASK_PLAN]]",
+            "Проверка завершена\n[[TASK_TRANSITION:DONE]]",
+        ]
+
+        registry = AgentRegistry(lambda payload, **options: answers.pop(0), self.state_path)
+        registry.apply_task_command("agent-1", {"action": "task", "title": "Статья"})
+        registry.respond("agent-1", "Нужен краткий текст", 1)
+        result = registry.apply_task_command("agent-1", {"action": "execute"})
+
+        task = result["agent"]["context"]["taskState"]
+        self.assertEqual((task["stage"], task["step"], task["done"]), ("EXECUTION", 1, []))
+        self.assertNotIn("[[", result["agent"]["messages"][-1]["content"])
+        self.assertIn("Сначала завершите проверку результата", result["agent"]["messages"][-1]["content"])
+        restored = AgentRegistry(lambda payload, **options: "Не должен вызываться", self.state_path).get("agent-1").snapshot()
+        self.assertEqual(restored["context"]["taskState"], task)
+
+    def test_pause_restart_and_resume_continue_the_same_task_step(self):
+        answers = [
+            "Уточните формат статьи.",
+            "[[TASK_PLAN]]\n1. Исследовать\n2. Написать\n[[/TASK_PLAN]]",
+            "Исследование готово\n[[TASK_STEP_DONE]]",
+            "Текст готов\n[[TASK_STEP_DONE]]",
+        ]
+        calls = []
+
+        def ask_model(payload, **options):
+            calls.append(payload)
+            return answers.pop(0)
+
+        registry = AgentRegistry(ask_model, self.state_path)
+        registry.apply_task_command("agent-1", {"action": "task", "title": "Статья"})
+        registry.respond("agent-1", "Нужен краткий текст", 1)
+        registry.apply_task_command("agent-1", {"action": "execute"})
+        registry.apply_task_command("agent-1", {"action": "pause"})
+
+        restored = AgentRegistry(ask_model, self.state_path)
+        resumed = restored.apply_task_command("agent-1", {"action": "resume"})
+        task = resumed["agent"]["context"]["taskState"]
+        self.assertEqual((task["stage"], task["step"], task["current"]), ("EXECUTION", 2, "Написать"))
+        restored.advance_task("agent-1")
+
+        self.assertIn("Текущий шаг: Написать", calls[-1]["messages"][0]["content"])
+
     def test_registry_restores_messages_settings_and_context(self):
         first_registry = AgentRegistry(lambda payload, **options: "Рада познакомиться!", self.state_path)
         settings = default_settings()
