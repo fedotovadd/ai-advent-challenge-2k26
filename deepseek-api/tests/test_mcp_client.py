@@ -1,60 +1,7 @@
-import asyncio
 import unittest
+from unittest.mock import AsyncMock, patch
 
 import mcp_client
-
-
-class ServerUrlNormalizationTests(unittest.TestCase):
-    def test_accepts_a_public_https_url_and_canonicalizes_it(self):
-        url = mcp_client.normalize_server_url(
-            "HTTPS://Example.COM:443/tools",
-            resolver=lambda host: ["8.8.8.8"],
-        )
-
-        self.assertEqual(url, "https://example.com/tools")
-
-    def test_rejects_scheme_credentials_query_and_fragment(self):
-        cases = {
-            "http://example.test/": "HTTPS",
-            "https://user:password@example.test/": "учетные данные",
-            "https://example.test/?page=1": "параметры запроса",
-            "https://example.test/#anchor": "фрагмент",
-        }
-
-        for value, message in cases.items():
-            with self.subTest(value=value):
-                with self.assertRaisesRegex(ValueError, message):
-                    mcp_client.normalize_server_url(value, resolver=lambda host: ["8.8.8.8"])
-
-    def test_rejects_ip_literals_even_when_they_are_global(self):
-        for value in ("https://8.8.8.8/", "https://[2606:4700:4700::1111]/"):
-            with self.subTest(value=value):
-                with self.assertRaisesRegex(ValueError, "IP-адрес"):
-                    mcp_client.normalize_server_url(value, resolver=lambda host: ["8.8.8.8"])
-
-    def test_rejects_all_non_global_resolved_ipv4_and_ipv6_addresses(self):
-        forbidden = {
-            "IPv4 loopback": "127.0.0.1",
-            "IPv4 private": "10.0.0.1",
-            "IPv4 link-local": "169.254.1.1",
-            "IPv4 multicast": "224.0.0.1",
-            "IPv4 unspecified": "0.0.0.0",
-            "IPv4 reserved": "240.0.0.1",
-            "IPv6 loopback": "::1",
-            "IPv6 private": "fc00::1",
-            "IPv6 link-local": "fe80::1",
-            "IPv6 multicast": "ff00::1",
-            "IPv6 unspecified": "::",
-            "IPv6 reserved": "2001:db8::1",
-        }
-
-        for label, address in forbidden.items():
-            with self.subTest(label=label):
-                with self.assertRaisesRegex(ValueError, "общедоступ"):
-                    mcp_client.normalize_server_url(
-                        "https://public.example/",
-                        resolver=lambda host, address=address: [address],
-                    )
 
 
 class FakeTransport:
@@ -110,11 +57,10 @@ class PublicToolDiscoveryTests(unittest.IsolatedAsyncioTestCase):
         def session_factory(read, write):
             return FakeSession(read, write, events)
 
-        result = await mcp_client.list_public_tools(
-            "https://example.test/",
+        result = await mcp_client._list_public_tools(
+            mcp_client.DEEPWIKI_MCP_URL,
             transport_factory=transport_factory,
             session_factory=session_factory,
-            resolver=lambda host: ["8.8.8.8"],
         )
 
         self.assertEqual(result, [
@@ -123,7 +69,7 @@ class PublicToolDiscoveryTests(unittest.IsolatedAsyncioTestCase):
             {"name": "news", "description": "Описание не предоставлено"},
         ])
         self.assertEqual(events, [
-            ("transport-created", "https://example.test/", {"timeout": 10.0}),
+            ("transport-created", mcp_client.DEEPWIKI_MCP_URL, {"timeout": 10.0}),
             "transport-enter",
             ("session-created", "read", "write"),
             "session-enter",
@@ -132,6 +78,16 @@ class PublicToolDiscoveryTests(unittest.IsolatedAsyncioTestCase):
             "session-exit",
             "transport-exit",
         ])
+
+
+class WebToolDiscoveryEntryPointTests(unittest.TestCase):
+    def test_list_tools_always_uses_fixed_deepwiki_endpoint(self):
+        discovery = AsyncMock(return_value=[])
+
+        with patch("mcp_client._list_public_tools", discovery):
+            self.assertEqual(mcp_client.list_tools(), [])
+
+        discovery.assert_awaited_once_with(mcp_client.DEEPWIKI_MCP_URL)
 
 
 if __name__ == "__main__":
