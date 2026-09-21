@@ -134,6 +134,15 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertIn("application/javascript", headers["Content-Type"])
         self.assertEqual(body, static_script.read_text(encoding="utf-8"))
 
+    def test_static_mcp_controls_script_is_served(self):
+        static_script = Path(web.__file__).with_name("static") / "mcp-controls.js"
+
+        status, body, headers = self.request("GET", "/static/mcp-controls.js")
+
+        self.assertEqual(status, 200)
+        self.assertIn("application/javascript", headers["Content-Type"])
+        self.assertEqual(body, static_script.read_text(encoding="utf-8"))
+
     def test_page_contains_response_settings_and_metadata(self):
         status, body, _ = self.request("GET", "/")
 

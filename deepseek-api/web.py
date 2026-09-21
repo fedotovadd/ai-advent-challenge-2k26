@@ -22,6 +22,7 @@ from task_state import TaskStateError, parse_task_command
 STATIC_PAGE = Path(__file__).with_name("static") / "index.html"
 STATIC_AGENT_STATE = Path(__file__).with_name("static") / "agent-state.js"
 STATIC_MEMORY_CONTROLS = Path(__file__).with_name("static") / "memory-controls.js"
+STATIC_MCP_CONTROLS = Path(__file__).with_name("static") / "mcp-controls.js"
 STATIC_PROFILE_CONTROLS = Path(__file__).with_name("static") / "profile-controls.js"
 MAX_MEMORY_REQUEST_BYTES = 65_536
 
@@ -40,6 +41,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_javascript(200, STATIC_PAGE.with_name("context-controls.js").read_text(encoding="utf-8"))
         elif path == "/static/memory-controls.js":
             self._send_javascript(200, STATIC_MEMORY_CONTROLS.read_text(encoding="utf-8"))
+        elif path == "/static/mcp-controls.js":
+            self._send_javascript(200, STATIC_MCP_CONTROLS.read_text(encoding="utf-8"))
         elif path == "/static/profile-controls.js":
             self._send_javascript(200, STATIC_PROFILE_CONTROLS.read_text(encoding="utf-8"))
         elif path == "/api/profiles":
