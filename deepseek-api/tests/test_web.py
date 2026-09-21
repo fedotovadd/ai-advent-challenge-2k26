@@ -10,6 +10,7 @@ from unittest.mock import patch
 import agent
 import day_three
 import errors
+import mcp_client
 import user_profiles
 import web
 
@@ -1064,6 +1065,47 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(status, 503)
         self.assertEqual(body, {"error": "Не задан DEEPSEEK_API_KEY."})
         self.assertNotIn("experiment", body)
+
+    def test_mcp_tools_route(self):
+        calls = []
+        tools = [{"name": "read_wiki_contents", "description": "Читает wiki."}]
+
+        def list_mcp_tools(*args):
+            calls.append(args)
+            return tools
+
+        self.server.list_mcp_tools = list_mcp_tools
+        status, body, _ = self.json_request("POST", "/api/mcp/tools")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {"serverUrl": mcp_client.DEEPWIKI_MCP_URL, "tools": tools})
+        self.assertEqual(calls, [()])
+
+        for path, payload, headers in [
+            ("/api/mcp/tools", {}, None),
+            ("/api/mcp/tools?target=other", None, None),
+            ("/api/mcp/tools", None, {"Content-Type": "application/json"}),
+        ]:
+            with self.subTest(path=path, payload=payload, headers=headers):
+                status, body, _ = self.json_request("POST", path, payload, headers)
+                self.assertEqual(status, 400)
+                self.assertTrue(body["error"])
+        self.assertEqual(calls, [()])
+
+        status, body, _ = self.json_request(
+            "POST", "/api/mcp/tools", None, {"Origin": "http://evil.example"}
+        )
+        self.assertEqual(status, 403)
+        self.assertEqual(body, {"error": "Запрос с другого источника запрещён."})
+        self.assertEqual(calls, [()])
+
+        def failing_list_mcp_tools():
+            raise RuntimeError("network unavailable")
+
+        self.server.list_mcp_tools = failing_list_mcp_tools
+        status, body, _ = self.json_request("POST", "/api/mcp/tools")
+        self.assertEqual(status, 502)
+        self.assertEqual(body, {"error": "Не удалось получить список MCP-инструментов."})
 
     def test_foreign_origin_is_rejected_for_all_post_routes(self):
         headers = {"Origin": "http://evil.example"}

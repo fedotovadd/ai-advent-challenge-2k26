@@ -15,6 +15,7 @@ from errors import MissingApiKeyError
 from context_memory import FactsUpdateError, validate_context_settings
 from memory_layers import MemoryCommandError, parse_memory_command
 from invariants import InvariantCommandError, parse_invariant_command
+import mcp_client
 from task_state import TaskStateError, parse_task_command
 
 
@@ -56,6 +57,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         parsed_path = urlparse(self.path)
         path = parsed_path.path
+        if path == "/api/mcp/tools":
+            self._handle_mcp_tools(parsed_path.query)
+            return
         if path == "/api/day-03/run":
             self._handle_day_three(parsed_path.query)
             return
@@ -179,6 +183,34 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
     def _same_origin(self):
         origin = self.headers.get("Origin")
         return not origin or origin == f"http://{self.headers.get('Host')}"
+
+    def _handle_mcp_tools(self, query):
+        if query or "?" in self.path:
+            self._send_json(400, {"error": "Маршрут не принимает query-параметры."})
+            return
+        if self.headers.get("Transfer-Encoding") is not None:
+            self._send_json(400, {"error": "Маршрут не принимает тело запроса."})
+            return
+        if any(
+            header.lower().startswith("content-") and header.lower() != "content-length"
+            for header in self.headers.keys()
+        ):
+            self._send_json(400, {"error": "Маршрут не принимает тело запроса."})
+            return
+        content_lengths = self.headers.get_all("Content-Length", [])
+        if (
+            len(content_lengths) > 1
+            or (content_lengths and (not content_lengths[0].isascii() or not content_lengths[0].isdigit()))
+            or (content_lengths and int(content_lengths[0]) != 0)
+        ):
+            self._send_json(400, {"error": "Маршрут не принимает тело запроса."})
+            return
+        try:
+            tools = self.server.list_mcp_tools()
+        except Exception:
+            self._send_json(502, {"error": "Не удалось получить список MCP-инструментов."})
+            return
+        self._send_json(200, {"serverUrl": mcp_client.DEEPWIKI_MCP_URL, "tools": tools})
 
     def _handle_day_three(self, query):
         task_id = self._read_day_three_task_id(query)
@@ -644,7 +676,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
 
 
 class ChatServer(ThreadingHTTPServer):
-    def __init__(self, address, ask_model, state_path=None):
+    def __init__(self, address, ask_model, state_path=None, list_mcp_tools=mcp_client.list_tools):
         super().__init__(address, ChatRequestHandler)
         self.registry = AgentRegistry(ask_model, state_path)
         self.ask_model = ask_model
+        self.list_mcp_tools = list_mcp_tools
