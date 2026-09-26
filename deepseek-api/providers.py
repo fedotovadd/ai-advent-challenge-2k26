@@ -23,6 +23,18 @@ def ask_model(payload, **options):
         temperature=payload["temperature"],
         **options,
     )
-    if not response.choices or not response.choices[0].message.content:
+    if not response.choices:
         raise ValueError("empty API response")
-    return {"content": response.choices[0].message.content, "usage": response.usage}
+    message = response.choices[0].message
+    tool_calls = [
+        {"id": tool.id, "type": tool.type,
+         "function": {"name": tool.function.name, "arguments": tool.function.arguments}}
+        for tool in (getattr(message, "tool_calls", None) or [])
+    ]
+    if not message.content and not tool_calls:
+        raise ValueError("empty API response")
+    assistant = {"role": "assistant", "content": message.content}
+    if tool_calls:
+        assistant["tool_calls"] = tool_calls
+    return {"content": message.content, "usage": response.usage,
+            "tool_calls": tool_calls, "message": assistant}

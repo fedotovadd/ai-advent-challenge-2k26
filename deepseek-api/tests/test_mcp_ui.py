@@ -9,7 +9,7 @@ README = ROOT / "README.md"
 
 
 class McpUiTests(unittest.TestCase):
-    def test_fixed_deepwiki_tab_has_explicit_connect_action(self):
+    def test_shared_mcp_tab_has_url_and_explicit_connect_action(self):
         page = PAGE.read_text(encoding="utf-8")
 
         for fragment in (
@@ -24,17 +24,19 @@ class McpUiTests(unittest.TestCase):
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, page)
-        self.assertNotIn('id="mcp-url"', page)
+        self.assertIn('id="mcp-url"', page)
 
-    def test_controls_post_empty_request_and_render_untrusted_tool_text_safely(self):
+    def test_controls_connect_shared_server_and_render_untrusted_tool_text_safely(self):
         source = SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn('form.addEventListener("submit", async (event) =>', source)
-        self.assertIn('fetch("/api/mcp/tools", {method:"POST"})', source)
-        self.assertNotIn('body:', source)
+        self.assertIn('/api/mcp/servers/connect', source)
+        self.assertIn('/disconnect', source)
+        self.assertIn('Доступен всем агентам', source)
+        self.assertIn('JSON.stringify({url', source)
         self.assertNotIn('innerHTML', source)
-        self.assertIn('name.textContent=tool.name', source)
-        self.assertIn('description.textContent=tool.description', source)
+        self.assertIn('name.textContent = tool.name', source)
+        self.assertIn('description.textContent = tool.description', source)
         self.assertIn('body.error', source)
 
     def test_readme_documents_day_16_and_python_310(self):

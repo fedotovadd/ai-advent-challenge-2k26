@@ -92,3 +92,28 @@ class WebToolDiscoveryEntryPointTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class McpInvocationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_tool_call_initializes_and_preserves_structured_result(self):
+        events = []
+        class Session(FakeSession):
+            async def call_tool(self, name, arguments):
+                events.append((name, arguments))
+                return type('Result', (), {'content': [], 'structuredContent': {'stars': 12}, 'isError': False})()
+        result = await mcp_client._call_tool(
+            'http://127.0.0.1:8001/mcp', 'get_repository', {'owner': 'x'},
+            transport_factory=lambda *a, **k: FakeTransport(events),
+            session_factory=lambda r,w: Session(r,w,events))
+        self.assertEqual(result['structuredContent'], {'stars': 12})
+        self.assertLess(events.index('initialize'), events.index(('get_repository', {'owner': 'x'})))
+        self.assertEqual(events[-1], 'transport-exit')
+
+    async def test_discovery_with_schema(self):
+        class Session(FakeSession):
+            async def list_tools(self):
+                from types import SimpleNamespace
+                return SimpleNamespace(tools=[SimpleNamespace(name='repo', description='x', inputSchema={'type':'object'})])
+        result = await mcp_client._list_public_tools('https://example.com/mcp', include_schema=True,
+            transport_factory=lambda *a, **k: FakeTransport([]),
+            session_factory=lambda r,w: Session(r,w,[]))
+        self.assertEqual(result[0]['inputSchema'], {'type': 'object'})

@@ -16,6 +16,7 @@ from context_memory import FactsUpdateError, validate_context_settings
 from memory_layers import MemoryCommandError, parse_memory_command
 from invariants import InvariantCommandError, parse_invariant_command
 import mcp_client
+from mcp_registry import McpRegistry, McpStorageError
 from task_state import TaskStateError, parse_task_command
 
 
@@ -45,6 +46,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_javascript(200, STATIC_MCP_CONTROLS.read_text(encoding="utf-8"))
         elif path == "/static/profile-controls.js":
             self._send_javascript(200, STATIC_PROFILE_CONTROLS.read_text(encoding="utf-8"))
+        elif path == "/api/mcp/servers":
+            self._send_json(200, {"servers": self.server.mcp_registry.servers()})
         elif path == "/api/profiles":
             self._send_json(200, self.server.registry.profiles())
         elif path == "/api/agents":
@@ -60,6 +63,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         parsed_path = urlparse(self.path)
         path = parsed_path.path
+        if path.startswith("/api/mcp/servers/"):
+            self._handle_mcp_server(path, parsed_path.query)
+            return
         if path == "/api/mcp/tools":
             self._handle_mcp_tools(parsed_path.query)
             return
@@ -186,6 +192,51 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
     def _same_origin(self):
         origin = self.headers.get("Origin")
         return not origin or origin == f"http://{self.headers.get('Host')}"
+
+    def _handle_mcp_server(self, path, query):
+        if query or "?" in self.path:
+            self._send_json(400, {"error": "Маршрут не принимает query-параметры."})
+            return
+        lengths = self.headers.get_all("Content-Length", [])
+        if (self.headers.get("Transfer-Encoding") is not None or len(lengths) > 1
+                or (lengths and (not lengths[0].isascii() or not lengths[0].isdigit()))):
+            self._send_json(400, {"error": "Некорректный размер запроса."})
+            return
+        length = int(lengths[0]) if lengths else 0
+        if length > 4096:
+            self._send_json(400, {"error": "Максимальный размер запроса — 4 KiB."})
+            return
+        try:
+            if path == "/api/mcp/servers/connect":
+                try:
+                    data = json.loads(self.rfile.read(length).decode("utf-8"))
+                except (UnicodeDecodeError, ValueError):
+                    raise ValueError("Некорректный JSON.") from None
+                if not isinstance(data, dict) or set(data) != {"url"}:
+                    raise ValueError("Укажите только поле url.")
+                url = mcp_client.validate_url(data["url"])
+                try:
+                    server = self.server.mcp_registry.connect(url)
+                except McpStorageError:
+                    raise
+                except Exception:
+                    self._send_json(502, {"error": "Не удалось подключить MCP-сервер. Проверьте адрес и запуск сервера."})
+                    return
+            else:
+                parts = path.split("/")
+                if len(parts) != 6 or parts[-1] != "disconnect":
+                    self._send_json(404, {"error": "Маршрут не найден."})
+                    return
+                if length:
+                    raise ValueError("Отключение не принимает тело запроса.")
+                server = self.server.mcp_registry.disconnect(parts[4])
+            self._send_json(200, {"server": server})
+        except ValueError as error:
+            self._send_json(400, {"error": str(error)})
+        except KeyError:
+            self._send_json(404, {"error": "MCP-сервер не найден."})
+        except McpStorageError:
+            self._send_json(500, {"error": "Не удалось сохранить настройки MCP."})
 
     def _handle_mcp_tools(self, query):
         if query or "?" in self.path:
@@ -679,8 +730,10 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
 
 
 class ChatServer(ThreadingHTTPServer):
-    def __init__(self, address, ask_model, state_path=None, list_mcp_tools=mcp_client.list_tools):
+    def __init__(self, address, ask_model, state_path=None, list_mcp_tools=mcp_client.list_tools, mcp_registry=None):
         super().__init__(address, ChatRequestHandler)
-        self.registry = AgentRegistry(ask_model, state_path)
+        mcp_path = (Path(state_path).parent if state_path is not None else Path(__file__).parent / "data") / "mcp_servers.json"
+        self.mcp_registry = mcp_registry if mcp_registry is not None else McpRegistry(mcp_path)
+        self.registry = AgentRegistry(ask_model, state_path, mcp_registry=self.mcp_registry)
         self.ask_model = ask_model
         self.list_mcp_tools = list_mcp_tools

@@ -9,9 +9,10 @@ def create_server(
     ask_model=ask_model,
     state_path=None,
     list_mcp_tools=mcp_client.list_tools,
+    mcp_registry=None,
 ):
     # Параметр ask_model позволяет тестам подменять провайдера без реального API-вызова.
-    return ChatServer((host, port), ask_model, state_path, list_mcp_tools)
+    return ChatServer((host, port), ask_model, state_path, list_mcp_tools, mcp_registry)
 
 
 def main():

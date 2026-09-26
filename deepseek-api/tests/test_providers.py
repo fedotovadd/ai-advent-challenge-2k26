@@ -28,3 +28,14 @@ class ProviderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ProviderToolTests(unittest.TestCase):
+    @patch('providers.OpenAI')
+    def test_tool_only_response_is_valid(self, openai):
+        tool = SimpleNamespace(id='call_1', type='function', function=SimpleNamespace(name='repo', arguments='{}'))
+        openai.return_value.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[tool]))], usage=None)
+        with patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'fake'}):
+            result = providers.ask_model({'model':'deepseek-v4-flash','messages':[], 'temperature':1}, tools=[])
+        self.assertEqual(result['tool_calls'][0]['id'], 'call_1')
+        self.assertIsNone(result['content'])

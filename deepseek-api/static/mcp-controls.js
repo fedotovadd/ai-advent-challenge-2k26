@@ -45,37 +45,93 @@
     else delete status.dataset.kind;
   }
 
-  function renderTools(items) {
+  let servers = [];
+  let busy = false;
+  const urlInput = document.querySelector("#mcp-url");
+  window.McpControls = {connected: () => servers.some(server => server.status === "connected")};
+
+  async function request(path, options) {
+    const response = await fetch(path, options);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || "Не удалось выполнить запрос MCP.");
+    return body;
+  }
+
+  function renderServers() {
     tools.replaceChildren();
-    items.forEach((tool) => {
+    servers.forEach(server => {
       const card = document.createElement("article");
       card.className = "method-card";
-      const name = document.createElement("h2");
-      name.textContent=tool.name;
-      const description = document.createElement("p");
-      description.className = "method-description";
-      description.textContent=tool.description;
-      card.append(name, description);
+      const title = document.createElement("h2");
+      title.textContent = server.url === "http://127.0.0.1:8001/mcp" ? "GitHub — наш сервер" : "MCP-сервер";
+      const address = document.createElement("p");
+      address.className = "mcp-server-url";
+      address.textContent = server.url;
+      const state = document.createElement("p");
+      state.textContent = server.status === "connected" ? "Доступен всем агентам" : "Отключён";
+      const action = document.createElement("button");
+      action.type = "button";
+      action.disabled = busy;
+      action.textContent = server.status === "connected" ? "Отключить" : "Подключить";
+      action.addEventListener("click", () => changeConnection(server));
+      card.append(title, address, state, action);
+      if (server.status === "connected" && !server.tools.length) {
+        const empty = document.createElement("p");
+        empty.textContent = "Сервер не вернул инструменты";
+        card.append(empty);
+      }
+      server.tools.forEach(tool => {
+        const details = document.createElement("details");
+        const name = document.createElement("summary");
+        name.textContent = tool.name;
+        const description = document.createElement("p");
+        description.textContent = tool.description;
+        const schema = document.createElement("pre");
+        schema.textContent = JSON.stringify(tool.inputSchema, null, 2);
+        details.append(name, description, schema);
+        card.append(details);
+      });
       tools.append(card);
     });
+    window.dispatchEvent(new Event("mcp-connections-changed"));
+  }
+
+  async function refresh() {
+    const body = await request("/api/mcp/servers");
+    servers = body.servers || [];
+    renderServers();
+  }
+
+  async function changeConnection(server, url) {
+    if (busy) return;
+    busy = true;
+    connect.disabled = true;
+    connect.textContent = "Подключение…";
+    renderServers();
+    setStatus(server?.status === "connected" ? "Отключаем для всех агентов…" : "Подключаем сервер…");
+    try {
+      if (server?.status === "connected") {
+        await request("/api/mcp/servers/" + server.id + "/disconnect", {method:"POST"});
+      } else {
+        await request("/api/mcp/servers/connect", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({url: url || server.url})});
+      }
+      await refresh();
+      setStatus(server?.status === "connected" ? "Сервер отключён для всех агентов" : "Подключение установлено. Доступен всем агентам", "success");
+    } catch (error) {
+      setStatus(error.message || "Не удалось соединиться с локальным сервером.", "error");
+      await refresh().catch(() => {});
+    } finally {
+      busy = false;
+      connect.disabled = false;
+      connect.textContent = "Подключить";
+      renderServers();
+    }
   }
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    connect.disabled = true;
-    connect.textContent = "Подключение…";
-    setStatus("Получаем список инструментов…");
-    try {
-      const response = await fetch("/api/mcp/tools", {method:"POST"});
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || "Не удалось получить список MCP-инструментов.");
-      renderTools(Array.isArray(body.tools) ? body.tools : []);
-      setStatus(body.tools?.length ? "Подключение установлено" : "Сервер не вернул инструменты");
-    } catch (error) {
-      setStatus(error.message || "Не удалось соединиться с локальным сервером.", "error");
-    } finally {
-      connect.disabled = false;
-      connect.textContent = "Подключить";
-    }
+    await changeConnection(null, urlInput.value.trim());
   });
+  viewButton.addEventListener("click", () => { if (!busy) refresh().catch(error => setStatus(error.message, "error")); });
+  refresh().catch(error => setStatus(error.message, "error"));
 })();
