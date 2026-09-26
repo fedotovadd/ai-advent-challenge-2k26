@@ -63,7 +63,8 @@
       const card = document.createElement("article");
       card.className = "method-card";
       const title = document.createElement("h2");
-      title.textContent = server.url === "http://127.0.0.1:8001/mcp" ? "GitHub — наш сервер" : "MCP-сервер";
+      const scheduler = server.url === "http://127.0.0.1:8002/mcp";
+      title.textContent = scheduler ? "Планировщик GitHub · День 18" : server.url === "http://127.0.0.1:8001/mcp" ? "GitHub — наш сервер" : "MCP-сервер";
       const address = document.createElement("p");
       address.className = "mcp-server-url";
       address.textContent = server.url;
@@ -74,7 +75,22 @@
       action.disabled = busy;
       action.textContent = server.status === "connected" ? "Отключить" : "Подключить";
       action.addEventListener("click", () => changeConnection(server));
-      card.append(title, address, state, action);
+      const actions = document.createElement("div");
+      actions.className = "mcp-server-actions";
+      actions.append(action);
+      card.append(title, address, state, actions);
+      if (scheduler) {
+        const summaries = document.createElement("a");
+        summaries.className = "mcp-action-link";
+        summaries.href = "http://127.0.0.1:8002/";
+        summaries.target = "_blank";
+        summaries.rel = "noopener noreferrer";
+        summaries.textContent = "Открыть сводки по расписанию";
+        const note = document.createElement("p");
+        note.textContent = "Отключение MCP не останавливает фоновые задачи. Для отмены попросите агента остановить задание.";
+        actions.append(summaries);
+        card.append(note);
+      }
       if (server.status === "connected" && !server.tools.length) {
         const empty = document.createElement("p");
         empty.textContent = "Сервер не вернул инструменты";

@@ -45,7 +45,9 @@
     [hidden] { display:none !important; }
     .mcp-connect-form { display:flex; flex-wrap:wrap; gap:12px; align-items:end; }
     .mcp-connect-form .setting-field { flex:1; min-width:240px; }
-    #mcp-view button { border:1px solid #d9c5ba; border-radius:8px; padding:9px 14px; background:#fff; color:#533b30; font:inherit; cursor:pointer; }
+    #mcp-view button, #mcp-view .mcp-action-link { border:1px solid #d9c5ba; border-radius:8px; padding:9px 14px; background:#fff; color:#533b30; font:inherit; cursor:pointer; }
+    .mcp-server-actions { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
+    .mcp-action-link { display:inline-flex; align-items:center; text-decoration:none; }
     #mcp-view #mcp-connect { background:#8e4635; color:white; border-color:#8e4635; }
     #mcp-view button:disabled { opacity:.55; cursor:wait; }
     #mcp-status { flex-basis:100%; }
@@ -63,7 +65,7 @@
         <form id="mcp-connect-form" class="mcp-connect-form">
           <label class="setting-field" for="mcp-url">URL MCP-сервера
             <input id="mcp-url" type="url" required value="http://127.0.0.1:8001/mcp" placeholder="https://example.com/mcp" list="mcp-examples">
-            <datalist id="mcp-examples"><option value="http://127.0.0.1:8001/mcp">Наш GitHub MCP</option><option value="https://mcp.deepwiki.com/mcp">DeepWiki</option></datalist>
+            <datalist id="mcp-examples"><option value="http://127.0.0.1:8001/mcp">Наш GitHub MCP</option><option value="http://127.0.0.1:8002/mcp">Планировщик GitHub · День 18</option><option value="https://mcp.deepwiki.com/mcp">DeepWiki</option></datalist>
           </label>
           <button id="mcp-connect" type="submit">Подключить</button>
           <span id="mcp-status" role="status">Готово к подключению</span>

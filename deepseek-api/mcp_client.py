@@ -13,6 +13,7 @@ DEFAULT_DESCRIPTION = "Описание не предоставлено"
 HTTP_TIMEOUT_SECONDS = 10.0
 OPERATION_TIMEOUT_SECONDS = 15.0
 LOCAL_GITHUB_URL = "http://127.0.0.1:8001/mcp"
+LOCAL_SCHEDULER_URL = "http://127.0.0.1:8002/mcp"
 MAX_RESULT_BYTES = 16_384
 
 
@@ -70,7 +71,7 @@ async def _list_public_tools(
 def validate_url(url):
     if not isinstance(url, str) or len(url) > 2048 or any(ord(c) <= 32 for c in url):
         raise ValueError("Укажите корректный URL MCP-сервера.")
-    if url == LOCAL_GITHUB_URL:
+    if url in {LOCAL_GITHUB_URL, LOCAL_SCHEDULER_URL}:
         return url
     try:
         parts = urlsplit(url)
@@ -90,7 +91,7 @@ def validate_url(url):
             raise ValueError()
         return urlunsplit(("https", host.lower() + (f":{port}" if port and port != 443 else ""), parts.path or "/", "", ""))
     except ValueError:
-        raise ValueError("Поддерживаются публичный HTTPS URL и http://127.0.0.1:8001/mcp.") from None
+        raise ValueError("Поддерживаются публичный HTTPS URL, http://127.0.0.1:8001/mcp и http://127.0.0.1:8002/mcp.") from None
 
 
 async def _bounded(operation):

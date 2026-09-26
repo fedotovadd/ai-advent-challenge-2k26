@@ -1,0 +1,115 @@
+{
+  "checked_at": "2026-09-26T16:43:04.557198+00:00",
+  "model": "deepseek-v4-flash",
+  "prompt": "Создай одно расписание: через 3 секунды один раз проверь публичный репозиторий octocat/Hello-World. Повторять не нужно. Используй schedule_repository, delay_seconds=3, interval_seconds=null. Сообщи ID.",
+  "schedule_tool_call": {
+    "serverUrl": "http://127.0.0.1:8002/mcp",
+    "name": "schedule_repository",
+    "modelToolName": "mcp_bce444e74bd624d3_83fb4482ea10d84d",
+    "toolCallId": "call_00_ffSfaRo3futd1gI41pto4206",
+    "arguments": {
+      "owner": "octocat",
+      "repo": "Hello-World",
+      "delay_seconds": 3,
+      "interval_seconds": null
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"job\": {\"id\": \"635962c0224c4dadaedbcef9824f1f64\", \"owner\": \"octocat\", \"repo\": \"Hello-World\", \"interval_seconds\": null, \"status\": \"active\", \"created_at\": \"2026-09-26T16:42:45.041993Z\", \"next_run_at\": \"2026-09-26T16:42:48.041993Z\", \"running\": false}, \"success_count\": 0, \"error_count\": 0, \"latest\": null, \"first_observed_at\": null, \"last_observed_at\": null, \"stars_delta\": null, \"forks_delta\": null, \"last_error\": null, \"recent_runs\": [], \"history_total\": 0, \"history_offset\": 0, \"text\": \"octocat/Hello-World: успешных проверок — 0, ошибок — 0. Успешных наблюдений пока нет.\"}",
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "structuredContent": {
+        "job": {
+          "id": "635962c0224c4dadaedbcef9824f1f64",
+          "owner": "octocat",
+          "repo": "Hello-World",
+          "interval_seconds": null,
+          "status": "active",
+          "created_at": "2026-09-26T16:42:45.041993Z",
+          "next_run_at": "2026-09-26T16:42:48.041993Z",
+          "running": false
+        },
+        "success_count": 0,
+        "error_count": 0,
+        "latest": null,
+        "first_observed_at": null,
+        "last_observed_at": null,
+        "stars_delta": null,
+        "forks_delta": null,
+        "last_error": null,
+        "recent_runs": [],
+        "history_total": 0,
+        "history_offset": 0,
+        "text": "octocat/Hello-World: успешных проверок — 0, ошибок — 0. Успешных наблюдений пока нет."
+      },
+      "isError": false
+    },
+    "status": "success",
+    "durationMs": 27
+  },
+  "schedule_reply": "Готово. Задание создано.\n\nID: 635962c0224c4dadaedbcef9824f1f64\n\nРепозиторий octocat/Hello-World, первый запуск примерно через 3 секунды, повтор не запланирован (interval_seconds = null). Статус active, следующая проверка в 16:42:48 UTC.\n\nСводка пока пустая: успешных проверок 0, ошибок 0. Результаты появятся после запуска — их можно посмотреть через get_schedule_summary по этому ID.",
+  "summary_tool_call": {
+    "serverUrl": "http://127.0.0.1:8002/mcp",
+    "name": "get_schedule_summary",
+    "modelToolName": "mcp_bce444e74bd624d3_eaf09b656cbeaf4f",
+    "toolCallId": "call_00_zSWv06e797kH4SKY0rVb1300",
+    "arguments": {
+      "job_id": "635962c0224c4dadaedbcef9824f1f64"
+    },
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"job\": {\"id\": \"635962c0224c4dadaedbcef9824f1f64\", \"owner\": \"octocat\", \"repo\": \"Hello-World\", \"interval_seconds\": null, \"status\": \"completed\", \"created_at\": \"2026-09-26T16:42:45.041993Z\", \"next_run_at\": null, \"running\": false}, \"success_count\": 1, \"error_count\": 0, \"latest\": {\"stargazers_count\": 3828, \"forks_count\": 6896}, \"first_observed_at\": \"2026-09-26T16:42:49.040219Z\", \"last_observed_at\": \"2026-09-26T16:42:49.040219Z\", \"stars_delta\": 0, \"forks_delta\": 0, \"last_error\": null, \"recent_runs\": [{\"scheduled_at\": \"2026-09-26T16:42:48.041993Z\", \"finished_at\": \"2026-09-26T16:42:49.040219Z\", \"data\": {\"stargazers_count\": 3828, \"forks_count\": 6896}, \"error\": null}], \"history_total\": 1, \"history_offset\": 0, \"text\": \"octocat/Hello-World: успешных проверок — 1, ошибок — 0. Звёзды: 3828 (+0), форки: 6896 (+0) с первого наблюдения.\"}",
+          "annotations": null,
+          "meta": null
+        }
+      ],
+      "structuredContent": {
+        "job": {
+          "id": "635962c0224c4dadaedbcef9824f1f64",
+          "owner": "octocat",
+          "repo": "Hello-World",
+          "interval_seconds": null,
+          "status": "completed",
+          "created_at": "2026-09-26T16:42:45.041993Z",
+          "next_run_at": null,
+          "running": false
+        },
+        "success_count": 1,
+        "error_count": 0,
+        "latest": {
+          "stargazers_count": 3828,
+          "forks_count": 6896
+        },
+        "first_observed_at": "2026-09-26T16:42:49.040219Z",
+        "last_observed_at": "2026-09-26T16:42:49.040219Z",
+        "stars_delta": 0,
+        "forks_delta": 0,
+        "last_error": null,
+        "recent_runs": [
+          {
+            "scheduled_at": "2026-09-26T16:42:48.041993Z",
+            "finished_at": "2026-09-26T16:42:49.040219Z",
+            "data": {
+              "stargazers_count": 3828,
+              "forks_count": 6896
+            },
+            "error": null
+          }
+        ],
+        "history_total": 1,
+        "history_offset": 0,
+        "text": "octocat/Hello-World: успешных проверок — 1, ошибок — 0. Звёзды: 3828 (+0), форки: 6896 (+0) с первого наблюдения."
+      },
+      "isError": false
+    },
+    "status": "success",
+    "durationMs": 28
+  },
+  "summary_reply": "Сводка получена. Задание уже завершено.\n\nФактический результат: успешных проверок 1, ошибок 0. Звёзд 3828, форков 6896. Изменения по звёздам и форкам — 0, потому что это первое наблюдение: с ним и сравнивается.\n\nЕдинственный запуск прошёл 26.09.2026 в 16:42:48 UTC и завершился в 16:42:49 UTC, без ошибок. Повторов не будет: status = completed, next_run_at пустой."
+}

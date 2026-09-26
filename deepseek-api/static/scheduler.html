@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Сводки по расписанию · День 18</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #22312b; background: #f4f6f3; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 1100px; margin: 0 auto; padding: 44px 24px; }
+    h1 { font-size: clamp(28px, 4vw, 42px); margin: 10px 0 14px; letter-spacing: -.04em; }
+    h2 { font-size: 20px; margin: 0; overflow-wrap: anywhere; }
+    p { line-height: 1.6; }
+    .eyebrow { color: #466856; font-weight: 650; font-size: 13px; letter-spacing: .08em; }
+    .intro { max-width: 700px; color: #58685f; }
+    .toolbar, .heading, .metrics, nav { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+    .toolbar { margin: 30px 0 20px; justify-content: space-between; }
+    button { border: 1px solid #c1cec5; padding: 10px 16px; border-radius: 9px; background: white; color: #244c36; cursor: pointer; font: inherit; }
+    button:disabled { opacity: .5; cursor: default; }
+    #status { color: #58685f; font-size: 14px; }
+    #status.error, .error { color: #963c2b; }
+    #jobs { display: grid; gap: 18px; }
+    article, .empty { border: 1px solid #dce3dc; border-radius: 16px; padding: 24px; background: white; }
+    .heading { justify-content: space-between; }
+    .badge { background: #e9f2ea; color: #345e43; padding: 5px 10px; border-radius: 20px; font-size: 13px; }
+    .metrics { margin: 22px 0; gap: 36px; }
+    .metric strong { display: block; font-size: 29px; font-weight: 600; }
+    .metric span, .detail { color: #65736a; font-size: 13px; }
+    .detail { overflow-wrap: anywhere; line-height: 1.7; }
+    .delta { margin: 0; }
+    nav { margin-top: 22px; }
+    code { overflow-wrap: anywhere; }
+    a { color: #276047; }
+    @media (max-width: 480px) { main { padding: 24px 16px; } article { padding: 18px; } .metrics { gap: 20px; } }
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">ДЕНЬ 18 · ФОНОВЫЕ ЗАДАЧИ</div>
+  <h1>Сводки по расписанию</h1>
+  <p class="intro">Агент проверяет GitHub по расписанию и сохраняет наблюдения. Здесь появляются свежие сводки — даже когда чат закрыт.</p>
+  <div class="toolbar"><span id="status" role="status">Загружаем расписания…</span><button id="refresh" type="button">Обновить</button></div>
+  <section id="jobs" aria-label="Расписания"></section>
+  <nav aria-label="Страницы"><button id="previous" type="button" disabled>Назад</button><span id="page"></span><button id="next" type="button" disabled>Далее</button></nav>
+  <p class="detail">Создание и отмена — через чат с подключённым MCP-планировщиком. Отключение MCP в чате не останавливает задания. Для фоновой работы процесс планировщика должен оставаться запущенным.</p>
+</main>
+<script>
+(() => {
+  const jobs = document.querySelector('#jobs');
+  const status = document.querySelector('#status');
+  const refresh = document.querySelector('#refresh');
+  const previous = document.querySelector('#previous');
+  const next = document.querySelector('#next');
+  let offset = 0, busy = false;
+  const labels = {active: 'По расписанию', completed: 'Завершено', cancelled: 'Отменено'};
+  const date = value => value ? new Date(value).toLocaleString('ru-RU') : '—';
+  const number = value => value == null ? '—' : value.toLocaleString('ru-RU');
+  const delta = value => value == null ? '—' : (value > 0 ? '+' : '') + number(value);
+  function element(tag, text, className) {
+    const el = document.createElement(tag);
+    el.textContent = text;
+    if (className) el.className = className;
+    return el;
+  }
+  function render(data) {
+    jobs.replaceChildren();
+    if (!data.schedules.length) {
+      const empty = element('div', '', 'empty');
+      empty.append(element('h2', 'Пока нет фоновых задач'), element('p', 'Подключите http://127.0.0.1:8002/mcp на вкладке MCP и напишите агенту:'),
+        element('p', '«Проверяй репозиторий octocat/Hello-World каждые 60 секунд, начиная сейчас».'),
+        element('p', 'После создания здесь автоматически появятся расписание и результаты проверок.'));
+      jobs.append(empty);
+    }
+    data.schedules.forEach(item => {
+      const job = item.job;
+      const card = element('article', '');
+      const heading = element('div', '', 'heading');
+      heading.append(element('h2', job.owner + '/' + job.repo), element('span', labels[job.status] || job.status, 'badge'));
+      const metrics = element('div', '', 'metrics');
+      [['Звёзды', item.latest?.stargazers_count], ['Форки', item.latest?.forks_count], ['Проверки', item.success_count], ['Ошибки', item.error_count]].forEach(([label, value]) => {
+        const metric = element('div', '', 'metric');
+        metric.append(element('strong', number(value)), element('span', label));
+        metrics.append(metric);
+      });
+      card.append(heading, metrics, element('p', item.latest ? `С первого наблюдения: звёзды ${delta(item.stars_delta)}, форки ${delta(item.forks_delta)}.` : 'Ожидаем первое успешное наблюдение.', 'delta'));
+      card.append(element('p', `Период: ${job.interval_seconds ? job.interval_seconds + ' сек.' : 'однократно'} · Следующий запуск: ${date(job.next_run_at)}${job.running ? ' · Проверка выполняется' : ''}`, 'detail'));
+      card.append(element('p', `Наблюдения: ${date(item.first_observed_at)} — ${date(item.last_observed_at)}`, 'detail'));
+      if (item.last_error) card.append(element('p', 'Последняя зарегистрированная ошибка: ' + item.last_error, 'error'));
+      card.append(element('div', 'ID: ' + job.id, 'detail'));
+      jobs.append(card);
+    });
+    previous.disabled = offset === 0;
+    next.disabled = offset + data.limit >= data.total;
+    document.querySelector('#page').textContent = data.total ? `${offset + 1}–${Math.min(offset + data.limit, data.total)} из ${data.total}` : '';
+  }
+  async function load() {
+    if (busy) return;
+    busy = true;
+    refresh.disabled = previous.disabled = next.disabled = true;
+    try {
+      const response = await fetch('/api/schedules?offset=' + offset, {signal: AbortSignal.timeout(10000)});
+      if (!response.ok) throw new Error('Не удалось загрузить сводки.');
+      render(await response.json());
+      status.className = '';
+      status.textContent = 'Обновлено ' + new Date().toLocaleTimeString('ru-RU') + ' · Автообновление каждые 5 сек.';
+    } catch (error) {
+      status.className = 'error';
+      status.textContent = 'Нет связи с планировщиком. Показаны последние загруженные данные.';
+    } finally {
+      busy = false;
+      refresh.disabled = false;
+    }
+  }
+  refresh.addEventListener('click', load);
+  previous.addEventListener('click', () => { if (!busy) { offset = Math.max(0, offset - 100); load(); } });
+  next.addEventListener('click', () => { if (!busy) { offset += 100; load(); } });
+  load();
+  setInterval(load, 5000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+{
+  "checked_at": "2026-09-26T16:40:02.740342+00:00",
+  "model": "scripted test double; real AgentRegistry and MCP transport",
+  "live_llm_key_available": true,
+  "request": {
+    "owner": "octocat",
+    "repo": "Hello-World",
+    "delay_seconds": 3,
+    "interval_seconds": 10
+  },
+  "agent_response": "Расписание создано: 4f66d8789ac04a12b6b9c5a8ac314cda",
+  "initial": {
+    "job": {
+      "id": "4f66d8789ac04a12b6b9c5a8ac314cda",
+      "owner": "octocat",
+      "repo": "Hello-World",
+      "interval_seconds": 10,
+      "status": "active",
+      "created_at": "2026-09-26T16:39:45.662561Z",
+      "next_run_at": "2026-09-26T16:39:48.662561Z",
+      "running": false
+    },
+    "success_count": 0,
+    "error_count": 0,
+    "latest": null,
+    "first_observed_at": null,
+    "last_observed_at": null,
+    "stars_delta": null,
+    "forks_delta": null,
+    "last_error": null,
+    "recent_runs": [],
+    "history_total": 0,
+    "history_offset": 0,
+    "text": "octocat/Hello-World: успешных проверок — 0, ошибок — 0. Успешных наблюдений пока нет."
+  },
+  "summary": {
+    "job": {
+      "id": "4f66d8789ac04a12b6b9c5a8ac314cda",
+      "owner": "octocat",
+      "repo": "Hello-World",
+      "interval_seconds": 10,
+      "status": "active",
+      "created_at": "2026-09-26T16:39:45.662561Z",
+      "next_run_at": "2026-09-26T16:40:08.662561Z",
+      "running": false
+    },
+    "success_count": 2,
+    "error_count": 0,
+    "latest": {
+      "stargazers_count": 3828,
+      "forks_count": 6896
+    },
+    "first_observed_at": "2026-09-26T16:39:50.213059Z",
+    "last_observed_at": "2026-09-26T16:39:59.666126Z",
+    "stars_delta": 0,
+    "forks_delta": 0,
+    "last_error": null,
+    "recent_runs": [
+      {
+        "scheduled_at": "2026-09-26T16:39:58.662561Z",
+        "finished_at": "2026-09-26T16:39:59.666126Z",
+        "data": {
+          "stargazers_count": 3828,
+          "forks_count": 6896
+        },
+        "error": null
+      },
+      {
+        "scheduled_at": "2026-09-26T16:39:48.662561Z",
+        "finished_at": "2026-09-26T16:39:50.213059Z",
+        "data": {
+          "stargazers_count": 3828,
+          "forks_count": 6896
+        },
+        "error": null
+      }
+    ],
+    "history_total": 2,
+    "history_offset": 0,
+    "text": "octocat/Hello-World: успешных проверок — 2, ошибок — 0. Звёзды: 3828 (+0), форки: 6896 (+0) с первого наблюдения."
+  },
+  "cancelled": {
+    "job": {
+      "id": "4f66d8789ac04a12b6b9c5a8ac314cda",
+      "owner": "octocat",
+      "repo": "Hello-World",
+      "interval_seconds": 10,
+      "status": "cancelled",
+      "created_at": "2026-09-26T16:39:45.662561Z",
+      "next_run_at": null,
+      "running": false
+    }
+  }
+}
