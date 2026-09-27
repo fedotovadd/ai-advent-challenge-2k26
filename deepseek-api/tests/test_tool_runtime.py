@@ -39,13 +39,13 @@ class ToolRuntimeTests(unittest.TestCase):
         self.assertEqual(ask.call_args_list[1].args[0]['messages'][-1]['tool_call_id'], 'c1')
 
     def test_limit_forces_final_answer_and_partial_requests_survive_failure(self):
-        ask = Mock(side_effect=[self.tool_response(), self.tool_response(), RuntimeError('failed')])
+        ask = Mock(side_effect=[*(self.tool_response() for _ in range(6)), RuntimeError('failed')])
         with self.assertRaises(RuntimeError):
             run_tools(ask,self.registry,self.payload,{},self.tools,self.metadata,lambda p:None)
         self.assertEqual(ask.call_args.kwargs['tool_choice'], 'none')
-        self.assertEqual(len(self.metadata['modelRequests']), 3)
+        self.assertEqual(len(self.metadata['modelRequests']), 7)
         self.assertEqual(self.metadata['modelRequests'][0]['usage'], USAGE)
-        self.assertEqual(len(self.metadata['toolCalls']), 2)
+        self.assertEqual(len(self.metadata['toolCalls']), 6)
 
     def test_context_check_runs_before_each_model_request(self):
         guard = Mock(side_effect=[None, ValueError('context')])
@@ -54,17 +54,17 @@ class ToolRuntimeTests(unittest.TestCase):
             run_tools(ask,self.registry,self.payload,{},self.tools,self.metadata,guard)
         self.assertEqual(ask.call_count,1)
 
-    def test_all_parallel_calls_receive_results_but_only_three_execute(self):
+    def test_all_parallel_calls_receive_results_but_only_six_execute(self):
         response=self.tool_response()
-        response['tool_calls']=[{**copy.deepcopy(response['tool_calls'][0]),'id':f'c{i}'} for i in range(5)]
+        response['tool_calls']=[{**copy.deepcopy(response['tool_calls'][0]),'id':f'c{i}'} for i in range(8)]
         self.registry._invoke=Mock(return_value={'content':[],'isError':False,'structuredContent':{}})
         ask=Mock(side_effect=[response,{'content':'done','usage':USAGE}])
         run_tools(ask,self.registry,self.payload,{},self.tools,self.metadata,lambda p:None)
-        self.assertEqual(self.registry._invoke.call_count,3)
-        self.assertEqual(len(self.metadata['toolCalls']),5)
+        self.assertEqual(self.registry._invoke.call_count,6)
+        self.assertEqual(len(self.metadata['toolCalls']),8)
         self.assertEqual(ask.call_args.kwargs['tool_choice'],'none')
         results=[m for m in ask.call_args.args[0]['messages'] if m['role']=='tool']
-        self.assertEqual([m['tool_call_id'] for m in results],[f'c{i}' for i in range(5)])
+        self.assertEqual([m['tool_call_id'] for m in results],[f'c{i}' for i in range(8)])
         self.assertTrue(json.loads(results[-1]['content'])['isError'])
 
     def test_plain_response_does_not_call_mcp(self):

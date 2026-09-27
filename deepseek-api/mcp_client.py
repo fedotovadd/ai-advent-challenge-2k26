@@ -47,7 +47,7 @@ async def _list_public_tools(
     transport_factory: Callable[..., Any] = _streamable_http_transport,
     session_factory: Callable[[Any, Any], Any] = _client_session_factory,
     include_schema: bool = False,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     """Initialize an MCP session and return only its advertised tools."""
     async with transport_factory(url, timeout=HTTP_TIMEOUT_SECONDS) as streams:
         read_stream, write_stream, *_ = streams
@@ -58,6 +58,7 @@ async def _list_public_tools(
     return [
         {
             **({"inputSchema": tool.inputSchema} if include_schema else {}),
+            **({"outputSchema": tool.outputSchema} if include_schema and isinstance(getattr(tool, "outputSchema", None), dict) else {}),
             "name": tool.name,
             "description": (
                 tool.description

@@ -3,6 +3,7 @@ import os
 import threading
 from pipeline_commands import parse_research_command
 from pipeline_http import guarded_agent_request, handle_research
+from mcp_chat_http import handle_mcp_chat
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -41,6 +42,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             self._send_html(200, STATIC_PAGE.read_text(encoding="utf-8"))
         elif path == "/static/pipeline-controls.js":
             self._send_javascript(200, STATIC_PAGE.with_name("pipeline-controls.js").read_text(encoding="utf-8"))
+        elif path == "/static/mcp-progress.js":
+            self._send_javascript(200, STATIC_PAGE.with_name("mcp-progress.js").read_text(encoding="utf-8"))
         elif path == "/static/agent-state.js":
             self._send_javascript(200, STATIC_AGENT_STATE.read_text(encoding="utf-8"))
         elif path == "/static/context-controls.js":
@@ -467,6 +470,16 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         agent = self.server.registry.get(agent_id)
         if not agent:
             self._send_json(404, {"error": "Агент не найден."})
+            return
+        agent_settings = agent.snapshot().get("settings", {})
+        can_stream_mcp = (
+            data.get("streamMcp") is True
+            and agent_settings.get("model", "").startswith("deepseek-")
+            and agent_settings.get("format") == "text"
+            and bool(self.server.mcp_registry.snapshot())
+        )
+        if can_stream_mcp:
+            handle_mcp_chat(self, agent_id, data["text"], data.get("temperature", DEFAULT_TEMPERATURE))
             return
         try:
             snapshot = self.server.registry.respond(agent_id, data["text"], temperature)

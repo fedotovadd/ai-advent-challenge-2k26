@@ -609,7 +609,7 @@ class Agent:
         snapshot = self.respond("", temperature, profile, _task_advance=True)
         return snapshot, self._last_task_continue
 
-    def respond(self, text, temperature=DEFAULT_TEMPERATURE, profile=None, _task_advance=False):
+    def respond(self, text, temperature=DEFAULT_TEMPERATURE, profile=None, _task_advance=False, on_tool_event=None):
         if not _task_advance and (not isinstance(text, str) or not text.strip()):
             raise ValueError("Пустое сообщение.")
         if (
@@ -731,7 +731,7 @@ class Agent:
                     def check_tool_context(request):
                         if estimate_payload_tokens(request) + requested_output > context_limit and not self._settings["sendOnOverflow"]:
                             raise ContextOverflowError("Результат инструмента превышает доступный контекст модели.")
-                    answer = run_tools(self._ask_model, self._mcp_registry, payload, options, tools, metadata, check_tool_context)
+                    answer = run_tools(self._ask_model, self._mcp_registry, payload, options, tools, metadata, check_tool_context, on_tool_event)
                     metadata["usage"], metadata["cost"] = tool_usage_and_cost(self._settings["model"], metadata["modelRequests"])
                 else:
                     answer, usage = _response_content_and_usage(self._ask_model(payload, **options))
@@ -1479,13 +1479,13 @@ class AgentRegistry(PipelineHistoryMixin):
                 raise
             return {"agent": snapshot, "continueTask": continue_task}
 
-    def respond(self, agent_id, text, temperature=DEFAULT_TEMPERATURE):
+    def respond(self, agent_id, text, temperature=DEFAULT_TEMPERATURE, on_tool_event=None):
         with self._lock:
             agent = self._agents.get(agent_id)
             if agent is None:
                 return None
             try:
-                snapshot = agent.respond(text, temperature, self._active_profile())
+                snapshot = agent.respond(text, temperature, self._active_profile(), on_tool_event=on_tool_event)
             except Exception:
                 self._save()
                 raise
