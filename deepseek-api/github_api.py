@@ -101,3 +101,68 @@ async def get_repository(owner: str, repo: str, *, client: httpx.AsyncClient | N
     result = repository.model_dump(exclude={'private'})
     result['fetched_at'] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     return result
+
+
+class _SearchRepository(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    full_name: str
+    description: str | None
+    language: str | None
+    stargazers_count: int
+    html_url: str
+    private: bool
+
+
+class _SearchResponse(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    total_count: int
+    incomplete_results: bool
+    items: list[_SearchRepository]
+
+
+async def search_repositories(query: str, *, limit: int = 3,
+                              client: httpx.AsyncClient | None = None) -> dict:
+    """Search public repositories, keeping only bounded metadata for the pipeline."""
+    from pipeline_models import SearchArguments, SearchResult
+
+    arguments = SearchArguments(query=query, limit=limit)
+    if client is None:
+        async with httpx.AsyncClient() as owned_client:
+            return await search_repositories(arguments.query, limit=arguments.limit, client=owned_client)
+    headers = {'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28'}
+    token = os.environ.get('GITHUB_TOKEN', '').strip()
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
+    try:
+        response = await client.get(
+            f'{GITHUB_API_URL}/search/repositories',
+            params={'q': f'{arguments.query} is:public', 'per_page': arguments.limit},
+            headers=headers, timeout=REQUEST_TIMEOUT, follow_redirects=False,
+        )
+    except httpx.TimeoutException:
+        raise GitHubAPIError('GitHub не ответил за 10 секунд. Повторите попытку позже.') from None
+    except httpx.RequestError:
+        raise GitHubAPIError('Не удалось подключиться к GitHub. Проверьте сеть и повторите попытку.') from None
+    if response.status_code != 200:
+        raise _response_error(response)
+    try:
+        payload = _SearchResponse.model_validate(response.json())
+        if any(item.private for item in payload.items):
+            raise GitHubAPIError('Доступны только публичные репозитории GitHub.')
+        items = []
+        for item in payload.items[:arguments.limit]:
+            description = item.description
+            if description is not None and len(description) > 300:
+                description = description[:299] + '…'
+            items.append({'full_name': item.full_name, 'description': description,
+                          'language': item.language, 'stars': item.stargazers_count, 'url': item.html_url})
+        return SearchResult(
+            query=arguments.query,
+            fetched_at=datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+            total_count=payload.total_count, incomplete_results=payload.incomplete_results,
+            items=items,
+        ).model_dump()
+    except (ValueError, ValidationError):
+        raise GitHubAPIError('GitHub вернул некорректные данные поиска. Повторите попытку позже.') from None

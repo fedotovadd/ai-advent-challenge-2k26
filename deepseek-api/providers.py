@@ -16,7 +16,10 @@ def ask_model(payload, **options):
     api_key = os.getenv(key_name)
     if not api_key:
         raise MissingApiKeyError(key_name)
-    client = OpenAI(api_key=api_key, base_url=base_url)
+    client_options = {}
+    if 'max_retries' in options:
+        client_options['max_retries'] = options.pop('max_retries')
+    client = OpenAI(api_key=api_key, base_url=base_url, **client_options)
     response = client.chat.completions.create(
         model=payload["model"],
         messages=payload["messages"],

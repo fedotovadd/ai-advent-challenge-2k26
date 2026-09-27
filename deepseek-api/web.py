@@ -1,5 +1,8 @@
 import json
 import os
+import threading
+from pipeline_commands import parse_research_command
+from pipeline_http import guarded_agent_request, handle_research
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
@@ -36,6 +39,8 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/":
             self._send_html(200, STATIC_PAGE.read_text(encoding="utf-8"))
+        elif path == "/static/pipeline-controls.js":
+            self._send_javascript(200, STATIC_PAGE.with_name("pipeline-controls.js").read_text(encoding="utf-8"))
         elif path == "/static/agent-state.js":
             self._send_javascript(200, STATIC_AGENT_STATE.read_text(encoding="utf-8"))
         elif path == "/static/context-controls.js":
@@ -57,6 +62,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
         else:
             self._send_html(404, "<h1>Страница не найдена</h1>")
 
+    @guarded_agent_request
     def do_POST(self):
         if not self._same_origin():
             self._send_json(403, {"error": "Запрос с другого источника запрещён."})
@@ -106,6 +112,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(404, {"error": "Маршрут не найден."})
 
+    @guarded_agent_request
     def do_PUT(self):
         if not self._same_origin():
             self._send_json(403, {"error": "Запрос с другого источника запрещён."})
@@ -170,6 +177,7 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         self._send_json(200, result)
 
+    @guarded_agent_request
     def do_DELETE(self):
         if not self._same_origin():
             self._send_json(403, {"error": "Запрос с другого источника запрещён."})
@@ -383,6 +391,14 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         if not isinstance(data, dict) or "text" not in data or not isinstance(data["text"], str):
             self._send_json(400, {"error": "Поле text должно быть непустой строкой."})
+            return
+        try:
+            query = parse_research_command(data["text"])
+        except ValueError as error:
+            self._send_json(400, {"error": str(error), "accepted": False})
+            return
+        if query is not None:
+            handle_research(self, agent_id, data["text"].strip(), query)
             return
         try:
             invariant_command = parse_invariant_command(data["text"])
@@ -731,6 +747,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
 
 class ChatServer(ThreadingHTTPServer):
     def __init__(self, address, ask_model, state_path=None, list_mcp_tools=mcp_client.list_tools, mcp_registry=None):
+        self.operation_locks = {}
+        self.operation_locks_guard = threading.Lock()
+        self.pipeline_runner = None
         super().__init__(address, ChatRequestHandler)
         mcp_path = (Path(state_path).parent if state_path is not None else Path(__file__).parent / "data") / "mcp_servers.json"
         self.mcp_registry = mcp_registry if mcp_registry is not None else McpRegistry(mcp_path)

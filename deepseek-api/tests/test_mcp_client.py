@@ -117,3 +117,15 @@ class McpInvocationTests(unittest.IsolatedAsyncioTestCase):
             transport_factory=lambda *a, **k: FakeTransport([]),
             session_factory=lambda r,w: Session(r,w,[]))
         self.assertEqual(result[0]['inputSchema'], {'type': 'object'})
+
+
+class PipelineURLTests(unittest.TestCase):
+    def test_allows_only_exact_pipeline_endpoint_and_preserves_existing_endpoints(self):
+        self.assertEqual(mcp_client.validate_url('http://127.0.0.1:8003/mcp'), 'http://127.0.0.1:8003/mcp')
+        for url in ('http://127.0.0.1:8001/mcp', 'http://127.0.0.1:8002/mcp', 'https://mcp.deepwiki.com/mcp'):
+            self.assertEqual(mcp_client.validate_url(url), url)
+        for url in ('http://localhost:8003/mcp', 'http://127.0.0.1:8004/mcp',
+                    'http://127.0.0.1:8003/', 'http://127.0.0.1:8003/mcp?x=1',
+                    'http://127.0.0.1:8003/mcp/', 'http://user@127.0.0.1:8003/mcp'):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                mcp_client.validate_url(url)

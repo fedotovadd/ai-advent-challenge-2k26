@@ -64,7 +64,7 @@
       card.className = "method-card";
       const title = document.createElement("h2");
       const scheduler = server.url === "http://127.0.0.1:8002/mcp";
-      title.textContent = scheduler ? "Планировщик GitHub · День 18" : server.url === "http://127.0.0.1:8001/mcp" ? "GitHub — наш сервер" : "MCP-сервер";
+      title.textContent = server.url === "http://127.0.0.1:8003/mcp" ? "Исследование · День 19" : scheduler ? "Планировщик GitHub · День 18" : server.url === "http://127.0.0.1:8001/mcp" ? "GitHub — наш сервер" : "MCP-сервер";
       const address = document.createElement("p");
       address.className = "mcp-server-url";
       address.textContent = server.url;

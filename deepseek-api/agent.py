@@ -1,4 +1,5 @@
 from tool_runtime import run_tools
+from pipeline_history import PipelineHistoryMixin, valid_pipeline_card
 import copy
 import json
 import math
@@ -477,6 +478,7 @@ class Agent:
 
     def _update_facts(self, text):
         recent = [*self._messages, {"role": "user", "content": text}][-self._settings["windowSize"]:]
+        recent = [{"role": m["role"], "content": m["content"]} for m in recent]
         payload = {
             "model": self._settings["model"], "temperature": 0,
             "messages": [
@@ -665,7 +667,7 @@ class Agent:
                 messages.extend(recent)
             payload = {
                 "model": self._settings["model"],
-                "messages": messages,
+                "messages": [{k: v for k, v in m.items() if k != "pipeline"} for m in messages],
                 "temperature": temperature,
             }
             available_tools = self._mcp_registry.snapshot() if self._mcp_registry else []
@@ -1011,7 +1013,8 @@ def _valid_context(context):
 def _valid_message(message):
     return (
         isinstance(message, dict)
-        and set(message) == {"role", "content"}
+        and set(message) in ({"role", "content"}, {"role", "content", "pipeline"})
+        and ("pipeline" not in message or (message.get("role") == "assistant" and valid_pipeline_card(message["pipeline"])))
         and isinstance(message["role"], str)
         and message["role"] in {"user", "assistant"}
         and isinstance(message["content"], str)
@@ -1221,7 +1224,7 @@ def _migrate_memory_trace(metadata):
             layers["longTerm"] = migrated
 
 
-class AgentRegistry:
+class AgentRegistry(PipelineHistoryMixin):
     def __init__(self, ask_model, state_path=None, mcp_registry=None):
         self._lock = threading.RLock()
         self._ask_model = ask_model
@@ -1241,6 +1244,7 @@ class AgentRegistry:
         else:
             (self._agents, self._next_id, self._shared_long_term, self._profiles,
              self._active_profile_id, self._next_profile_id) = restored
+        self.recover_pipelines()
 
     def _snapshots(self):
         return {agent_id: agent.snapshot() for agent_id, agent in self._agents.items()}

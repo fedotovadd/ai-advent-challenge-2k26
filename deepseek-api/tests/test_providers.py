@@ -39,3 +39,13 @@ class ProviderToolTests(unittest.TestCase):
             result = providers.ask_model({'model':'deepseek-v4-flash','messages':[], 'temperature':1}, tools=[])
         self.assertEqual(result['tool_calls'][0]['id'], 'call_1')
         self.assertIsNone(result['content'])
+
+    @patch('providers.OpenAI')
+    def test_per_call_retry_override_is_applied_to_client_not_api_body(self, openai):
+        openai.return_value.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{}'))], usage=None)
+        with patch.dict(os.environ, {'DEEPSEEK_API_KEY': 'fake'}):
+            providers.ask_model({'model':'deepseek-v4-flash','messages':[], 'temperature':0}, max_retries=0, timeout=30)
+        self.assertEqual(openai.call_args.kwargs.get('max_retries'), 0)
+        self.assertNotIn('max_retries', openai.return_value.chat.completions.create.call_args.kwargs)
+        self.assertEqual(openai.return_value.chat.completions.create.call_args.kwargs['timeout'], 30)

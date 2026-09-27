@@ -18,7 +18,7 @@ class SchedulerMCPExistsTests(unittest.TestCase):
     def test_chat_client_accepts_only_exact_scheduler_url(self):
         from mcp_client import validate_url
         self.assertEqual(validate_url('http://127.0.0.1:8002/mcp'), 'http://127.0.0.1:8002/mcp')
-        for url in ['http://127.0.0.1:8002/other', 'http://127.0.0.1:8003/mcp', 'http://127.0.0.1:8002/mcp?x=1']:
+        for url in ['http://127.0.0.1:8002/other', 'http://127.0.0.1:8004/mcp', 'http://127.0.0.1:8002/mcp?x=1']:
             with self.assertRaises(ValueError):
                 validate_url(url)
 

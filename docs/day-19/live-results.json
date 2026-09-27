@@ -1,0 +1,201 @@
+{
+  "command": "/research mcp language:python",
+  "card": {
+    "run_id": "064c3f68-02d5-4918-a72b-1e60b2fbb3e8",
+    "agent_id": "agent-1",
+    "branch_id": "main",
+    "query": "mcp language:python",
+    "status": "success",
+    "saved_file": {
+      "path": "/Users/d.fedotova/Мои проекты/AI Adent Challenge/.worktrees/day-19-pipeline/deepseek-api/data/reports/a0824042-2634-4eb5-870a-61026f6246d6.md",
+      "bytes_written": 1027,
+      "sha256": "e59b6cf34e027c5e21bc95c84666fcd041c40746b3ce44aa0cf8dd0bf6d89233"
+    },
+    "error": null,
+    "steps": [
+      {
+        "name": "search",
+        "status": "success",
+        "arguments": {
+          "query": "mcp language:python",
+          "limit": 3
+        },
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"query\": \"mcp language:python\", \"fetched_at\": \"2026-09-27T05:31:17.870948Z\", \"total_count\": 159039, \"incomplete_results\": false, \"items\": [{\"full_name\": \"awslabs/mcp\", \"description\": \"Open source MCP Servers for AWS\", \"language\": \"Python\", \"stars\": 9732, \"url\": \"https://github.com/awslabs/mcp\"}, {\"full_name\": \"oracle/mcp\", \"description\": \"Repository containing MCP (Model Context Protocol) servers that provides a suite of tools for managing and interacting with Oracle products.\", \"language\": \"Python\", \"stars\": 446, \"url\": \"https://github.com/oracle/mcp\"}, {\"full_name\": \"feder-cr/invisible_playwright_mcp\", \"description\": \"Playwright MCP server undetected by anti-bots and captchas: AI agent browses the web on anti-detect stealth Firefox, Python, undetected browser automation, scraping, computer use.\", \"language\": \"Python\", \"stars\": 31675, \"url\": \"https://github.com/feder-cr/invisible_playwright_mcp\"}]}",
+              "annotations": null,
+              "meta": null
+            }
+          ],
+          "structuredContent": {
+            "query": "mcp language:python",
+            "fetched_at": "2026-09-27T05:31:17.870948Z",
+            "total_count": 159039,
+            "incomplete_results": false,
+            "items": [
+              {
+                "full_name": "awslabs/mcp",
+                "description": "Open source MCP Servers for AWS",
+                "language": "Python",
+                "stars": 9732,
+                "url": "https://github.com/awslabs/mcp"
+              },
+              {
+                "full_name": "oracle/mcp",
+                "description": "Repository containing MCP (Model Context Protocol) servers that provides a suite of tools for managing and interacting with Oracle products.",
+                "language": "Python",
+                "stars": 446,
+                "url": "https://github.com/oracle/mcp"
+              },
+              {
+                "full_name": "feder-cr/invisible_playwright_mcp",
+                "description": "Playwright MCP server undetected by anti-bots and captchas: AI agent browses the web on anti-detect stealth Firefox, Python, undetected browser automation, scraping, computer use.",
+                "language": "Python",
+                "stars": 31675,
+                "url": "https://github.com/feder-cr/invisible_playwright_mcp"
+              }
+            ]
+          },
+          "isError": false
+        },
+        "durationMs": 1042,
+        "serverUrl": "http://127.0.0.1:8003/mcp"
+      },
+      {
+        "name": "summarize",
+        "status": "success",
+        "arguments": {
+          "search_result": {
+            "query": "mcp language:python",
+            "fetched_at": "2026-09-27T05:31:17.870948Z",
+            "total_count": 159039,
+            "incomplete_results": false,
+            "items": [
+              {
+                "full_name": "awslabs/mcp",
+                "description": "Open source MCP Servers for AWS",
+                "language": "Python",
+                "stars": 9732,
+                "url": "https://github.com/awslabs/mcp"
+              },
+              {
+                "full_name": "oracle/mcp",
+                "description": "Repository containing MCP (Model Context Protocol) servers that provides a suite of tools for managing and interacting with Oracle products.",
+                "language": "Python",
+                "stars": 446,
+                "url": "https://github.com/oracle/mcp"
+              },
+              {
+                "full_name": "feder-cr/invisible_playwright_mcp",
+                "description": "Playwright MCP server undetected by anti-bots and captchas: AI agent browses the web on anti-detect stealth Firefox, Python, undetected browser automation, scraping, computer use.",
+                "language": "Python",
+                "stars": 31675,
+                "url": "https://github.com/feder-cr/invisible_playwright_mcp"
+              }
+            ]
+          }
+        },
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"query\": \"mcp language:python\", \"source_count\": 3, \"markdown\": \"# Обзор публичных репозиториев GitHub\\n\\nЗапрос: mcp language:python\\nПолучено репозиториев: 3. Всего найдено: 159039.\\nДанные получены: 2026\\\\-09\\\\-27T05:31:17\\\\.870948Z\\n\\n## awslabs/mcp\\n\\nЯзык: Python. Звёзды: 9732.\\nOpen source MCP Servers for AWS\\nИсточник: [awslabs/mcp](https://github.com/awslabs/mcp)\\n\\n## oracle/mcp\\n\\nЯзык: Python. Звёзды: 446.\\nRepository containing MCP \\\\(Model Context Protocol\\\\) servers that provides a suite of tools for managing and interacting with Oracle products\\\\.\\nИсточник: [oracle/mcp](https://github.com/oracle/mcp)\\n\\n## feder\\\\-cr/invisible\\\\_playwright\\\\_mcp\\n\\nЯзык: Python. Звёзды: 31675.\\nPlaywright MCP server undetected by anti\\\\-bots and captchas: AI agent browses the web on anti\\\\-detect stealth Firefox, Python, undetected browser automation, scraping, computer use\\\\.\\nИсточник: [feder\\\\-cr/invisible\\\\_playwright\\\\_mcp](https://github.com/feder-cr/invisible_playwright_mcp)\\n\"}",
+              "annotations": null,
+              "meta": null
+            }
+          ],
+          "structuredContent": {
+            "query": "mcp language:python",
+            "source_count": 3,
+            "markdown": "# Обзор публичных репозиториев GitHub\n\nЗапрос: mcp language:python\nПолучено репозиториев: 3. Всего найдено: 159039.\nДанные получены: 2026\\-09\\-27T05:31:17\\.870948Z\n\n## awslabs/mcp\n\nЯзык: Python. Звёзды: 9732.\nOpen source MCP Servers for AWS\nИсточник: [awslabs/mcp](https://github.com/awslabs/mcp)\n\n## oracle/mcp\n\nЯзык: Python. Звёзды: 446.\nRepository containing MCP \\(Model Context Protocol\\) servers that provides a suite of tools for managing and interacting with Oracle products\\.\nИсточник: [oracle/mcp](https://github.com/oracle/mcp)\n\n## feder\\-cr/invisible\\_playwright\\_mcp\n\nЯзык: Python. Звёзды: 31675.\nPlaywright MCP server undetected by anti\\-bots and captchas: AI agent browses the web on anti\\-detect stealth Firefox, Python, undetected browser automation, scraping, computer use\\.\nИсточник: [feder\\-cr/invisible\\_playwright\\_mcp](https://github.com/feder-cr/invisible_playwright_mcp)\n"
+          },
+          "isError": false
+        },
+        "durationMs": 18,
+        "serverUrl": "http://127.0.0.1:8003/mcp"
+      },
+      {
+        "name": "saveToFile",
+        "status": "success",
+        "arguments": {
+          "report": {
+            "query": "mcp language:python",
+            "source_count": 3,
+            "markdown": "# Обзор публичных репозиториев GitHub\n\nЗапрос: mcp language:python\nПолучено репозиториев: 3. Всего найдено: 159039.\nДанные получены: 2026\\-09\\-27T05:31:17\\.870948Z\n\n## awslabs/mcp\n\nЯзык: Python. Звёзды: 9732.\nOpen source MCP Servers for AWS\nИсточник: [awslabs/mcp](https://github.com/awslabs/mcp)\n\n## oracle/mcp\n\nЯзык: Python. Звёзды: 446.\nRepository containing MCP \\(Model Context Protocol\\) servers that provides a suite of tools for managing and interacting with Oracle products\\.\nИсточник: [oracle/mcp](https://github.com/oracle/mcp)\n\n## feder\\-cr/invisible\\_playwright\\_mcp\n\nЯзык: Python. Звёзды: 31675.\nPlaywright MCP server undetected by anti\\-bots and captchas: AI agent browses the web on anti\\-detect stealth Firefox, Python, undetected browser automation, scraping, computer use\\.\nИсточник: [feder\\-cr/invisible\\_playwright\\_mcp](https://github.com/feder-cr/invisible_playwright_mcp)\n"
+          }
+        },
+        "result": {
+          "content": [
+            {
+              "type": "text",
+              "text": "{\"path\": \"/Users/d.fedotova/Мои проекты/AI Adent Challenge/.worktrees/day-19-pipeline/deepseek-api/data/reports/a0824042-2634-4eb5-870a-61026f6246d6.md\", \"bytes_written\": 1027, \"sha256\": \"e59b6cf34e027c5e21bc95c84666fcd041c40746b3ce44aa0cf8dd0bf6d89233\"}",
+              "annotations": null,
+              "meta": null
+            }
+          ],
+          "structuredContent": {
+            "path": "/Users/d.fedotova/Мои проекты/AI Adent Challenge/.worktrees/day-19-pipeline/deepseek-api/data/reports/a0824042-2634-4eb5-870a-61026f6246d6.md",
+            "bytes_written": 1027,
+            "sha256": "e59b6cf34e027c5e21bc95c84666fcd041c40746b3ce44aa0cf8dd0bf6d89233"
+          },
+          "isError": false
+        },
+        "durationMs": 15,
+        "serverUrl": "http://127.0.0.1:8003/mcp"
+      }
+    ]
+  },
+  "verification": {
+    "search_to_summarize_equal": true,
+    "summarize_to_save_equal": true,
+    "file_bytes_equal": true,
+    "file_sha256_verified": true,
+    "model_requests": 0,
+    "browser_reload_preserved_card": true
+  },
+  "failure_demo": {
+    "command": "/research demo-error",
+    "condition": "MCP server stopped",
+    "card": {
+      "run_id": "25dd9552-42f8-40fb-ada1-1f46a634733c",
+      "agent_id": "agent-1",
+      "branch_id": "main",
+      "query": "demo-error",
+      "status": "error",
+      "saved_file": null,
+      "error": "Не удалось выполнить MCP-вызов. Проверьте, что pipeline_mcp_server.py запущен на http://127.0.0.1:8003/mcp.",
+      "steps": [
+        {
+          "name": "search",
+          "status": "error",
+          "arguments": {
+            "query": "demo-error",
+            "limit": 3
+          },
+          "result": null,
+          "durationMs": 5,
+          "serverUrl": "http://127.0.0.1:8003/mcp",
+          "error": "Не удалось выполнить MCP-вызов. Проверьте, что pipeline_mcp_server.py запущен на http://127.0.0.1:8003/mcp."
+        },
+        {
+          "name": "summarize",
+          "status": "skipped",
+          "arguments": {},
+          "result": null,
+          "durationMs": 0,
+          "serverUrl": ""
+        },
+        {
+          "name": "saveToFile",
+          "status": "skipped",
+          "arguments": {},
+          "result": null,
+          "durationMs": 0,
+          "serverUrl": ""
+        }
+      ]
+    }
+  }
+}
