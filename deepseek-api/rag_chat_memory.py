@@ -46,6 +46,8 @@ def validate_preparation(content, current_message, state, turn_number):
         if op == "set_goal":
             text = _short(change.get("text"), "text")
             if updated["goal"] is None or updated["goal"]["text"] != text:
+                if text not in current_message:
+                    raise ValueError("Новая цель отсутствует в текущей реплике")
                 updated["goal"] = {"text": text, "turn": turn_number}
             continue
         if op in {"set_term", "remove_term"}:
@@ -59,8 +61,12 @@ def validate_preparation(content, current_message, state, turn_number):
             else:
                 text = _short(change.get("text"), "text")
                 if prior is None:
+                    if term not in current_message or text not in current_message:
+                        raise ValueError("Новый термин отсутствует в текущей реплике")
                     entries.append({"term": term, "text": text, "turn": turn_number})
                 elif prior["text"] != text:
+                    if term not in current_message or text not in current_message:
+                        raise ValueError("Новое определение отсутствует в текущей реплике")
                     prior.update(text=text, turn=turn_number)
             continue
         text = _short(change.get("text"), "text")
@@ -72,6 +78,8 @@ def validate_preparation(content, current_message, state, turn_number):
                 raise ValueError("Факт для удаления не найден")
             entries.remove(prior)
         elif prior is None:
+            if text not in current_message:
+                raise ValueError("Новый факт отсутствует в текущей реплике")
             entries.append({"text": text, "turn": turn_number})
     if any(len(updated[key]) > MAX_FACTS for key in ("clarifications", "constraints", "terms")):
         raise ValueError("Память переполнена")

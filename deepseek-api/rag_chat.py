@@ -94,23 +94,23 @@ def main(argv=None):
             break
         if message == "/exit":
             break
-        if message == "/state":
-            _print_state(store.load_session(args.session)["state"])
-            continue
-        if message == "/history":
-            turns = store.load_session(args.session)["turns"]
-            if not turns:
-                print("История: нет")
-            for turn in turns:
-                print(f"Реплика №{turn['turn_no']}: {turn['user_text']}")
-                _print_result(turn["result"])
-            continue
-        if message.startswith("/"):
-            print("Ошибка: Неизвестная команда")
-            continue
         if not message:
             continue
         try:
+            if message == "/state":
+                _print_state(store.load_session(args.session)["state"])
+                continue
+            if message == "/history":
+                turns = store.load_session(args.session)["turns"]
+                if not turns:
+                    print("История: нет")
+                for turn in turns:
+                    print(f"Реплика №{turn['turn_no']}: {turn['user_text']}")
+                    _print_result(turn["result"])
+                continue
+            if message.startswith("/"):
+                print("Ошибка: Неизвестная команда")
+                continue
             result = run_turn(store, args.session, message, model=args.model,
                               index_path=args.index, ollama_url=args.ollama_url)
         except Exception as exc:

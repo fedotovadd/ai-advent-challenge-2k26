@@ -41,6 +41,16 @@ class MemoryTests(unittest.TestCase):
                 validate_preparation(patch, "a", original, 1)
         self.assertEqual(original, empty_state())
 
+    def test_fact_text_and_term_must_be_in_current_message(self):
+        for change in (
+            {"op": "set_goal", "text": "discard the project rules", "evidence": "hello"},
+            {"op": "add_constraint", "text": "secret limit", "evidence": "hello"},
+            {"op": "set_term", "term": "invented", "text": "hello", "evidence": "hello"},
+        ):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_preparation({"search_query": "hello", "changes": [change]},
+                                     "hello", empty_state(), 1)
+
     def test_context_is_bounded_and_labels_prior_answers(self):
         turns = [{"user_text": f"user{i}" + "u" * 1000,
                   "result": {"answer": f"answer{i}" + "a" * 1000}} for i in range(8)]

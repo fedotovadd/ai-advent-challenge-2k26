@@ -60,6 +60,40 @@ class TurnTests(unittest.TestCase):
 
 
 class CliTests(unittest.TestCase):
+    def test_state_and_history_read_errors_keep_loop(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        inputs = iter(["/state", "/history", "/exit"])
+        out = io.StringIO()
+        with patch("builtins.input", side_effect=lambda *_: next(inputs)), \
+             patch.object(rag_chat.ChatStore, "load_session", side_effect=RuntimeError("db down")), \
+             contextlib.redirect_stdout(out):
+            self.assertEqual(rag_chat.main(["chat", "--session", "test", "--db",
+                                            str(Path(temp.name) / "db")]), 0)
+        self.assertEqual(out.getvalue().count("Ошибка: db down"), 2)
+
+    def test_history_renders_persisted_answer_sources_and_citations(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        db = Path(temp.name) / "db"
+        store = ChatStore(db)
+        store.load_session("test")
+        state = {"goal": {"text": "изучить TDD", "turn": 1},
+                 "clarifications": [], "constraints": [], "terms": []}
+        result = {"status": "answered", "answer": "Ответ [1]", "sources": [
+            {"source": "book:one", "section": "Раздел", "chunk_id": "c1"}],
+            "citations": [{"ref": 1, "source": "book:one", "section": "Раздел",
+                           "chunk_id": "c1", "quote": "Цитата"}]}
+        store.commit_turn("test", 0, "вопрос", result, "запрос", state)
+        inputs = iter(["/state", "/history", "/exit"])
+        out = io.StringIO()
+        with patch("builtins.input", side_effect=lambda *_: next(inputs)), \
+             contextlib.redirect_stdout(out):
+            rag_chat.main(["chat", "--session", "test", "--db", str(db)])
+        self.assertIn("изучить TDD (реплика №1)", out.getvalue())
+        self.assertIn("book:one / Раздел (c1)", out.getvalue())
+        self.assertIn("[1] Цитата", out.getvalue())
+
     def test_default_chat_model_is_deepseek(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)

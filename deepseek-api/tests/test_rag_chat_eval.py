@@ -5,10 +5,28 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from rag_chat_eval import run_scenarios, summarize
+from rag_chat_eval import run_scenarios, summarize, render_report
+from rag_chat_store import ChatStore
 
 
 class EvaluationTests(unittest.TestCase):
+    def test_report_shows_search_sources_state_and_manual_review(self):
+        data = {"summary": {"attempted_count": 1, "retrieval_count": 1,
+                            "answered_count": 1, "refusal_count": 0, "error_count": 0},
+                "turns": [{"scenario": "A", "turn": 1, "status": "answered",
+                           "search_query": "query", "sources": [{"source": "book"}],
+                           "citations": [{"quote": "quote"}],
+                           "state": {"goal": {"text": "goal", "turn": 1},
+                                     "clarifications": [], "constraints": [], "terms": []}}],
+                "failed_attempts": [{"scenario": "A", "turn": 1,
+                                     "error": "bad quote"}]}
+        report = render_report(data, {("A", 1): ("да", "Цитата подтверждает тезис")})
+        self.assertIn("1/1", report)
+        self.assertIn("book", report)
+        self.assertIn("goal (№1)", report)
+        self.assertIn("Цитата подтверждает тезис", report)
+        self.assertIn("bad quote", report)
+
     def test_counts_and_restart(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -24,7 +42,8 @@ class EvaluationTests(unittest.TestCase):
             seen.append((name, message, id(store), kwargs["model"]))
             store.load_session(name)
             result = {"status": "no_evidence", "answer": "Не знаю", "sources": [],
-                      "citations": [], "selected": [], "search_query": message}
+                      "citations": [], "selected": [], "search_query": message,
+                      "reason": "below_threshold", "index": {"path": "index.db"}}
             store.commit_turn(name, 0 if message in ("one", "three") else 1,
                               message, result, message, {"goal": None,
                               "clarifications": [], "constraints": [], "terms": []})
@@ -32,6 +51,8 @@ class EvaluationTests(unittest.TestCase):
         data = run_scenarios(inp, root / "result.json", root / "sessions.db", runner=runner)
         self.assertEqual(len(data["turns"]), 3)
         self.assertEqual(summarize(data)["retrieval_count"], 3)
+        self.assertEqual(data["turns"][0]["reason"], "below_threshold")
+        self.assertEqual(data["turns"][0]["index_metadata"], {"path": "index.db"})
         self.assertNotEqual(seen[0][2], seen[1][2])
         self.assertEqual(seen[0][3], "deepseek-v4-flash")
         self.assertTrue((root / "result.json").exists())
@@ -47,6 +68,49 @@ class EvaluationTests(unittest.TestCase):
         with self.assertRaises(FileExistsError):
             run_scenarios(inp, target, root / "sessions.db")
         self.assertEqual(target.read_text(), "old")
+
+    def test_colliding_paths_rejected_before_creating_database(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        inp = root / "scenarios.json"
+        inp.write_text("[]")
+        target = root / "same.db"
+        with self.assertRaises(ValueError):
+            run_scenarios(inp, target, target)
+        self.assertFalse(target.exists())
+        with self.assertRaises(ValueError):
+            run_scenarios(inp, root / "result.json", target, index_path=target)
+        self.assertFalse(target.exists())
+
+    def test_resume_reconciles_turn_committed_before_checkpoint(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        inp = root / "scenarios.json"
+        inp.write_text(json.dumps([{"id": "A", "turns": ["one", "two"],
+                                    "restart_after": None}]))
+        target, db = root / "results.json", root / "sessions.db"
+        def fail(*args, **kwargs):
+            raise RuntimeError("simulated crash")
+        run_scenarios(inp, target, db, runner=fail)
+        partial = target.with_name(target.name + ".partial")
+        checkpoint = json.loads(partial.read_text())
+        checkpoint["status"] = "running"
+        partial.write_text(json.dumps(checkpoint))
+        store = ChatStore(db)
+        state = {"goal": None, "clarifications": [], "constraints": [], "terms": []}
+        result = {"status": "no_evidence", "answer": "Не знаю", "sources": [],
+                  "citations": [], "selected": [], "search_query": "one"}
+        store.commit_turn("A", 0, "one", result, "one", state)
+        def next_turn(store, name, message, **kwargs):
+            self.assertEqual(message, "two")
+            store.commit_turn(name, 1, message, {**result, "search_query": "two"}, "two", state)
+            return {**result, "search_query": "two"}
+        data = run_scenarios(inp, target, db, runner=next_turn)
+        self.assertEqual(data["status"], "complete")
+        self.assertEqual([t["search_query"] for t in data["turns"]], ["one", "two"])
+        self.assertTrue(data["recovery_events"])
 
     def test_error_preserves_partial_and_does_not_claim_complete(self):
         temp = tempfile.TemporaryDirectory()

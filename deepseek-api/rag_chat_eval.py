@@ -23,15 +23,63 @@ def summarize(data):
             "error_count": sum(item.get("status") == "error" for item in turns)}
 
 
+def render_report(data, reviews):
+    """Render machine evidence and separately supplied human grounding judgments."""
+    summary = data.get("summary") or summarize(data)
+    lines = ["# День 25 — сценарная оценка RAG-чата", "",
+             f"Поиск: {summary['retrieval_count']}/{summary['attempted_count']} ходов; "
+             f"ответов: {summary['answered_count']}; отказов: {summary['refusal_count']}; "
+             f"ошибок итоговых ходов: {summary['error_count']}.", "",
+             "Оценка «опора» ниже — ручная сверка значимых утверждений с цитатами "
+             "текущего хода; дословность и принадлежность чанка проверяются кодом.", "",
+             "| Сценарий/ход | Статус | Поиск | Источники | Цитаты | Цель | "
+             "Действующие ограничения | Опора | Комментарий |",
+             "|---|---|---|---|---:|---|---|---|---|"]
+    for entry in data["turns"]:
+        key = (entry["scenario"], entry["turn"])
+        grade, note = reviews.get(key, ("не оценено", ""))
+        state = entry["state"]
+        goal = state["goal"]
+        goal_label = f"{goal['text']} (№{goal['turn']})" if goal else "нет"
+        constraints = "; ".join(f"{item['text']} (№{item['turn']})"
+                                for item in state["constraints"]) or "нет"
+        sources = "; ".join(dict.fromkeys(source["source"] for source in
+                                          entry.get("sources", []))) or "нет"
+        cells = [f"{entry['scenario']}/{entry['turn']}", entry["status"],
+                 "да" if entry.get("search_query") else "нет", sources,
+                 str(len(entry.get("citations", []))), goal_label, constraints,
+                 grade, note]
+        lines.append("| " + " | ".join(str(cell).replace("|", "\\|").replace("\n", " ")
+                                      for cell in cells) + " |")
+    if data.get("failed_attempts"):
+        lines += ["", "## Неудачные попытки, сохранённые при повторе", ""]
+        for entry in data["failed_attempts"]:
+            lines.append(f"- {entry['scenario']}/{entry['turn']}: {entry['error']}")
+    return "\n".join(lines) + "\n"
+
+
+def _turn_entry(name, number, message, result, state, settings, query=None):
+    return {"scenario": name, "turn": number, "user_text": message,
+            "settings": settings, "status": result["status"],
+            "search_query": query if query is not None else result.get("search_query"),
+            "answer": result["answer"], "reason": result.get("reason"),
+            "index_metadata": result.get("index"), "sources": result["sources"],
+            "citations": result["citations"], "selected": result.get("selected", []),
+            "state": state}
+
+
 def run_scenarios(scenarios_path, results_path, db_path, *, model=DEFAULT_CHAT_MODEL,
                   index_path=None, ollama_url="http://localhost:11434",
                   runner=run_turn, progress=None):
     scenarios_path, results_path, db_path = map(Path, (scenarios_path, results_path, db_path))
     partial = results_path.with_name(results_path.name + ".partial")
+    effective_index = Path(index_path) if index_path is not None else DEFAULT_DB
+    paths = (scenarios_path, results_path, db_path, partial, effective_index)
+    if len({path.resolve() for path in paths}) != len(paths):
+        raise ValueError("Пути сценариев, результата, базы, прогресса и индекса должны различаться")
     if results_path.exists() or (partial.exists() != db_path.exists()):
         raise FileExistsError("Результат уже существует или неполная пара прогресса и базы")
     scenarios = json.loads(scenarios_path.read_text(encoding="utf-8"))
-    effective_index = Path(index_path) if index_path is not None else DEFAULT_DB
     settings = {"model": model, "index_path": str(effective_index.resolve()),
                 "index_sha256": (hashlib.sha256(effective_index.read_bytes()).hexdigest()
                                  if effective_index.is_file() else None),
@@ -40,7 +88,7 @@ def run_scenarios(scenarios_path, results_path, db_path, *, model=DEFAULT_CHAT_M
                 "reranker_model": DEFAULT_RERANKER_MODEL}
     if partial.exists():
         data = json.loads(partial.read_text(encoding="utf-8"))
-        if (data.get("status") != "incomplete"
+        if (data.get("status") not in {"incomplete", "running"}
                 or data.get("scenarios_file") != str(scenarios_path)
                 or data.get("settings") != settings):
             raise ValueError("Прогресс не соответствует сценарию")
@@ -62,8 +110,22 @@ def run_scenarios(scenarios_path, results_path, db_path, *, model=DEFAULT_CHAT_M
         if scenarios[[scenario["id"] for scenario in scenarios].index(name)]["turns"][counts[name]] != entry["user_text"]:
             raise ValueError("Реплики сценария изменились")
         counts[name] += 1
-    if any(store.load_session(name)["version"] != count for name, count in counts.items()):
-        raise ValueError("База не соответствует сохранённому прогрессу")
+    scenario_map = {scenario["id"]: scenario for scenario in scenarios}
+    for name, count in counts.items():
+        session = store.load_session(name)
+        if session["version"] == count + 1 and count < len(scenario_map[name]["turns"]):
+            saved = session["turns"][count]
+            if saved["user_text"] != scenario_map[name]["turns"][count]:
+                raise ValueError("Сохранённый ход не соответствует сценарию")
+            data["turns"].append(_turn_entry(name, count + 1, saved["user_text"],
+                                             saved["result"], saved["state"], settings,
+                                             query=saved["search_query"]))
+            data.setdefault("recovery_events", []).append(
+                f"{name}/{count + 1}: ход восстановлен из SQLite после записи без checkpoint")
+            counts[name] += 1
+            _atomic_write(partial, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+        if session["version"] != counts[name]:
+            raise ValueError("База не соответствует сохранённому прогрессу")
     for scenario in scenarios:
         name = scenario["id"]
         for number, message in enumerate(scenario["turns"], 1):
@@ -77,13 +139,8 @@ def run_scenarios(scenarios_path, results_path, db_path, *, model=DEFAULT_CHAT_M
                     kwargs["index_path"] = index_path
                 kwargs["ollama_url"] = ollama_url
                 result = runner(store, name, message, **kwargs)
-                entry = {"scenario": name, "turn": number, "user_text": message,
-                         "settings": settings,
-                         "status": result["status"], "search_query": result.get("search_query"),
-                         "answer": result["answer"], "sources": result["sources"],
-                         "citations": result["citations"],
-                         "selected": result.get("selected", []),
-                         "state": store.load_session(name)["state"]}
+                entry = _turn_entry(name, number, message, result,
+                                    store.load_session(name)["state"], settings)
             except Exception as exc:
                 entry = {"scenario": name, "turn": number, "user_text": message,
                          "settings": settings,
