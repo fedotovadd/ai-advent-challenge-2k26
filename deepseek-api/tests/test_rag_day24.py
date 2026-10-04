@@ -110,8 +110,17 @@ class Day24QuestionTests(unittest.TestCase):
         first, second = [call.args[0] for call in self.ask.call_args_list]
         self.assertEqual(first["messages"][1], second["messages"][1])
         self.assertIn("JSON", second["messages"][-1]["content"])
-        self.assertIn("дословно", second["messages"][-1]["content"])
-        self.assertIn("no_evidence", second["messages"][-1]["content"])
+        self.assertEqual(second["messages"][-1]["content"],
+                         "Исправь формат JSON и цитаты: Expecting value: line 1 column 1 (char 0). "
+                         "Верни один JSON-объект по тем же фрагментам без дополнительного текста.")
+
+    def test_chat_retry_requests_exact_quotes_or_abstention(self):
+        valid = self.ask.return_value
+        self.ask.side_effect = [{"content": "bad json"}, valid]
+        self.run_question(search_query="resolved", conversation_context="past")
+        repair = self.ask.call_args.args[0]["messages"][-1]["content"]
+        self.assertIn("дословно", repair)
+        self.assertIn("no_evidence", repair)
 
     def test_two_invalid_responses_raise(self):
         self.ask.return_value = {"content": "bad json"}

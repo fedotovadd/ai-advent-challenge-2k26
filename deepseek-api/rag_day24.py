@@ -104,14 +104,18 @@ def answer_question_day24(question, *, index_path=DEFAULT_DB,
         except ValueError as exc:
             if attempt:
                 raise RagError(f"Ответ модели не прошёл проверку: {exc}") from exc
-            payload = {**payload, "messages": [*payload["messages"], {
-                "role": "user", "content": (
-                    f"Исправь формат JSON и цитаты: {exc}. "
+            repair = f"Исправь формат JSON и цитаты: {exc}. "
+            if search_query is not None or conversation_context is not None:
+                repair += (
                     "Скопируй каждую quote дословно из текста соответствующего chunk_id "
                     "в переданных фрагментах, включая пробелы и знаки препинания. "
                     "Если не можешь подтвердить ответ дословной цитатой, верни "
                     'status=no_evidence, answer="", citations=[]. '
-                    "Верни один JSON-объект по тем же фрагментам без дополнительного текста."
+                )
+            repair += "Верни один JSON-объект по тем же фрагментам без дополнительного текста."
+            payload = {**payload, "messages": [*payload["messages"], {
+                "role": "user", "content": (
+                    repair
                 )}]}
         else:
             if verified["status"] == "no_evidence":

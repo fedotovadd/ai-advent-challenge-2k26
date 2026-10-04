@@ -89,3 +89,24 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(second["status"], "complete")
         self.assertEqual(second["summary"]["retrieval_count"], 2)
         self.assertEqual(second["failed_attempts"][0]["error"], "RuntimeError: bad quote")
+
+    def test_resume_rejects_changed_provider_index_and_ollama_url(self):
+        for changed in ({"model": "glm-4.7-flash"},
+                        {"index_path": Path("different.db")},
+                        {"ollama_url": "http://other:11434"}):
+            with self.subTest(changed=changed):
+                temp = tempfile.TemporaryDirectory()
+                self.addCleanup(temp.cleanup)
+                root = Path(temp.name)
+                inp = root / "scenarios.json"
+                inp.write_text(json.dumps([{"id": "A", "turns": ["one"],
+                                            "restart_after": None}]))
+                target, db = root / "results.json", root / "sessions.db"
+                def fail(*args, **kwargs):
+                    raise RuntimeError("bad quote")
+                run_scenarios(inp, target, db, runner=fail, model="deepseek-v4-flash",
+                              index_path=Path("index.db"), ollama_url="http://localhost:11434")
+                settings = {"model": "deepseek-v4-flash", "index_path": Path("index.db"),
+                            "ollama_url": "http://localhost:11434", **changed}
+                with self.assertRaises(ValueError):
+                    run_scenarios(inp, target, db, runner=fail, **settings)

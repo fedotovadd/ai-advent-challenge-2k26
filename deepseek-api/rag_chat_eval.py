@@ -2,12 +2,16 @@
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 
+from document_index import DEFAULT_DB
 from rag_chat import DEFAULT_CHAT_MODEL, run_turn
 from rag_chat_store import ChatStore
 from rag_agent import _atomic_write
+from rag_day24 import (MIN_RERANK_SCORE, TOP_K_AFTER, TOP_K_BEFORE,
+                       DEFAULT_RERANKER_MODEL)
 
 
 def summarize(data):
@@ -27,9 +31,18 @@ def run_scenarios(scenarios_path, results_path, db_path, *, model=DEFAULT_CHAT_M
     if results_path.exists() or (partial.exists() != db_path.exists()):
         raise FileExistsError("Результат уже существует или неполная пара прогресса и базы")
     scenarios = json.loads(scenarios_path.read_text(encoding="utf-8"))
+    effective_index = Path(index_path) if index_path is not None else DEFAULT_DB
+    settings = {"model": model, "index_path": str(effective_index.resolve()),
+                "index_sha256": (hashlib.sha256(effective_index.read_bytes()).hexdigest()
+                                 if effective_index.is_file() else None),
+                "ollama_url": ollama_url, "top_k_before": TOP_K_BEFORE,
+                "top_k_after": TOP_K_AFTER, "min_rerank_score": MIN_RERANK_SCORE,
+                "reranker_model": DEFAULT_RERANKER_MODEL}
     if partial.exists():
         data = json.loads(partial.read_text(encoding="utf-8"))
-        if data.get("status") != "incomplete" or data.get("scenarios_file") != str(scenarios_path):
+        if (data.get("status") != "incomplete"
+                or data.get("scenarios_file") != str(scenarios_path)
+                or data.get("settings") != settings):
             raise ValueError("Прогресс не соответствует сценарию")
         if data["turns"] and data["turns"][-1]["status"] == "error":
             data.setdefault("failed_attempts", []).append(data["turns"].pop())
@@ -37,13 +50,15 @@ def run_scenarios(scenarios_path, results_path, db_path, *, model=DEFAULT_CHAT_M
     else:
         data = {"created_at": datetime.now(timezone.utc).isoformat(), "status": "running",
                 "scenarios_file": str(scenarios_path), "turns": [], "final_states": {},
-                "failed_attempts": []}
+                "failed_attempts": [], "settings": settings}
     store = ChatStore(db_path)
     counts = {scenario["id"]: 0 for scenario in scenarios}
     for entry in data["turns"]:
         name = entry["scenario"]
         if name not in counts or entry["turn"] != counts[name] + 1 or entry["status"] == "error":
             raise ValueError("Некорректный прогресс сценария")
+        if entry.get("settings") != settings:
+            raise ValueError("Настройки завершённого хода не совпадают с прогрессом")
         if scenarios[[scenario["id"] for scenario in scenarios].index(name)]["turns"][counts[name]] != entry["user_text"]:
             raise ValueError("Реплики сценария изменились")
         counts[name] += 1
@@ -63,6 +78,7 @@ def run_scenarios(scenarios_path, results_path, db_path, *, model=DEFAULT_CHAT_M
                 kwargs["ollama_url"] = ollama_url
                 result = runner(store, name, message, **kwargs)
                 entry = {"scenario": name, "turn": number, "user_text": message,
+                         "settings": settings,
                          "status": result["status"], "search_query": result.get("search_query"),
                          "answer": result["answer"], "sources": result["sources"],
                          "citations": result["citations"],
@@ -70,6 +86,7 @@ def run_scenarios(scenarios_path, results_path, db_path, *, model=DEFAULT_CHAT_M
                          "state": store.load_session(name)["state"]}
             except Exception as exc:
                 entry = {"scenario": name, "turn": number, "user_text": message,
+                         "settings": settings,
                          "status": "error", "error": f"{type(exc).__name__}: {exc}",
                          "search_query": None,
                          "state": store.load_session(name)["state"]}
