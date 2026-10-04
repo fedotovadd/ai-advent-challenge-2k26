@@ -45,7 +45,7 @@ class MemoryTests(unittest.TestCase):
         turns = [{"user_text": f"user{i}" + "u" * 1000,
                   "result": {"answer": f"answer{i}" + "a" * 1000}} for i in range(8)]
         context = conversation_context(empty_state(), turns)
-        self.assertLessEqual(len(context), 6000)
+        self.assertLessEqual(len(context), 35000)
         self.assertNotIn("user3", context)
         self.assertIn("user4", context)
         self.assertIn("answer7", context)
@@ -56,7 +56,25 @@ class MemoryTests(unittest.TestCase):
         state["constraints"] = [{"text": "x" * 300, "turn": i} for i in range(20)]
         context = conversation_context(state, [{"user_text": "recent user",
                                                 "result": {"answer": "recent answer"}}])
-        self.assertLessEqual(len(context), 6000)
+        self.assertLessEqual(len(context), 35000)
+        self.assertIn("recent user", context)
+        self.assertIn("recent answer", context)
+
+    def test_maximum_valid_state_keeps_last_constraint_and_term(self):
+        state = empty_state()
+        state["clarifications"] = [{"text": f"clarification{i}-" + "c" * 280,
+                                    "turn": i + 1} for i in range(20)]
+        state["constraints"] = [{"text": f"constraint{i}-" + "x" * 280,
+                                 "turn": i + 21} for i in range(20)]
+        state["terms"] = [{"term": f"term{i}-" + "t" * 280,
+                           "text": f"definition{i}-" + "d" * 280,
+                           "turn": i + 41} for i in range(20)]
+        context = conversation_context(state, [{"user_text": "recent user",
+                                                "result": {"answer": "recent answer"}}])
+        self.assertIn("clarification19-", context)
+        self.assertIn("constraint19-", context)
+        self.assertIn("term19-", context)
+        self.assertIn("definition19-", context)
         self.assertIn("recent user", context)
         self.assertIn("recent answer", context)
 

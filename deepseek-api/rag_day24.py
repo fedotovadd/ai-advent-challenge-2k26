@@ -107,6 +107,10 @@ def answer_question_day24(question, *, index_path=DEFAULT_DB,
             payload = {**payload, "messages": [*payload["messages"], {
                 "role": "user", "content": (
                     f"Исправь формат JSON и цитаты: {exc}. "
+                    "Скопируй каждую quote дословно из текста соответствующего chunk_id "
+                    "в переданных фрагментах, включая пробелы и знаки препинания. "
+                    "Если не можешь подтвердить ответ дословной цитатой, верни "
+                    'status=no_evidence, answer="", citations=[]. '
                     "Верни один JSON-объект по тем же фрагментам без дополнительного текста."
                 )}]}
         else:

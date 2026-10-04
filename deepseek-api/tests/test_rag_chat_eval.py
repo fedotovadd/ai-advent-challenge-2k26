@@ -64,3 +64,28 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(data["turns"][0]["error"], "RuntimeError: Ollama down")
         self.assertFalse(target.exists())
         self.assertTrue((root / "results.json.partial").exists())
+
+    def test_resume_retries_failed_turn_and_preserves_attempt(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        inp = root / "scenarios.json"
+        inp.write_text(json.dumps([{"id": "A", "turns": ["one", "two"],
+                                    "restart_after": None}]))
+        target, db = root / "results.json", root / "sessions.db"
+        def runner(store, name, message, **kwargs):
+            if message == "two" and not getattr(runner, "retry", False):
+                raise RuntimeError("bad quote")
+            version = store.load_session(name)["version"]
+            result = {"status": "no_evidence", "answer": "Не знаю", "sources": [],
+                      "citations": [], "selected": [], "search_query": message}
+            store.commit_turn(name, version, message, result, message,
+                              {"goal": None, "clarifications": [], "constraints": [], "terms": []})
+            return result
+        first = run_scenarios(inp, target, db, runner=runner)
+        self.assertEqual(first["status"], "incomplete")
+        runner.retry = True
+        second = run_scenarios(inp, target, db, runner=runner)
+        self.assertEqual(second["status"], "complete")
+        self.assertEqual(second["summary"]["retrieval_count"], 2)
+        self.assertEqual(second["failed_attempts"][0]["error"], "RuntimeError: bad quote")

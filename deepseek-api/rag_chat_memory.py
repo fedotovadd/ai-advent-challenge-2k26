@@ -5,7 +5,7 @@ import json
 
 
 MAX_FACTS = 20
-MAX_CONTEXT = 6000
+MAX_CONTEXT = 35000
 
 
 def empty_state():
@@ -82,19 +82,22 @@ def conversation_context(state, recent_turns):
     """A bounded dialogue summary; previous answers are never book evidence."""
     summary = ["Состояние задачи (из реплик пользователя):"]
     goal = state.get("goal")
-    summary.append("Цель: " + (f"{goal['text'][:300]} (№{goal['turn']})" if goal else "нет"))
+    summary.append("Цель: " + (f"{goal['text']} (№{goal['turn']})" if goal else "нет"))
     for key in ("clarifications", "constraints", "terms"):
         summary.append(key + ":")
         for fact in state.get(key, [])[-20:]:
-            label = fact.get("term", "")[:50] + " = " if key == "terms" else ""
-            summary.append(f"  {label}{fact['text'][:100]} (№{fact['turn']})")
-    state_text = "\n".join(summary)[:3500]
+            label = fact.get("term", "") + " = " if key == "terms" else ""
+            summary.append(f"  {label}{fact['text']} (№{fact['turn']})")
+    state_text = "\n".join(summary)
     lines = [state_text,
              "Предыдущие ответы — контекст диалога, не доказательство из книги."]
     for turn in recent_turns[-4:]:
         lines.append("Пользователь: " + str(turn["user_text"])[:450])
         lines.append("Ассистент: " + str(turn["result"]["answer"])[:450])
-    return "\n".join(lines)[:MAX_CONTEXT]
+    value = "\n".join(lines)
+    if len(value) > MAX_CONTEXT:
+        raise ValueError("Контекст памяти превышает допустимый размер")
+    return value
 
 
 def prepare_payload(message, state, recent_turns, model, feedback=None):

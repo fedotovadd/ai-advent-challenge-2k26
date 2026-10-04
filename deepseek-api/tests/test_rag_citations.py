@@ -88,6 +88,12 @@ class CitationTests(unittest.TestCase):
         self.assertIn("Прошлый ответ: идея", payload["messages"][1]["content"])
         self.assertIn("не доказательство", payload["messages"][0]["content"])
 
+    def test_day24_default_prompt_does_not_mention_dialogue(self):
+        payload = build_answer_payload("Вопрос?", [self.row], "glm-4.7-flash")
+        self.assertNotIn("Диалоговый контекст", payload["messages"][0]["content"])
+        self.assertTrue(payload["messages"][0]["content"].endswith(
+            "Не добавляй факты, которые цитаты не подтверждают."))
+
 
 if __name__ == "__main__":
     unittest.main()

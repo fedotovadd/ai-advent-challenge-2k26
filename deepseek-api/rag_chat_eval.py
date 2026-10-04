@@ -24,15 +24,36 @@ def run_scenarios(scenarios_path, results_path, db_path, *, model=DEFAULT_CHAT_M
                   runner=run_turn, progress=None):
     scenarios_path, results_path, db_path = map(Path, (scenarios_path, results_path, db_path))
     partial = results_path.with_name(results_path.name + ".partial")
-    if results_path.exists() or partial.exists() or db_path.exists():
-        raise FileExistsError("Результаты или база сценариев уже существуют")
+    if results_path.exists() or (partial.exists() != db_path.exists()):
+        raise FileExistsError("Результат уже существует или неполная пара прогресса и базы")
     scenarios = json.loads(scenarios_path.read_text(encoding="utf-8"))
-    data = {"created_at": datetime.now(timezone.utc).isoformat(), "status": "running",
-            "scenarios_file": str(scenarios_path), "turns": [], "final_states": {}}
+    if partial.exists():
+        data = json.loads(partial.read_text(encoding="utf-8"))
+        if data.get("status") != "incomplete" or data.get("scenarios_file") != str(scenarios_path):
+            raise ValueError("Прогресс не соответствует сценарию")
+        if data["turns"] and data["turns"][-1]["status"] == "error":
+            data.setdefault("failed_attempts", []).append(data["turns"].pop())
+        data["status"] = "running"
+    else:
+        data = {"created_at": datetime.now(timezone.utc).isoformat(), "status": "running",
+                "scenarios_file": str(scenarios_path), "turns": [], "final_states": {},
+                "failed_attempts": []}
     store = ChatStore(db_path)
+    counts = {scenario["id"]: 0 for scenario in scenarios}
+    for entry in data["turns"]:
+        name = entry["scenario"]
+        if name not in counts or entry["turn"] != counts[name] + 1 or entry["status"] == "error":
+            raise ValueError("Некорректный прогресс сценария")
+        if scenarios[[scenario["id"] for scenario in scenarios].index(name)]["turns"][counts[name]] != entry["user_text"]:
+            raise ValueError("Реплики сценария изменились")
+        counts[name] += 1
+    if any(store.load_session(name)["version"] != count for name, count in counts.items()):
+        raise ValueError("База не соответствует сохранённому прогрессу")
     for scenario in scenarios:
         name = scenario["id"]
         for number, message in enumerate(scenario["turns"], 1):
+            if number <= counts[name]:
+                continue
             if scenario.get("restart_after") == number - 1:
                 store = ChatStore(db_path)
             try:

@@ -110,6 +110,8 @@ class Day24QuestionTests(unittest.TestCase):
         first, second = [call.args[0] for call in self.ask.call_args_list]
         self.assertEqual(first["messages"][1], second["messages"][1])
         self.assertIn("JSON", second["messages"][-1]["content"])
+        self.assertIn("дословно", second["messages"][-1]["content"])
+        self.assertIn("no_evidence", second["messages"][-1]["content"])
 
     def test_two_invalid_responses_raise(self):
         self.ask.return_value = {"content": "bad json"}
