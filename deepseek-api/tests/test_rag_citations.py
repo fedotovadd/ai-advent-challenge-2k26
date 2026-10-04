@@ -49,6 +49,7 @@ class CitationTests(unittest.TestCase):
     def test_invalid_answers_are_rejected(self):
         cases = [
             "not json", "[]", '{"status":"other"}',
+            '{"status":[],"answer":"","citations":[]}',
             self.answer([{"chunk_id": "c1", "quote": "Тезис"}], "Без маркера"),
             self.answer([{"chunk_id": "c1", "quote": "Тезис"}], "Лишний [1][2]"),
             self.answer([], "Есть [1]"),

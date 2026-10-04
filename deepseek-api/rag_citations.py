@@ -44,7 +44,8 @@ def validate_answer_json(content, selected):
     if not isinstance(content, str):
         raise ValueError("Провайдер вернул не текст")
     raw = json.loads(content)
-    if not isinstance(raw, dict) or raw.get("status") not in {"answered", "no_evidence"}:
+    if (not isinstance(raw, dict) or not isinstance(raw.get("status"), str)
+            or raw["status"] not in {"answered", "no_evidence"}):
         raise ValueError("Некорректный формат ответа модели")
     if raw["status"] == "no_evidence":
         if raw.get("answer") != "" or raw.get("citations") != []:

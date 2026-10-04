@@ -205,10 +205,62 @@ def _same_run(data, controls, fingerprint, settings):
     return (data.get("settings") == settings
             and data.get("input_fingerprint") == fingerprint
             and isinstance(entries, list) and len(entries) <= len(controls)
-            and all(isinstance(item, dict) and item.get("control") == control
-                    and isinstance(item.get("result"), dict)
-                    and isinstance(item.get("checks"), dict)
+            and all(_valid_entry(item, control, settings)
                     for item, control in zip(entries, controls[:len(entries)])))
+
+
+def _valid_entry(item, control, settings):
+    """Reject incomplete or altered checkpoint entries before skipping them."""
+    try:
+        if not isinstance(item, dict) or item["control"] != control:
+            return False
+        result = item["result"]
+        if (not isinstance(result, dict)
+                or result["question"] != control["question"]
+                or result["model"] != settings["model"]
+                or result["index"]["path"] != settings["index_path"]
+                or result["settings"]["min_rerank_score"] != settings["min_rerank_score"]
+                or not isinstance(result["selected"], list)
+                or any(not isinstance(row, dict) or "vector" in row
+                       for row in result["selected"])):
+            return False
+        selected = result["selected"]
+        ids = [row["chunk_id"] for row in selected]
+        if len(ids) != len(set(ids)):
+            return False
+        for row in selected:
+            if (any(not isinstance(row[key], str) or not row[key]
+                    for key in ("chunk_id", "source", "section", "text"))
+                    or any(isinstance(row[key], bool)
+                           or not isinstance(row[key], (int, float))
+                           or not math.isfinite(row[key])
+                           for key in ("rerank_score", "bi_score"))
+                    or not settings["min_rerank_score"] <= row["rerank_score"] <= 1
+                    or not -1 <= row["bi_score"] <= 1):
+                return False
+        if result["status"] == "answered":
+            proposed = [{"chunk_id": citation["chunk_id"], "quote": citation["quote"]}
+                        for citation in result["citations"]]
+            verified = validate_answer_json(json.dumps({
+                "status": "answered", "answer": result["answer"],
+                "citations": proposed}, ensure_ascii=False), selected)
+            if any(result[key] != verified[key] for key in
+                   ("answer", "sources", "citations")):
+                return False
+        elif result["status"] == "no_evidence":
+            if (result["answer"] != NO_EVIDENCE_ANSWER or result["sources"] != []
+                    or result["citations"] != []
+                    or result["reason"] not in ("below_threshold", "model_abstained")
+                    or (result["reason"] == "below_threshold" and selected)
+                    or (result["reason"] == "model_abstained" and not selected)):
+                return False
+        else:
+            return False
+        return (item["checks"] == _machine_checks(result)
+                and item["expected_source_hit"] == _source_hit(
+                    selected, control["expected_source"]))
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return False
 
 
 def evaluate(questions_path=DEFAULT_QUESTIONS, results_path=DEFAULT_RESULTS,
@@ -263,14 +315,17 @@ def evaluate(questions_path=DEFAULT_QUESTIONS, results_path=DEFAULT_RESULTS,
                 "questions": []}
         _atomic_write(partial_path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     entries = data["questions"]
+    same_final_run = False
     if results_path.exists() and len(entries) == 10:
         try:
             final = json.loads(results_path.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             raise RagError(f"Повреждён итоговый JSON: {exc}") from exc
-        if final.get("status") != "complete" or not _same_run(
-                final, controls, fingerprint, settings) or final["questions"] != entries:
+        same_final_run = final.get("created_at") == data["created_at"]
+        if same_final_run and (final.get("status") != "complete" or not _same_run(
+                final, controls, fingerprint, settings) or final["questions"] != entries):
             raise RagError("Итоговый JSON не совпадает с прогрессом")
+    if same_final_run:
         data = final
     else:
         for control in controls[len(entries):]:
@@ -294,9 +349,11 @@ def evaluate(questions_path=DEFAULT_QUESTIONS, results_path=DEFAULT_RESULTS,
                                         for item in entries)
         _atomic_write(results_path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     prior_hash = data.get("prior_report_sha256")
-    if (not report_path.exists() or
-            (prior_hash is not None and _sha256_file(report_path) == prior_hash)):
-        _atomic_write(report_path, _report(data))
+    if report_path.exists() and (prior_hash is None
+                                 or _sha256_file(report_path) != prior_hash):
+        raise RagError(f"Отчёт {report_path} изменён вручную; итоговый JSON сохранён, "
+                       "файл прогресса оставлен. Укажите новый --report для восстановления")
+    _atomic_write(report_path, _report(data))
     partial_path.unlink(missing_ok=True)
     return data
 

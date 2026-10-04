@@ -258,6 +258,44 @@ class Day24EvaluationTests(unittest.TestCase):
                                model="deepseek-v4-flash")
         self.assertEqual(len(self.calls), 1)
 
+    def test_corrupt_completed_entry_cannot_be_skipped(self):
+        original = self.answerer
+        def fail_second(question, **options):
+            if question == "Вопрос 2?":
+                raise rag_day24.RagError("stop")
+            return original(question, **options)
+        self.answerer = fail_second
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval()
+        partial_path = self.root / "results.json.partial"
+        partial = json.loads(partial_path.read_text())
+        partial["questions"][0]["result"]["answer"] = "Изменённый ответ без ссылки"
+        partial_path.write_text(json.dumps(partial, ensure_ascii=False))
+        self.answerer = Mock(side_effect=AssertionError("provider called"))
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval()
+        self.answerer.assert_not_called()
+        self.assertFalse(self.results.exists())
+
+    def test_checkpoint_without_report_score_is_rejected(self):
+        original = self.answerer
+        def fail_second(question, **options):
+            if question == "Вопрос 2?":
+                raise rag_day24.RagError("stop")
+            return original(question, **options)
+        self.answerer = fail_second
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval()
+        partial_path = self.root / "results.json.partial"
+        partial = json.loads(partial_path.read_text())
+        del partial["questions"][0]["result"]["selected"][0]["bi_score"]
+        partial_path.write_text(json.dumps(partial, ensure_ascii=False))
+        self.answerer = Mock(side_effect=AssertionError("provider called"))
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval()
+        self.answerer.assert_not_called()
+        self.assertFalse(self.results.exists())
+
     def test_overwrite_recovery_preserves_report_edited_after_checkpoint(self):
         self.report.write_text("prior report")
         self.answerer = lambda question, **options: (
@@ -271,8 +309,35 @@ class Day24EvaluationTests(unittest.TestCase):
         self.report.write_text("manual edits")
         self.answerer = lambda question, **options: Day24EvaluationTests.answerer(
             self, question, **options)
-        self.run_eval()
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval()
         self.assertEqual(self.report.read_text(), "manual edits")
+        self.assertTrue((self.root / "results.json.partial").exists())
+        self.answerer = Mock(side_effect=AssertionError("provider called"))
+        recovered_report = self.root / "recovered.md"
+        rag_day24.evaluate(self.questions, self.results, recovered_report,
+                           index_path=self.index, answerer=self.answerer,
+                           model="glm-4.7-flash")
+        self.answerer.assert_not_called()
+        self.assertTrue(recovered_report.exists())
+        self.assertEqual(self.report.read_text(), "manual edits")
+        self.assertFalse((self.root / "results.json.partial").exists())
+
+    def test_completed_overwrite_checkpoint_replaces_old_json_without_provider(self):
+        old = self.run_eval()
+        def crash_after_tenth(done, total):
+            if done == total:
+                raise rag_day24.RagError("crash before final JSON")
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval(overwrite=True, progress=crash_after_tenth)
+        partial = json.loads((self.root / "results.json.partial").read_text())
+        self.assertEqual(len(partial["questions"]), 10)
+        self.assertEqual(json.loads(self.results.read_text())["created_at"], old["created_at"])
+        self.answerer = Mock(side_effect=AssertionError("provider called"))
+        new = self.run_eval()
+        self.answerer.assert_not_called()
+        self.assertEqual(new["created_at"], partial["created_at"])
+        self.assertFalse((self.root / "results.json.partial").exists())
 
     def test_final_json_recovers_missing_report_without_provider(self):
         self.run_eval()
@@ -289,8 +354,10 @@ class Day24EvaluationTests(unittest.TestCase):
         (self.root / "results.json.partial").write_text(json.dumps(data, ensure_ascii=False))
         self.report.write_text("manual edits")
         self.answerer = Mock(side_effect=AssertionError("provider called"))
-        self.run_eval()
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval()
         self.assertEqual(self.report.read_text(), "manual edits")
+        self.assertTrue((self.root / "results.json.partial").exists())
 
 
 if __name__ == "__main__":
