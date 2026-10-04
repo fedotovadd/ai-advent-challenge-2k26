@@ -1,9 +1,12 @@
 import json
 import math
+import contextlib
+import io
 from pathlib import Path
 import sys
+import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -122,6 +125,172 @@ class Day24QuestionTests(unittest.TestCase):
             with self.subTest(options=options), self.assertRaises(rag_day24.RagError):
                 self.run_question(**options)
         self.loader.assert_not_called()
+
+
+class Day24CliTests(unittest.TestCase):
+    def test_ask_prints_answer_sources_and_quotes(self):
+        result = {"answer": "Ответ [1].", "sources": [{"source": "book:one",
+            "section": "Глава", "chunk_id": "c1"}], "citations": [{"ref": 1,
+            "source": "book:one", "section": "Глава", "chunk_id": "c1", "quote": "Точно."}]}
+        out = io.StringIO()
+        with patch.object(rag_day24, "answer_question_day24", return_value=result), contextlib.redirect_stdout(out):
+            code = rag_day24.main(["ask", "Вопрос?"])
+        self.assertEqual(code, 0)
+        self.assertIn("Ответ: Ответ [1].", out.getvalue())
+        self.assertIn("book:one / Глава (c1)", out.getvalue())
+        self.assertIn("[1] Точно.", out.getvalue())
+
+    def test_refusal_and_error_output(self):
+        out, err = io.StringIO(), io.StringIO()
+        result = {"answer": NO_EVIDENCE_ANSWER, "sources": [], "citations": []}
+        with patch.object(rag_day24, "answer_question_day24", return_value=result), contextlib.redirect_stdout(out):
+            self.assertEqual(rag_day24.main(["ask", "Вопрос?"]), 0)
+        self.assertIn("Источники: нет", out.getvalue())
+        self.assertIn("Цитаты: нет", out.getvalue())
+        with patch.object(rag_day24, "answer_question_day24", side_effect=rag_day24.RagError("ошибка")), contextlib.redirect_stderr(err):
+            self.assertEqual(rag_day24.main(["ask", "Вопрос?"]), 1)
+        self.assertIn("ошибка", err.getvalue())
+
+
+class Day24EvaluationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.questions = self.root / "questions.json"
+        self.index = self.root / "index.db"
+        self.index.write_bytes(b"index")
+        self.results = self.root / "results.json"
+        self.report = self.root / "report.md"
+        self.controls = [{"id": i, "question": f"Вопрос {i}?",
+                          "expected_source": f"{i}.xhtml",
+                          "expected_theses": [f"Тезис {i}"]} for i in range(1, 11)]
+        self.questions.write_text(json.dumps(self.controls, ensure_ascii=False))
+        self.calls = []
+
+    def answerer(self, question, **options):
+        self.calls.append((question, options))
+        n = int(question.split()[1].rstrip("?"))
+        selected = [{"chunk_id": f"c{n}", "source": f"book:{n}.xhtml",
+                     "section": "Глава", "text": f"Тезис {n}",
+                     "rerank_score": 0.6, "bi_score": 0.8}]
+        if n == 3:
+            return {"question": question, "status": "no_evidence",
+                    "reason": "model_abstained", "answer": NO_EVIDENCE_ANSWER,
+                    "sources": [], "citations": [], "selected": selected,
+                    "model": options["model"], "settings": {"min_rerank_score": 0.5},
+                    "index": {"path": str(self.index)}}
+        return {"question": question, "status": "answered", "answer": "Да [1].",
+                "sources": [{"source": selected[0]["source"], "section": "Глава", "chunk_id": f"c{n}"}],
+                "citations": [{"ref": 1, "source": selected[0]["source"],
+                               "section": "Глава", "chunk_id": f"c{n}", "quote": f"Тезис {n}"}],
+                "selected": selected, "model": options["model"],
+                "settings": {"min_rerank_score": 0.5},
+                "index": {"path": str(self.index)}}
+
+    def run_eval(self, **options):
+        return rag_day24.evaluate(self.questions, self.results, self.report,
+                                  index_path=self.index, answerer=self.answerer,
+                                  model="glm-4.7-flash", **options)
+
+    def test_ten_questions_checks_and_semantic_review_placeholder(self):
+        data = self.run_eval()
+        self.assertEqual(len(self.calls), 10)
+        self.assertEqual(len(data["questions"]), 10)
+        self.assertEqual(data["answered_count"], 9)
+        self.assertEqual(data["no_evidence_count"], 1)
+        self.assertEqual({call[1]["model"] for call in self.calls}, {"glm-4.7-flash"})
+        self.assertTrue(data["questions"][0]["checks"]["quotes_verbatim"])
+        self.assertTrue(data["questions"][0]["checks"]["selected_chunk_membership"])
+        self.assertEqual(data["questions"][2]["result"]["status"], "no_evidence")
+        self.assertIn("требует ручной сверки", self.report.read_text())
+        self.assertEqual(self.report.read_text().count("| требует ручной сверки |"), 10)
+        self.assertFalse((self.root / "results.json.partial").exists())
+
+    def test_existing_outputs_and_colliding_paths_rejected(self):
+        self.results.write_text("old")
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval()
+        self.assertEqual(self.results.read_text(), "old")
+        with self.assertRaises(rag_day24.RagError):
+            rag_day24.evaluate(self.questions, self.questions, self.report,
+                               index_path=self.index, answerer=self.answerer)
+
+    def test_resume_after_failure_and_reject_changed_inputs(self):
+        real_answerer = self.answerer
+        def fail_second(question, **options):
+            if question == "Вопрос 2?":
+                raise rag_day24.RagError("provider down")
+            return real_answerer(question, **options)
+        self.answerer = fail_second
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval()
+        partial = self.root / "results.json.partial"
+        self.assertEqual(len(json.loads(partial.read_text())["questions"]), 1)
+        self.answerer = real_answerer
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval(top_k_after=4)
+        self.assertEqual(len(self.calls), 1)
+        self.run_eval()
+        self.assertEqual(len(self.calls), 10)
+        self.assertFalse(partial.exists())
+
+    def test_changed_questions_index_and_model_reject_checkpoint(self):
+        original = self.answerer
+        self.answerer = lambda question, **options: (
+            original(question, **options) if question == "Вопрос 1?"
+            else (_ for _ in ()).throw(rag_day24.RagError("stop")))
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval()
+        self.answerer = original
+        self.questions.write_text(json.dumps([{**self.controls[0], "question": "Другой?"},
+                                              *self.controls[1:]], ensure_ascii=False))
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval()
+        self.questions.write_text(json.dumps(self.controls, ensure_ascii=False))
+        self.index.write_bytes(b"different index")
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval()
+        self.index.write_bytes(b"index")
+        with self.assertRaises(rag_day24.RagError):
+            rag_day24.evaluate(self.questions, self.results, self.report,
+                               index_path=self.index, answerer=self.answerer,
+                               model="deepseek-v4-flash")
+        self.assertEqual(len(self.calls), 1)
+
+    def test_overwrite_recovery_preserves_report_edited_after_checkpoint(self):
+        self.report.write_text("prior report")
+        self.answerer = lambda question, **options: (
+            Day24EvaluationTests.answerer(self, question, **options)
+            if question == "Вопрос 1?"
+            else (_ for _ in ()).throw(rag_day24.RagError("stop")))
+        with self.assertRaises(rag_day24.RagError):
+            self.run_eval(overwrite=True)
+        partial = json.loads((self.root / "results.json.partial").read_text())
+        self.assertIsNotNone(partial["prior_report_sha256"])
+        self.report.write_text("manual edits")
+        self.answerer = lambda question, **options: Day24EvaluationTests.answerer(
+            self, question, **options)
+        self.run_eval()
+        self.assertEqual(self.report.read_text(), "manual edits")
+
+    def test_final_json_recovers_missing_report_without_provider(self):
+        self.run_eval()
+        self.report.unlink()
+        self.answerer = Mock(side_effect=AssertionError("provider called"))
+        data = self.run_eval()
+        self.assertEqual(data["status"], "complete")
+        self.answerer.assert_not_called()
+        self.assertTrue(self.report.exists())
+
+    def test_manual_report_is_preserved_during_recovery(self):
+        data = self.run_eval()
+        data["status"] = "incomplete"
+        (self.root / "results.json.partial").write_text(json.dumps(data, ensure_ascii=False))
+        self.report.write_text("manual edits")
+        self.answerer = Mock(side_effect=AssertionError("provider called"))
+        self.run_eval()
+        self.assertEqual(self.report.read_text(), "manual edits")
 
 
 if __name__ == "__main__":
