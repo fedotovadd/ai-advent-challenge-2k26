@@ -17,6 +17,20 @@ class RagAgentTests(unittest.TestCase):
         self.row = {"source": "book.epub:OEBPS/handoff.xhtml", "section": "Передача",
                     "chunk_id": "chunk-1", "text": "Цель, состояние и следующий шаг.", "score": 0.8}
 
+    def test_generate_answer_preserves_day22_payload_and_excerpt_limit(self):
+        chunk = {**self.row, "text": "А" * 1801}
+        answer = rag_agent.generate_answer("Вопрос?", [chunk], model="glm-4.7-flash", ask=self.ask)
+        self.assertEqual(answer, "Ответ")
+        self.ask.assert_called_once_with({
+            "model": "glm-4.7-flash", "temperature": 0,
+            "messages": [
+                {"role": "system", "content": rag_agent.SYSTEM_INSTRUCTION},
+                {"role": "user", "content": "Вопрос?\n\nФрагменты книги:\n\n"
+                 "[1] Источник: book.epub:OEBPS/handoff.xhtml\n"
+                 "Раздел: Передача\nchunk_id: chunk-1\nТекст: " + "А" * 1800},
+            ],
+        })
+
     def test_plain_calls_only_provider_with_shared_settings(self):
         with patch.object(rag_agent, "load_index", side_effect=AssertionError("index accessed")):
             result = rag_agent.answer_question(" Вопрос? ", "plain", ask=self.ask)

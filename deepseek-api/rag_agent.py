@@ -32,29 +32,10 @@ class RagError(Exception):
     """Expected error suitable for display in the CLI."""
 
 
-def answer_question(question, mode, *, index_path=DEFAULT_DB,
-                    ollama_url="http://localhost:11434", model=MODEL, ask=ask_model):
-    if not isinstance(question, str) or not question.strip():
-        raise RagError("Укажите непустой вопрос")
-    if mode not in {"plain", "rag"}:
-        raise RagError("Неизвестный режим; выберите plain или rag")
-    if model not in {"glm-4.7-flash", "deepseek-v4-flash", "deepseek-v4-pro"}:
-        raise RagError("Неизвестная модель")
-    question = question.strip()
-    chunks = []
-    index_meta = None
+def generate_answer(question, chunks, *, model, ask):
+    """Use the day-22 answer prompt for an original question and selected chunks."""
     user_content = question
-    if mode == "rag":
-        try:
-            index_meta, _ = load_index(index_path)
-            embedder = OllamaEmbedder(index_meta["model"], ollama_url)
-            chunks = search_index(index_path, question, "structural", embedder, top_k=TOP_K)
-        except IndexErrorMessage as exc:
-            raise RagError(str(exc)) from exc
-        except ValueError as exc:
-            raise RagError(f"Некорректный индекс: {exc}") from exc
-        if not chunks:
-            raise RagError("Поиск не нашёл фрагментов книги")
+    if chunks:
         excerpts = []
         for number, chunk in enumerate(chunks, 1):
             excerpts.append(
@@ -64,7 +45,6 @@ def answer_question(question, mode, *, index_path=DEFAULT_DB,
                 f"Текст: {chunk['text'][:1800]}"
             )
         user_content = question + "\n\nФрагменты книги:\n\n" + "\n\n".join(excerpts)
-
     payload = {"model": model, "temperature": TEMPERATURE,
                "messages": [{"role": "system", "content": SYSTEM_INSTRUCTION},
                             {"role": "user", "content": user_content}]}
@@ -76,7 +56,33 @@ def answer_question(question, mode, *, index_path=DEFAULT_DB,
     answer = response.get("content") if isinstance(response, dict) else None
     if not isinstance(answer, str) or not answer.strip():
         raise RagError("Провайдер вернул пустой ответ")
-    result = {"question": question, "mode": mode, "answer": answer.strip(),
+    return answer.strip()
+
+
+def answer_question(question, mode, *, index_path=DEFAULT_DB,
+                    ollama_url="http://localhost:11434", model=MODEL, ask=ask_model):
+    if not isinstance(question, str) or not question.strip():
+        raise RagError("Укажите непустой вопрос")
+    if mode not in {"plain", "rag"}:
+        raise RagError("Неизвестный режим; выберите plain или rag")
+    if model not in {"glm-4.7-flash", "deepseek-v4-flash", "deepseek-v4-pro"}:
+        raise RagError("Неизвестная модель")
+    question = question.strip()
+    chunks = []
+    index_meta = None
+    if mode == "rag":
+        try:
+            index_meta, _ = load_index(index_path)
+            embedder = OllamaEmbedder(index_meta["model"], ollama_url)
+            chunks = search_index(index_path, question, "structural", embedder, top_k=TOP_K)
+        except IndexErrorMessage as exc:
+            raise RagError(str(exc)) from exc
+        except ValueError as exc:
+            raise RagError(f"Некорректный индекс: {exc}") from exc
+        if not chunks:
+            raise RagError("Поиск не нашёл фрагментов книги")
+    answer = generate_answer(question, chunks, model=model, ask=ask)
+    result = {"question": question, "mode": mode, "answer": answer,
               "model": model, "temperature": TEMPERATURE, "chunks": chunks}
     if index_meta is not None:
         result["index"] = {"path": str(index_path), "embedding_model": index_meta["model"],
