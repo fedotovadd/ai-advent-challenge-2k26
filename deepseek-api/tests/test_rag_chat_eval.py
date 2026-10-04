@@ -1,0 +1,66 @@
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from rag_chat_eval import run_scenarios, summarize
+
+
+class EvaluationTests(unittest.TestCase):
+    def test_counts_and_restart(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        scenarios = [{"id": "A", "turns": ["one", "two"], "restart_after": 1,
+                      "expected_final_state": {"goal": "goal"}},
+                     {"id": "B", "turns": ["three"], "restart_after": None,
+                      "expected_final_state": {"goal": "goal"}}]
+        inp = root / "scenarios.json"
+        inp.write_text(json.dumps(scenarios))
+        seen = []
+        def runner(store, name, message, **kwargs):
+            seen.append((name, message, id(store), kwargs["model"]))
+            store.load_session(name)
+            result = {"status": "no_evidence", "answer": "Не знаю", "sources": [],
+                      "citations": [], "selected": [], "search_query": message}
+            store.commit_turn(name, 0 if message in ("one", "three") else 1,
+                              message, result, message, {"goal": None,
+                              "clarifications": [], "constraints": [], "terms": []})
+            return result
+        data = run_scenarios(inp, root / "result.json", root / "sessions.db", runner=runner)
+        self.assertEqual(len(data["turns"]), 3)
+        self.assertEqual(summarize(data)["retrieval_count"], 3)
+        self.assertNotEqual(seen[0][2], seen[1][2])
+        self.assertEqual(seen[0][3], "deepseek-v4-flash")
+        self.assertTrue((root / "result.json").exists())
+
+    def test_existing_result_is_not_overwritten(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        target = root / "result.json"
+        target.write_text("old")
+        inp = root / "scenarios.json"
+        inp.write_text("[]")
+        with self.assertRaises(FileExistsError):
+            run_scenarios(inp, target, root / "sessions.db")
+        self.assertEqual(target.read_text(), "old")
+
+    def test_error_preserves_partial_and_does_not_claim_complete(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        inp = root / "scenarios.json"
+        inp.write_text(json.dumps([{"id": "A", "turns": ["one", "two"],
+                                    "restart_after": None}]))
+        target = root / "results.json"
+        def fail(*args, **kwargs):
+            raise RuntimeError("Ollama down")
+        data = run_scenarios(inp, target, root / "sessions.db", runner=fail)
+        self.assertEqual(data["status"], "incomplete")
+        self.assertEqual(len(data["turns"]), 1)
+        self.assertEqual(data["turns"][0]["error"], "RuntimeError: Ollama down")
+        self.assertFalse(target.exists())
+        self.assertTrue((root / "results.json.partial").exists())

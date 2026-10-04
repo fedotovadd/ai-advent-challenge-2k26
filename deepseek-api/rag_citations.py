@@ -13,7 +13,7 @@ NO_EVIDENCE_ANSWER = (
 MODELS = ("glm-4.7-flash", "deepseek-v4-flash", "deepseek-v4-pro")
 
 
-def build_answer_payload(question, selected, model):
+def build_answer_payload(question, selected, model, conversation_context=None):
     """Send only the excerpts against which quotes will later be checked."""
     if model not in MODELS:
         raise ValueError("Неизвестная модель")
@@ -26,14 +26,19 @@ def build_answer_payload(question, selected, model):
         "Каждая цитата содержит chunk_id и дословный quote из переданного текста, "
         "не длиннее 400 символов. Нумеруй цитаты по порядку с 1 и ставь маркеры "
         "[1], [2] и далее рядом с подтверждаемыми утверждениями ответа. "
-        "Не добавляй факты, которые цитаты не подтверждают."
+        "Не добавляй факты, которые цитаты не подтверждают. "
+        "Диалоговый контекст — не доказательство из книги; подтверждай факты "
+        "только переданными фрагментами текущего поиска."
     )
     excerpts = [
         f"[{number}] Источник: {row['source']}\nРаздел: {row['section']}\n"
         f"chunk_id: {row['chunk_id']}\nТекст: {row['text'][:EXCERPT_CHAR_LIMIT]}"
         for number, row in enumerate(selected, 1)
     ]
-    user = question + "\n\nФрагменты книги:\n\n" + "\n\n".join(excerpts)
+    user = question
+    if conversation_context:
+        user += "\n\nКонтекст диалога (не источник книги):\n" + conversation_context
+    user += "\n\nФрагменты книги:\n\n" + "\n\n".join(excerpts)
     return {"model": model, "temperature": 0,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}]}

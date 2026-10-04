@@ -48,14 +48,18 @@ def answer_question_day24(question, *, index_path=DEFAULT_DB,
                           min_rerank_score=MIN_RERANK_SCORE,
                           reranker_model=DEFAULT_RERANKER_MODEL,
                           index_loader=load_index, embedder_factory=OllamaEmbedder,
-                          search=search_index, scorer=None, ask=ask_model):
+                          search=search_index, scorer=None, ask=ask_model,
+                          search_query=None, conversation_context=None):
     """Search once, rerank, and release an answer only after quote validation."""
     _validate(question, model, top_k_before, top_k_after, min_rerank_score)
     question = question.strip()
+    effective_query = question if search_query is None else search_query.strip()
+    if not effective_query:
+        raise RagError("Укажите непустой поисковый запрос")
     try:
         metadata, _ = index_loader(index_path)
         embedder = embedder_factory(metadata["model"], ollama_url)
-        found = search(index_path, question, "structural", embedder,
+        found = search(index_path, effective_query, "structural", embedder,
                        top_k=top_k_before)
     except Exception as exc:
         raise RagError(f"Поиск: {exc}") from exc
@@ -69,13 +73,14 @@ def answer_question_day24(question, *, index_path=DEFAULT_DB,
     if candidates:
         try:
             selected = rerank_candidates(
-                question, candidates,
+                effective_query, candidates,
                 scorer if scorer is not None else CrossEncoderReranker(reranker_model),
                 top_k_after=top_k_after, min_rerank_score=min_rerank_score)
         except Exception as exc:
             raise RagError(f"Reranker: {exc}") from exc
     result = {
-        "question": question, "model": model, "temperature": 0,
+        "question": question, "search_query": effective_query,
+        "model": model, "temperature": 0,
         "index": {"path": str(index_path), "embedding_model": metadata["model"],
                   "epub_sha256": metadata["epub_sha256"], "strategy": "structural"},
         "settings": {"top_k_before": top_k_before, "top_k_after": top_k_after,
@@ -86,7 +91,8 @@ def answer_question_day24(question, *, index_path=DEFAULT_DB,
     if not selected:
         return {**result, "status": "no_evidence", "reason": "below_threshold",
                 "answer": NO_EVIDENCE_ANSWER, "sources": [], "citations": []}
-    payload = build_answer_payload(question, selected, model)
+    payload = build_answer_payload(question, selected, model,
+                                   conversation_context=conversation_context)
     for attempt in range(2):
         try:
             response = ask(payload)

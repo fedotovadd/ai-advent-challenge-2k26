@@ -52,6 +52,23 @@ class Day24QuestionTests(unittest.TestCase):
         self.assertNotIn("vector", json.dumps(result))
         self.assertEqual(result["settings"]["min_rerank_score"], 0.5)
 
+    def test_resolved_query_and_dialogue_context(self):
+        result = self.run_question(search_query="полный вопрос об агенте",
+                                   conversation_context="Ранее пользователь спросил об агенте")
+        self.assertEqual(self.search.call_args.args[1], "полный вопрос об агенте")
+        self.assertTrue(all(pair[0] == "полный вопрос об агенте" for pair in
+                            self.scorer.call_args.args[0]))
+        prompt = self.ask.call_args.args[0]["messages"][1]["content"]
+        self.assertIn("Исходный вопрос?", prompt)
+        self.assertIn("Ранее пользователь", prompt)
+        self.assertEqual(result["search_query"], "полный вопрос об агенте")
+
+    def test_prior_citation_cannot_satisfy_current_search(self):
+        self.ask.return_value = {"content": json.dumps({"status": "answered",
+            "answer": "Ранее [1]", "citations": [{"chunk_id": "old", "quote": "old"}]})}
+        with self.assertRaises(rag_day24.RagError):
+            self.run_question(conversation_context="old: earlier citation")
+
     def test_equal_threshold_is_included(self):
         self.scorer.side_effect = None
         self.scorer.return_value = [0.5] + [0.1] * 19

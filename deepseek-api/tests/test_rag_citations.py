@@ -82,6 +82,12 @@ class CitationTests(unittest.TestCase):
         self.assertIn(row["text"], payload["messages"][1]["content"])
         self.assertNotIn(row["text"], payload["messages"][0]["content"])
 
+    def test_dialogue_context_is_labeled_non_evidence(self):
+        payload = build_answer_payload("Вопрос?", [self.row], "glm-4.7-flash",
+                                       conversation_context="Прошлый ответ: идея")
+        self.assertIn("Прошлый ответ: идея", payload["messages"][1]["content"])
+        self.assertIn("не доказательство", payload["messages"][0]["content"])
+
 
 if __name__ == "__main__":
     unittest.main()
