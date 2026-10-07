@@ -16,6 +16,7 @@ from day_three import (
     stream_day_three_experiment,
 )
 from errors import MissingApiKeyError
+from providers import LocalModelError
 from context_memory import FactsUpdateError, validate_context_settings
 from memory_layers import MemoryCommandError, parse_memory_command
 from invariants import InvariantCommandError, parse_invariant_command
@@ -25,6 +26,22 @@ from task_state import TaskStateError, parse_task_command
 
 
 STATIC_PAGE = Path(__file__).with_name("static") / "index.html"
+LOCAL_ERROR_RESPONSES = {
+    "unavailable": (503, "Локальный сервис Ollama недоступен. Запустите Ollama и повторите запрос."),
+    "missing_model": (404, "В Ollama нет модели qwen2.5:1.5b. Проверьте ollama list."),
+    "timeout": (504, "Превышено время ожидания ответа Ollama. Повторите запрос."),
+    "empty": (502, "Ollama вернула пустой ответ. Повторите запрос."),
+}
+
+
+def local_error_response(error):
+    while error is not None:
+        if isinstance(error, LocalModelError):
+            return LOCAL_ERROR_RESPONSES.get(error.kind, (502, "Не удалось получить ответ от Ollama."))
+        error = error.__cause__
+    return None
+
+
 STATIC_AGENT_STATE = Path(__file__).with_name("static") / "agent-state.js"
 STATIC_MEMORY_CONTROLS = Path(__file__).with_name("static") / "memory-controls.js"
 STATIC_MCP_CONTROLS = Path(__file__).with_name("static") / "mcp-controls.js"
@@ -513,16 +530,26 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             return
         except FactsUpdateError as error:
             snapshot = agent.snapshot()
-            self._send_json(502, {"agent": snapshot, "error": str(error), "metadata": snapshot["metadata"], "accepted": False})
+            local_response = local_error_response(error)
+            self._send_json(local_response[0] if local_response else 502, {
+                "agent": snapshot, "error": local_response[1] if local_response else str(error),
+                "metadata": snapshot["metadata"], "accepted": False,
+            })
             return
-        except ContextSummaryError:
+        except ContextSummaryError as error:
             snapshot = agent.snapshot()
-            self._send_json(502, {
+            local_response = local_error_response(error)
+            self._send_json(local_response[0] if local_response else 502, {
                 "agent": snapshot,
-                "error": "Не удалось обновить сводку истории.",
+                "error": local_response[1] if local_response else "Не удалось обновить сводку истории.",
                 "accepted": False,
                 "metadata": snapshot["metadata"],
             })
+            return
+        except LocalModelError as error:
+            snapshot = agent.snapshot()
+            status, message = local_error_response(error)
+            self._send_json(status, {"agent": snapshot, "error": message, "metadata": snapshot["metadata"]})
             return
         except ValueError as error:
             if str(error) in {"Пустое сообщение.", "Поле temperature должно быть числом от 0 до 2."}:
@@ -531,7 +558,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             snapshot = agent.snapshot()
             self._send_json(502, {
                 "agent": snapshot,
-                "error": "Не удалось получить ответ DeepSeek.",
+                "error": ("Ollama вернула пустой ответ. Повторите запрос."
+                          if snapshot["settings"]["model"] == "qwen2.5:1.5b" and str(error) == "empty API response"
+                          else "Не удалось получить ответ DeepSeek."),
                 "metadata": snapshot["metadata"],
             })
             return
@@ -539,7 +568,9 @@ class ChatRequestHandler(BaseHTTPRequestHandler):
             snapshot = agent.snapshot()
             self._send_json(502, {
                 "agent": snapshot,
-                "error": "Не удалось получить ответ DeepSeek.",
+                "error": ("Не удалось получить ответ от локального сервиса Ollama."
+                          if snapshot["settings"]["model"] == "qwen2.5:1.5b"
+                          else "Не удалось получить ответ DeepSeek."),
                 "metadata": snapshot["metadata"],
             })
             return

@@ -13,9 +13,70 @@ import errors
 import mcp_client
 import user_profiles
 import web
+from providers import LocalModelError
 
 
 class DeepSeekWebTests(unittest.TestCase):
+    def test_local_model_chat_persists_selection_and_reply(self):
+        settings = {**agent.default_settings(), "model": "qwen2.5:1.5b"}
+        status, body, _ = self.json_request("PUT", "/api/agents/agent-1/settings", settings)
+        self.assertEqual(status, 200)
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Привет"})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["messages"][-1]["content"], "Тестовый ответ")
+        self.assertEqual(body["metadata"]["payload"]["max_tokens"], 512)
+        self.assertEqual(body["metadata"]["cost"]["usd"], 0)
+        self.assertEqual(self.calls[-1]["kwargs"]["max_tokens"], 512)
+        self.assertEqual(body["agent"]["settings"]["model"], "qwen2.5:1.5b")
+        _, agents, _ = self.json_request("GET", "/api/agents")
+        self.assertEqual(agents["agents"][0]["settings"]["model"], "qwen2.5:1.5b")
+
+    def test_local_model_errors_keep_user_message_and_allow_next_send(self):
+        self.json_request("PUT", "/api/agents/agent-1/settings", {**agent.default_settings(), "model": "qwen2.5:1.5b"})
+        cases = [
+            (LocalModelError("unavailable"), 503, "Ollama"),
+            (LocalModelError("missing_model"), 404, "qwen2.5:1.5b"),
+            (LocalModelError("timeout"), 504, "Ollama"),
+            (LocalModelError("empty"), 502, "Ollama"),
+        ]
+        for failure, expected_status, expected_text in cases:
+            with self.subTest(failure=failure.kind):
+                self.model_error = failure
+                before_calls = len(self.calls)
+                status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": failure.kind})
+                self.assertEqual(status, expected_status)
+                self.assertIn(expected_text, body["error"])
+                self.assertEqual(len(self.calls), before_calls + 1)
+                self.assertEqual(body["agent"]["messages"][-1], {"role": "user", "content": failure.kind})
+                self.assertEqual(body["metadata"]["status"]["kind"], "error")
+        self.model_error = None
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Снова"})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["agent"]["messages"][-1]["role"], "assistant")
+
+    def test_local_empty_string_gets_local_error_message(self):
+        self.json_request("PUT", "/api/agents/agent-1/settings", {**agent.default_settings(), "model": "qwen2.5:1.5b"})
+        self.answer = ""
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Вопрос"})
+        self.assertEqual(status, 502)
+        self.assertIn("Ollama", body["error"])
+        self.assertEqual(body["agent"]["messages"], [{"role": "user", "content": "Вопрос"}])
+
+    def test_local_facts_update_failure_identifies_ollama(self):
+        self.json_request("PUT", "/api/agents/agent-1/settings", {
+            **agent.default_settings(), "model": "qwen2.5:1.5b", "contextStrategy": "facts",
+        })
+        self.model_error = LocalModelError("unavailable")
+        status, body, _ = self.json_request("POST", "/api/agents/agent-1/messages", {"text": "Вопрос"})
+        self.assertIn("Ollama", body["error"])
+        self.assertEqual(body["agent"]["messages"], [])
+
+    def test_page_offers_local_model_and_explains_its_cost(self):
+        status, page, _ = self.request("GET", "/")
+        self.assertEqual(status, 200)
+        self.assertIn("Локально · qwen2.5:1.5b", page)
+        self.assertIn("затраты компьютера не учитываются", page)
+
     def setUp(self):
         self.calls = []
         self.answers = []

@@ -33,16 +33,18 @@ from user_profiles import (
 
 
 MODEL = "deepseek-v4-flash"
-MODELS = ("deepseek-v4-flash", "glm-4.7-flash", "deepseek-v4-pro")
+MODELS = ("deepseek-v4-flash", "glm-4.7-flash", "deepseek-v4-pro", "qwen2.5:1.5b")
 MODEL_PRICING = {
     "deepseek-v4-flash": {"input": 0.22, "output": 0.66},
     "glm-4.7-flash": None,
     "deepseek-v4-pro": {"input": 0.66, "output": 1.98},
+    "qwen2.5:1.5b": None,
 }
 MODEL_CAPABILITIES = {
     "deepseek-v4-flash": {"contextLimit": 1_000_000, "maxOutputTokens": 384_000, "safeOutputTokens": 4_096},
     "deepseek-v4-pro": {"contextLimit": 1_000_000, "maxOutputTokens": 384_000, "safeOutputTokens": 4_096},
     "glm-4.7-flash": {"contextLimit": 200_000, "maxOutputTokens": 131_072, "safeOutputTokens": 4_096},
+    "qwen2.5:1.5b": {"contextLimit": 4_096, "maxOutputTokens": 1_024, "safeOutputTokens": 512},
 }
 SYSTEM_PROMPT = (
     "Ты AI-помощник. Отвечай ясно, кратко, по-русски. "
@@ -645,6 +647,8 @@ class Agent:
                 options["response_format"] = {"type": "json_object"}
             if self._settings["maxTokens"] is not None:
                 options["max_tokens"] = self._settings["maxTokens"]
+            elif self._settings["model"] == "qwen2.5:1.5b":
+                options["max_tokens"] = 512
             if self._settings["stop"]:
                 options["stop"] = self._settings["stop"]
             strategy = self._settings["contextStrategy"]
