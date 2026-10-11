@@ -24,6 +24,17 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(result["content"], "Локальный ответ")
 
     @patch("deepseek_app.providers.providers.OpenAI")
+    def test_completion_metadata_is_returned_for_truncation_diagnostics(self, openai):
+        usage = SimpleNamespace(prompt_tokens=500, completion_tokens=512)
+        message = SimpleNamespace(content='{"status":"answered"', tool_calls=None)
+        openai.return_value.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=message, finish_reason="length")], usage=usage)
+        result = providers.ask_model({"model": "qwen2.5:1.5b", "messages": [],
+                                      "temperature": 0})
+        self.assertEqual(result["finish_reason"], "length")
+        self.assertEqual(result["completion_tokens"], 512)
+
+    @patch("deepseek_app.providers.providers.OpenAI")
     def test_local_provider_errors_are_classified(self, openai):
         request = httpx.Request("POST", "http://127.0.0.1:11434/v1/chat/completions")
         cases = [

@@ -60,7 +60,8 @@ def ask_model(payload, **options):
         if local:
             raise LocalModelError("empty")
         raise ValueError("empty API response")
-    message = response.choices[0].message
+    choice = response.choices[0]
+    message = choice.message
     tool_calls = [
         {"id": tool.id, "type": tool.type,
          "function": {"name": tool.function.name, "arguments": tool.function.arguments}}
@@ -74,4 +75,6 @@ def ask_model(payload, **options):
     if tool_calls:
         assistant["tool_calls"] = tool_calls
     return {"content": message.content, "usage": response.usage,
+            "finish_reason": getattr(choice, "finish_reason", None),
+            "completion_tokens": getattr(response.usage, "completion_tokens", None),
             "tool_calls": tool_calls, "message": assistant}

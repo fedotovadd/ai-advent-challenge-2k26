@@ -1258,6 +1258,56 @@ PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_day24 evaluate 
 дословности подтверждает происхождение цитаты; смысловую опору каждого
 утверждения на цитаты оценивают вручную в отчёте.
 
+## День 28 — локальная LLM в RAG и парное сравнение
+
+Для локального запроса нужен готовый `docs/day-21/index.sqlite3`, Ollama и
+локальные файлы cross-encoder. Однократная подготовка может использовать
+интернет; во время запроса эмбеддинги и генерация обращаются только к
+loopback Ollama, а reranker загружается с `local_files_only=True`:
+
+```bash
+ollama serve
+ollama pull embeddinggemma
+ollama pull qwen2.5:1.5b
+.venv/bin/python -m pip install -r deepseek-api/requirements-rerank.txt
+.venv/bin/python -c 'from sentence_transformers import CrossEncoder; CrossEncoder("cross-encoder/mmarco-mMiniLMv2-L12-H384-v1")'
+```
+
+`ollama serve` запускают в отдельном терминале. После подготовки из корня
+проекта:
+
+```bash
+env -u DEEPSEEK_API_KEY -u ZAI_API_KEY PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_day28 ask "Как агенту сохранять правила проекта между сессиями?"
+PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_day28 compare
+```
+
+Локальный `ask` использует Top-20 → Top-5 и порог 0,50, затем получает
+обычный текстовый ответ по найденным фрагментам. Адрес
+`--ollama-url` для локальной модели должен указывать на loopback. При пустом
+контексте модель не вызывается. При ошибке Ollama, отсутствующей модели,
+файлах reranker или пустом ответе команда завершается с ошибкой без
+облачного fallback. При нехватке локальных файлов предварительно загрузите
+cross-encoder командой выше и повторите запуск.
+
+`compare` берёт десять вопросов из `docs/day-22/control_questions.json`,
+сохраняет один снимок контекста на вопрос и выполняет три прохода на нём для
+`qwen2.5:1.5b` и `deepseek-v4-flash`. Облако вызывается только этой командой
+и только при `DEEPSEEK_API_KEY`; без ключа фиксируется «не проверено: нет
+ключа». Результаты и отчёт: `docs/day-28/results.json` и
+`docs/day-28/comparison.md`. JSON обновляется после снимка и каждого
+результата, включая ошибки; повторная команда продолжит совместимый прогон.
+Для нового прогона используйте `--overwrite`. Полноту, смысловую опору и
+расхождения тезисов нужно
+сверить вручную с книгой. После заполнения полей `manual` в `results.json`
+пересоберите отчёт командой:
+
+```bash
+PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_day28 report
+```
+
+Измерения поиска и reranking относятся к первому
+проходу; повторы используют сохранённый контекст.
+
 ## День 25 — отдельный RAG-чат с памятью задачи
 
 Из корня проекта запустите CLI (он не связан с веб-чатом):

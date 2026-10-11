@@ -28,6 +28,14 @@ class CitationTests(unittest.TestCase):
         self.assertIn("цитат", payload["messages"][0]["content"])
         self.assertIn("chunk_id: c1", payload["messages"][1]["content"])
 
+    def test_prompt_gives_explicit_citation_object_schema(self):
+        payload = build_answer_payload("Вопрос?", [self.row], "qwen2.5:1.5b")
+        user = payload["messages"][1]["content"]
+        self.assertIn("citations — массив объектов", user)
+        self.assertIn("chunk_id и quote", user)
+        self.assertIn("не длиннее 400 символов", user)
+        self.assertNotIn("Ответ [1].", user)
+
     def test_two_quotes_one_chunk_deduplicates_sources_and_ignores_model_metadata(self):
         content = self.answer([
             {"chunk_id": "c1", "quote": "Тезис подтверждён книгой.",

@@ -65,23 +65,27 @@ def rerank_candidates(query, candidates, scorer, *, top_k_after, min_rerank_scor
 class CrossEncoderReranker:
     """Load the optional multilingual cross-encoder on first use."""
 
-    def __init__(self, model_name=DEFAULT_RERANKER_MODEL, batch_size=16):
+    def __init__(self, model_name=DEFAULT_RERANKER_MODEL, batch_size=16,
+                 local_files_only=False):
         if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size <= 0:
             raise ValueError("batch_size must be a positive integer")
         self.model_name = model_name
         self.batch_size = batch_size
+        self.local_files_only = local_files_only
         self._model = None
 
     def __call__(self, pairs):
         if self._model is None:
             try:
                 from sentence_transformers import CrossEncoder
-                self._model = CrossEncoder(self.model_name, max_length=512)
+                options = {"local_files_only": True} if self.local_files_only else {}
+                self._model = CrossEncoder(self.model_name, max_length=512, **options)
             except Exception as exc:
                 raise RuntimeError(
                     "Не удалось загрузить cross-encoder; установите зависимости: "
                     "pip install -r deepseek-api/requirements-rerank.txt "
-                    "и проверьте доступность модели."
+                    "и проверьте доступность модели. Для локального режима заранее "
+                    f"скачайте {self.model_name} в кэш Hugging Face."
                 ) from exc
         try:
             import torch

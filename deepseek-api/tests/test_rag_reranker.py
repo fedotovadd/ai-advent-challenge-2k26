@@ -109,6 +109,18 @@ class RerankCandidatesTests(unittest.TestCase):
 
 
 class CrossEncoderRerankerTests(unittest.TestCase):
+    def test_local_files_only_is_passed_to_cross_encoder(self):
+        model = Mock()
+        model.predict.return_value = [0.7]
+        factory = Mock(return_value=model)
+        modules = {
+            "sentence_transformers": types.SimpleNamespace(CrossEncoder=factory),
+            "torch": types.SimpleNamespace(nn=types.SimpleNamespace(Sigmoid=Mock())),
+        }
+        with patch.dict(sys.modules, modules):
+            rag_reranker.CrossEncoderReranker("cached", local_files_only=True)([("q", "t")])
+        factory.assert_called_once_with("cached", max_length=512, local_files_only=True)
+
     def test_loads_lazily_once_and_predicts_with_sigmoid_and_batch_size(self):
         model = Mock()
         model.predict.return_value = [0.7]

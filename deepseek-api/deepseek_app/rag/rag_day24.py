@@ -7,11 +7,14 @@ import json
 import math
 from pathlib import Path
 import sys
+import time
+from urllib.parse import urlsplit
 
 from deepseek_app.rag.document_index import DEFAULT_DB, OllamaEmbedder, load_index, search_index
-from deepseek_app.providers.providers import ask_model
+from deepseek_app.providers.providers import LOCAL_MODEL, ask_model
 from deepseek_app.rag.rag_agent import MODEL, RagError, _atomic_write, _input_fingerprint, _read_questions
-from deepseek_app.rag.rag_citations import (MODELS, NO_EVIDENCE_ANSWER, build_answer_payload,
+from deepseek_app.rag.rag_citations import (MODELS, NO_EVIDENCE_ANSWER, answer_json_schema,
+                           build_answer_payload,
                            validate_answer_json)
 from deepseek_app.rag.rag_reranker import (DEFAULT_RERANKER_MODEL, CrossEncoderReranker,
                           rerank_candidates)
@@ -24,6 +27,35 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_QUESTIONS = PROJECT_ROOT / "docs/day-22/control_questions.json"
 DEFAULT_RESULTS = PROJECT_ROOT / "docs/day-24/results.json"
 DEFAULT_REPORT = PROJECT_ROOT / "docs/day-24/evaluation.md"
+
+
+class GenerationError(RagError):
+    """Generation failure with the attempts already made available to a checkpoint."""
+
+    def __init__(self, message, raw_responses=(), repair_count=0,
+                 generation_seconds=0.0, json_mode=True,
+                 finish_reasons=(), completion_tokens=()):
+        super().__init__(message)
+        self.raw_responses = list(raw_responses)
+        self.repair_count = repair_count
+        self.generation_seconds = generation_seconds
+        self.json_mode = json_mode
+        self.finish_reasons = list(finish_reasons)
+        self.completion_tokens = list(completion_tokens)
+
+
+def _require_loopback(url):
+    try:
+        parsed = urlsplit(url)
+        safe = (parsed.scheme == "http" and parsed.hostname in
+                {"localhost", "127.0.0.1", "::1"} and not parsed.username
+                and not parsed.password and parsed.path in ("", "/")
+                and not parsed.query and not parsed.fragment)
+        _ = parsed.port
+    except (TypeError, ValueError):
+        safe = False
+    if not safe:
+        raise RagError("Локальный режим требует loopback Ollama URL (http://127.0.0.1:11434)")
 
 
 def _validate(question, model, top_k_before, top_k_after, min_rerank_score):
@@ -42,6 +74,147 @@ def _validate(question, model, top_k_before, top_k_after, min_rerank_score):
         raise RagError("Порог min_rerank_score должен быть конечным числом в [0, 1]")
 
 
+def prepare_context(question, *, index_path=DEFAULT_DB,
+                    ollama_url="http://localhost:11434", model=MODEL,
+                    top_k_before=TOP_K_BEFORE, top_k_after=TOP_K_AFTER,
+                    min_rerank_score=MIN_RERANK_SCORE,
+                    reranker_model=DEFAULT_RERANKER_MODEL,
+                    index_loader=load_index, embedder_factory=OllamaEmbedder,
+                    search=search_index, scorer=None, search_query=None):
+    """Search and rerank once; return the exact rows used by the answer prompt."""
+    _validate(question, model, top_k_before, top_k_after, min_rerank_score)
+    if model == LOCAL_MODEL:
+        _require_loopback(ollama_url)
+    question = question.strip()
+    effective_query = question if search_query is None else search_query.strip()
+    if not effective_query:
+        raise RagError("Укажите непустой поисковый запрос")
+    started = time.perf_counter()
+    try:
+        metadata, _ = index_loader(index_path)
+        embedder = embedder_factory(metadata["model"], ollama_url)
+        found = search(index_path, effective_query, "structural", embedder,
+                       top_k=top_k_before)
+    except Exception as exc:
+        raise RagError(f"Поиск: {exc}") from exc
+    search_seconds = time.perf_counter() - started
+    candidates = []
+    for rank, row in enumerate(found, 1):
+        candidate = {key: value for key, value in row.items() if key != "vector"}
+        candidate["bi_score"] = row["score"]
+        candidate["bi_rank"] = rank
+        candidates.append(candidate)
+    selected = []
+    started = time.perf_counter()
+    if candidates:
+        try:
+            selected = rerank_candidates(
+                effective_query, candidates,
+                scorer if scorer is not None else CrossEncoderReranker(
+                    reranker_model, local_files_only=model == LOCAL_MODEL),
+                top_k_after=top_k_after, min_rerank_score=min_rerank_score)
+        except Exception as exc:
+            raise RagError(f"Reranker: {exc}") from exc
+    return {
+        "question": question, "search_query": effective_query,
+        "index": {"path": str(index_path), "embedding_model": metadata["model"],
+                  "epub_sha256": metadata["epub_sha256"], "strategy": "structural"},
+        "settings": {"top_k_before": top_k_before, "top_k_after": top_k_after,
+                     "min_rerank_score": min_rerank_score,
+                     "reranker_model": reranker_model},
+        "selected": selected,
+        "timing": {"search_seconds": search_seconds,
+                   "rerank_seconds": time.perf_counter() - started},
+    }
+
+
+def generate_from_context(context, model, *, ask=ask_model,
+                          conversation_context=None, json_mode=None):
+    """Generate from a saved context using Day 24 prompt and quote validator."""
+    if model not in MODELS:
+        raise RagError("Неизвестная модель")
+    selected = context["selected"]
+    result = {**context, "model": model, "temperature": 0}
+    if not selected:
+        return {**result, "status": "no_evidence", "reason": "below_threshold",
+                "answer": NO_EVIDENCE_ANSWER, "sources": [], "citations": []}
+    payload = build_answer_payload(context["question"], selected, model,
+                                   conversation_context=conversation_context)
+    use_json_mode = model == LOCAL_MODEL if json_mode is None else json_mode
+    raw_responses = []
+    finish_reasons = []
+    completion_tokens = []
+    started = time.perf_counter()
+    response_format = (answer_json_schema(selected) if model == LOCAL_MODEL
+                       else {"type": "json_object"})
+    for attempt in range(2):
+        try:
+            options = {"response_format": response_format} if use_json_mode else {}
+            if model == LOCAL_MODEL:
+                options.update(max_tokens=512, timeout=30)
+            response = ask(payload, **options)
+        except Exception as exc:
+            raise GenerationError(f"Провайдер ответа: {exc}", raw_responses,
+                                  attempt, time.perf_counter() - started,
+                                  use_json_mode, finish_reasons,
+                                  completion_tokens) from exc
+        content = response.get("content") if isinstance(response, dict) else None
+        raw_responses.append(content)
+        finish_reasons.append(response.get("finish_reason") if isinstance(response, dict) else None)
+        completion_tokens.append(response.get("completion_tokens") if isinstance(response, dict) else None)
+        if isinstance(response, dict) and response.get("finish_reason") == "length":
+            raise GenerationError("Ответ модели достиг лимита токенов и был обрезан",
+                                  raw_responses, attempt,
+                                  time.perf_counter() - started, use_json_mode,
+                                  finish_reasons, completion_tokens)
+        try:
+            verified = validate_answer_json(content, selected)
+        except ValueError as exc:
+            if attempt:
+                raise GenerationError(f"Ответ модели не прошёл проверку: {exc}",
+                                      raw_responses, 1,
+                                      time.perf_counter() - started,
+                                      use_json_mode, finish_reasons,
+                                      completion_tokens) from exc
+            repair = f"Исправь формат JSON и цитаты: {exc}. "
+            if context["search_query"] != context["question"] or conversation_context is not None:
+                repair += (
+                    "Скопируй каждую quote дословно из текста соответствующего chunk_id "
+                    "в переданных фрагментах, включая пробелы и знаки препинания. "
+                    "Если не можешь подтвердить ответ дословной цитатой, верни "
+                    'status=no_evidence, answer="", citations=[]. '
+                )
+            repair += "Верни один JSON-объект по тем же фрагментам без дополнительного текста."
+            if model == LOCAL_MODEL:
+                repair += (" citations — массив объектов с полями chunk_id и quote, "
+                           "не массив строк. quote скопируй как одну-две фразы "
+                           "не длиннее 400 символов, не весь фрагмент. "
+                           "Напиши содержательный answer своими словами; маркер [1] "
+                           "должен соответствовать первому объекту citations. "
+                           "Если достоверного ответа нет, верни status=no_evidence, "
+                           'answer="", citations=[].')
+                if "Ссылки ответа" in str(exc):
+                    repair += (" Добавь маркер [1] непосредственно после первого "
+                               "утверждения, подтверждённого первой цитатой. "
+                               "Для следующих цитат добавь [2], [3] по порядку. "
+                               "Без этих маркеров ответ недействителен.")
+            payload = {**payload, "messages": [*payload["messages"], {
+                "role": "user", "content": (
+                    repair
+                )}]}
+        else:
+            if verified["status"] == "no_evidence":
+                verified["reason"] = "model_abstained"
+            return {**result, **verified, "generation": {
+                "raw_responses": raw_responses,
+                "invalid_first": attempt == 1,
+                "repair_count": attempt,
+                "seconds": time.perf_counter() - started,
+                "json_mode": use_json_mode,
+                "finish_reasons": finish_reasons,
+                "completion_tokens": completion_tokens}}
+
+
 def answer_question_day24(question, *, index_path=DEFAULT_DB,
                           ollama_url="http://localhost:11434", model=MODEL,
                           top_k_before=TOP_K_BEFORE, top_k_after=TOP_K_AFTER,
@@ -51,76 +224,14 @@ def answer_question_day24(question, *, index_path=DEFAULT_DB,
                           search=search_index, scorer=None, ask=ask_model,
                           search_query=None, conversation_context=None):
     """Search once, rerank, and release an answer only after quote validation."""
-    _validate(question, model, top_k_before, top_k_after, min_rerank_score)
-    question = question.strip()
-    effective_query = question if search_query is None else search_query.strip()
-    if not effective_query:
-        raise RagError("Укажите непустой поисковый запрос")
-    try:
-        metadata, _ = index_loader(index_path)
-        embedder = embedder_factory(metadata["model"], ollama_url)
-        found = search(index_path, effective_query, "structural", embedder,
-                       top_k=top_k_before)
-    except Exception as exc:
-        raise RagError(f"Поиск: {exc}") from exc
-    candidates = []
-    for rank, row in enumerate(found, 1):
-        candidate = {key: value for key, value in row.items() if key != "vector"}
-        candidate["bi_score"] = row["score"]
-        candidate["bi_rank"] = rank
-        candidates.append(candidate)
-    selected = []
-    if candidates:
-        try:
-            selected = rerank_candidates(
-                effective_query, candidates,
-                scorer if scorer is not None else CrossEncoderReranker(reranker_model),
-                top_k_after=top_k_after, min_rerank_score=min_rerank_score)
-        except Exception as exc:
-            raise RagError(f"Reranker: {exc}") from exc
-    result = {
-        "question": question, "search_query": effective_query,
-        "model": model, "temperature": 0,
-        "index": {"path": str(index_path), "embedding_model": metadata["model"],
-                  "epub_sha256": metadata["epub_sha256"], "strategy": "structural"},
-        "settings": {"top_k_before": top_k_before, "top_k_after": top_k_after,
-                     "min_rerank_score": min_rerank_score,
-                     "reranker_model": reranker_model},
-        "selected": selected,
-    }
-    if not selected:
-        return {**result, "status": "no_evidence", "reason": "below_threshold",
-                "answer": NO_EVIDENCE_ANSWER, "sources": [], "citations": []}
-    payload = build_answer_payload(question, selected, model,
-                                   conversation_context=conversation_context)
-    for attempt in range(2):
-        try:
-            response = ask(payload)
-        except Exception as exc:
-            raise RagError(f"Провайдер ответа: {exc}") from exc
-        content = response.get("content") if isinstance(response, dict) else None
-        try:
-            verified = validate_answer_json(content, selected)
-        except ValueError as exc:
-            if attempt:
-                raise RagError(f"Ответ модели не прошёл проверку: {exc}") from exc
-            repair = f"Исправь формат JSON и цитаты: {exc}. "
-            if search_query is not None or conversation_context is not None:
-                repair += (
-                    "Скопируй каждую quote дословно из текста соответствующего chunk_id "
-                    "в переданных фрагментах, включая пробелы и знаки препинания. "
-                    "Если не можешь подтвердить ответ дословной цитатой, верни "
-                    'status=no_evidence, answer="", citations=[]. '
-                )
-            repair += "Верни один JSON-объект по тем же фрагментам без дополнительного текста."
-            payload = {**payload, "messages": [*payload["messages"], {
-                "role": "user", "content": (
-                    repair
-                )}]}
-        else:
-            if verified["status"] == "no_evidence":
-                verified["reason"] = "model_abstained"
-            return {**result, **verified}
+    context = prepare_context(
+        question, index_path=index_path, ollama_url=ollama_url, model=model,
+        top_k_before=top_k_before, top_k_after=top_k_after,
+        min_rerank_score=min_rerank_score, reranker_model=reranker_model,
+        index_loader=index_loader, embedder_factory=embedder_factory,
+        search=search, scorer=scorer, search_query=search_query)
+    return generate_from_context(context, model, ask=ask,
+                                 conversation_context=conversation_context)
 
 
 def _validate_controls(controls):

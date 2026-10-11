@@ -152,6 +152,76 @@ class Day24QuestionTests(unittest.TestCase):
                 self.run_question(**options)
         self.loader.assert_not_called()
 
+    def test_local_model_reuses_context_and_requests_json(self):
+        context = rag_day24.prepare_context(
+            "Вопрос?", index_path=Path("index.db"), model="qwen2.5:1.5b",
+            index_loader=self.loader, embedder_factory=self.embedder_factory,
+            search=self.search, scorer=self.scorer)
+        first = rag_day24.generate_from_context(context, "qwen2.5:1.5b", ask=self.ask)
+        second = rag_day24.generate_from_context(context, "qwen2.5:1.5b", ask=self.ask)
+        self.assertEqual(first["status"], "answered")
+        self.assertEqual(second["selected"], context["selected"])
+        self.search.assert_called_once()
+        fmt = self.ask.call_args.kwargs["response_format"]
+        self.assertEqual(fmt["type"], "json_schema")
+        self.assertEqual(fmt["json_schema"]["schema"]["properties"]["citations"]
+                         ["items"]["properties"]["chunk_id"]["enum"],
+                         ["c19", "c18", "c17", "c16", "c15"])
+        self.assertEqual(self.ask.call_args.kwargs["max_tokens"], 512)
+        self.assertEqual(self.ask.call_args.kwargs["timeout"], 30)
+
+    def test_local_mode_rejects_external_embedding_url_before_io(self):
+        with self.assertRaisesRegex(rag_day24.RagError, "loopback"):
+            self.run_question(model="qwen2.5:1.5b", ollama_url="https://example.com")
+        self.loader.assert_not_called()
+
+    def test_local_mode_does_not_accept_cloud_suffix(self):
+        with self.assertRaises(rag_day24.RagError):
+            self.run_question(model="qwen2.5:1.5b:cloud")
+        self.loader.assert_not_called()
+
+    def test_local_invalid_response_records_error_after_one_repair(self):
+        self.ask.return_value = {"content": "bad json"}
+        with self.assertRaises(rag_day24.GenerationError) as caught:
+            self.run_question(model="qwen2.5:1.5b")
+        self.assertEqual(caught.exception.repair_count, 1)
+        self.assertEqual(caught.exception.raw_responses, ["bad json", "bad json"])
+        self.assertEqual(self.ask.call_count, 2)
+
+    def test_local_length_finish_is_error_without_format_repair(self):
+        self.ask.return_value = {"content": '{"status":"answered"',
+                                 "finish_reason": "length", "completion_tokens": 512}
+        with self.assertRaisesRegex(rag_day24.GenerationError, "лимит") as caught:
+            self.run_question(model="qwen2.5:1.5b")
+        self.assertEqual(caught.exception.raw_responses, ['{"status":"answered"'])
+        self.assertEqual(caught.exception.finish_reasons, ["length"])
+        self.assertEqual(caught.exception.completion_tokens, [512])
+        self.ask.assert_called_once()
+
+    def test_success_records_generation_finish_metadata(self):
+        self.ask.return_value = {**self.ask.return_value,
+                                 "finish_reason": "stop", "completion_tokens": 75}
+        result = self.run_question(model="qwen2.5:1.5b")
+        self.assertEqual(result["generation"]["finish_reasons"], ["stop"])
+        self.assertEqual(result["generation"]["completion_tokens"], [75])
+
+    def test_repair_repeats_citation_object_schema(self):
+        self.ask.return_value = {"content": "bad json"}
+        with self.assertRaises(rag_day24.GenerationError):
+            self.run_question(model="qwen2.5:1.5b")
+        repair = self.ask.call_args.args[0]["messages"][-1]["content"]
+        self.assertIn("citations — массив объектов", repair)
+        self.assertIn("400 символов", repair)
+        self.assertNotIn("Ответ [1].", repair)
+
+    def test_repair_explicitly_requests_missing_marker(self):
+        bad = {"content": json.dumps({"status": "answered", "answer": "Тезис.",
+            "citations": [{"chunk_id": "c19", "quote": "Тезис номер 19."}]})}
+        self.ask.side_effect = [bad, self.ask.return_value]
+        self.run_question(model="qwen2.5:1.5b")
+        repair = self.ask.call_args.args[0]["messages"][-1]["content"]
+        self.assertIn("Добавь маркер [1]", repair)
+
 
 class Day24CliTests(unittest.TestCase):
     def test_ask_prints_answer_sources_and_quotes(self):

@@ -10,7 +10,21 @@ NO_EVIDENCE_ANSWER = (
     "Не знаю: в найденных фрагментах книги недостаточно сведений. "
     "Уточните вопрос, указав тему или раздел книги."
 )
-MODELS = ("glm-4.7-flash", "deepseek-v4-flash", "deepseek-v4-pro")
+MODELS = ("glm-4.7-flash", "deepseek-v4-flash", "deepseek-v4-pro", "qwen2.5:1.5b")
+
+
+def answer_json_schema(selected):
+    """Constrain local JSON structure and citation IDs; quote text is still validated."""
+    return {"type": "json_schema", "json_schema": {"name": "rag_answer", "strict": True,
+        "schema": {"type": "object", "properties": {
+            "status": {"type": "string", "enum": ["answered", "no_evidence"]},
+            "answer": {"type": "string"},
+            "citations": {"type": "array", "items": {"type": "object",
+                "properties": {"chunk_id": {"type": "string", "enum": [
+                    row["chunk_id"] for row in selected]},
+                    "quote": {"type": "string", "maxLength": MAX_QUOTE_CHARS}},
+                "required": ["chunk_id", "quote"]}},
+        }, "required": ["status", "answer", "citations"]}}}
 
 
 def build_answer_payload(question, selected, model, conversation_context=None):
@@ -40,6 +54,14 @@ def build_answer_payload(question, selected, model, conversation_context=None):
     if conversation_context:
         user += "\n\nКонтекст диалога (не источник книги):\n" + conversation_context
     user += "\n\nФрагменты книги:\n\n" + "\n\n".join(excerpts)
+    if selected:
+        user += ("\n\nПроверь структуру перед отправкой: citations — массив объектов "
+                 "с полями chunk_id и quote, а не массив строк. Каждая quote — "
+                 "одна-две дословные фразы не длиннее 400 символов, не весь чанк. "
+                 "Сформулируй содержательный ответ своими словами; рядом с "
+                 "утверждением ставь [1] для первой цитаты, [2] для второй. "
+                 "Если подтверждённого ответа нет, верни status=no_evidence, "
+                 'answer="", citations=[].')
     return {"model": model, "temperature": 0,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}]}
