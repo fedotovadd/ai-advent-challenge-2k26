@@ -4,8 +4,8 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from mcp_registry import McpRegistry
-from web import ChatServer
+from deepseek_app.mcp.mcp_registry import McpRegistry
+from deepseek_app.server.web import ChatServer
 
 TOOL = {'name':'repo','description':'repo','inputSchema':{'type':'object','properties':{}}}
 

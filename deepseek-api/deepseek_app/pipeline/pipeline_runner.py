@@ -5,8 +5,8 @@ from time import perf_counter
 
 from pydantic import ValidationError
 
-import mcp_client
-from pipeline_models import MAX_RESULT_BYTES, SavedFile, SearchArguments, SearchResult, SummaryResult
+from deepseek_app.mcp import mcp_client
+from deepseek_app.pipeline.pipeline_models import MAX_RESULT_BYTES, SavedFile, SearchArguments, SearchResult, SummaryResult
 
 PIPELINE_URL = mcp_client.LOCAL_PIPELINE_URL
 STEPS = ('search', 'summarize', 'saveToFile')

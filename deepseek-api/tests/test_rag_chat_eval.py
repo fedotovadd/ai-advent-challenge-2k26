@@ -1,12 +1,10 @@
 import json
 from pathlib import Path
-import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from rag_chat_eval import run_scenarios, summarize, render_report
-from rag_chat_store import ChatStore
+from deepseek_app.rag.rag_chat_eval import run_scenarios, summarize, render_report
+from deepseek_app.rag.rag_chat_store import ChatStore
 
 
 class EvaluationTests(unittest.TestCase):

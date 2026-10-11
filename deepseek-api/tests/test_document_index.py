@@ -1,24 +1,15 @@
-import importlib.util
 import json
 from pathlib import Path
 import sqlite3
-import sys
 import tempfile
 import unittest
 from zipfile import ZipFile
 from xml.etree import ElementTree as ET
 
 
-ROOT = Path(__file__).resolve().parents[1]
-for name in ("epub_corpus", "index_chunking", "document_index"):
-    spec = importlib.util.spec_from_file_location(name, ROOT / f"{name}.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-
-from epub_corpus import read_epub, _body_blocks
-from index_chunking import make_chunks
-from document_index import build_index, load_index, search_index, IndexErrorMessage
+from deepseek_app.rag.epub_corpus import read_epub, _body_blocks
+from deepseek_app.rag.index_chunking import make_chunks
+from deepseek_app.rag.document_index import build_index, load_index, search_index, IndexErrorMessage
 
 
 def small_epub(path):

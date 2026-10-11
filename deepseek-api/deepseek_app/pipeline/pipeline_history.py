@@ -159,7 +159,7 @@ class PipelineHistoryMixin:
                 card['query'] = args['query']
 
         def update_agent(agent):
-            from agent import request_usage_and_cost, estimate_payload_tokens, estimate_text_tokens, MODEL_CAPABILITIES
+            from deepseek_app.agent.agent import request_usage_and_cost, estimate_payload_tokens, estimate_text_tokens, MODEL_CAPABILITIES
             record = copy.deepcopy(interpreted['record'])
             agent._metadata['modelRequests'] = [record]
             agent._metadata['payload'] = record['payload']

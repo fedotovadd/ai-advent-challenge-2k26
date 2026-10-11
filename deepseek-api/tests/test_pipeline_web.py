@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from web import ChatServer
+from deepseek_app.server.web import ChatServer
 
 
 class PipelineWebTests(unittest.TestCase):
@@ -77,7 +77,7 @@ class PipelineWebTests(unittest.TestCase):
         self.assertEqual(final['metrics']['lastMessage']['totalTokens'], 150)
         self.assertEqual(len(final['metrics']['calls']), 1)
         self.assertEqual(len(final['metadata']['modelRequests']), 1)
-        from agent import AgentRegistry
+        from deepseek_app.agent.agent import AgentRegistry
         restored = AgentRegistry(self.ask, Path(self.temp.name) / 'agents.json').get('agent-1').snapshot()
         self.assertEqual(restored['messages'], final['messages'])
         self.assertEqual(restored['metadata'], final['metadata'])
@@ -132,7 +132,7 @@ class PipelineWebTests(unittest.TestCase):
     def test_disconnected_browser_does_not_repeat_or_cancel_tools(self):
         # Exercise the socket-failure branch deterministically; a TCP close can
         # otherwise arrive after a successful local write depending on buffering.
-        from pipeline_http import handle_research
+        from deepseek_app.pipeline.pipeline_http import handle_research
         from types import SimpleNamespace
         handler = SimpleNamespace(server=self.server, close_connection=False,
             send_response=Mock(), send_header=Mock(), end_headers=Mock(),

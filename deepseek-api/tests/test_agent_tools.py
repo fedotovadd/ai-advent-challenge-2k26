@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock
-from agent import AgentRegistry
-from mcp_registry import McpRegistry
+from deepseek_app.agent.agent import AgentRegistry
+from deepseek_app.mcp.mcp_registry import McpRegistry
 
 TOOL = {'name':'repo', 'description':'repo', 'inputSchema':{'type':'object','properties':{}}}
 USAGE = {'prompt_tokens':10, 'completion_tokens':2, 'total_tokens':12}
@@ -74,7 +74,7 @@ class AgentToolsTests(unittest.TestCase):
 
     def test_settings_rollback_keeps_shared_registry(self):
         from unittest.mock import patch
-        from agent import PersistenceError, default_settings
+        from deepseek_app.agent.agent import PersistenceError, default_settings
         registry = AgentRegistry(self.ask,self.path,mcp_registry=self.mcp)
         with patch.object(registry,'_save',side_effect=PersistenceError('disk')):
             with self.assertRaises(PersistenceError):

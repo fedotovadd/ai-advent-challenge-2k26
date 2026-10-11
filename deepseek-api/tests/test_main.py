@@ -1,7 +1,7 @@
 import unittest
 
 import main
-import web
+from deepseek_app.server import web
 
 
 class MainTests(unittest.TestCase):

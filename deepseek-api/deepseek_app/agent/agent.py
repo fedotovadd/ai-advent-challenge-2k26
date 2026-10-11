@@ -1,5 +1,5 @@
-from tool_runtime import run_tools
-from pipeline_history import PipelineHistoryMixin, valid_pipeline_card
+from deepseek_app.mcp.tool_runtime import run_tools
+from deepseek_app.pipeline.pipeline_history import PipelineHistoryMixin, valid_pipeline_card
 import copy
 import json
 import math
@@ -9,24 +9,24 @@ import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from errors import MissingApiKeyError
-from context_memory import (
+from deepseek_app.providers.errors import MissingApiKeyError
+from deepseek_app.agent.context_memory import (
     STRATEGIES, FACTS_MAX_TOKENS, FACTS_PREFIX, FACTS_SYSTEM_PROMPT, FactsUpdateError,
     apply_facts_patch, default_facts_usage, valid_facts, validate_context_settings, validate_name,
 )
-from memory_layers import (
+from deepseek_app.agent.memory_layers import (
     MemoryCommandError, default_memory_layers, default_long_term, default_working, valid_long_term,
     valid_memory_layers, valid_working, working_has_content, long_term_has_content,
 )
-from invariants import (
+from deepseek_app.agent.invariants import (
     apply_invariant_command, invariant_prompt_block, invariant_refusal,
     valid_invariants, violations_for_solution,
 )
-from task_state import (
+from deepseek_app.agent.task_state import (
     TaskStateError, apply_execution_markers, apply_task_command, extract_task_plan,
     task_plan_markdown, task_prompt_block, valid_task_state,
 )
-from user_profiles import (
+from deepseek_app.agent.user_profiles import (
     MAX_USER_PROFILES, default_profile, normalize_profile, profile_prompt_block,
     profile_with_id, valid_profile, valid_profile_collection,
 )
@@ -74,7 +74,7 @@ DEFAULT_SETTINGS = {
 }
 MAX_BULK_AGENTS = 100
 STATE_VERSION = 11
-DEFAULT_STATE_PATH = Path(__file__).with_name("data") / "agents.json"
+DEFAULT_STATE_PATH = Path(__file__).resolve().parents[2] / "data" / "agents.json"
 METADATA_FIELDS = {
     "userPrompt",
     "systemPrompt",

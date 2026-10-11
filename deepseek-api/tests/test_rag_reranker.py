@@ -6,9 +6,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-import rag_reranker
+from deepseek_app.rag import rag_reranker
 
 
 class RerankCandidatesTests(unittest.TestCase):

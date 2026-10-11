@@ -1,6 +1,6 @@
 import unittest
 
-from task_state import (
+from deepseek_app.agent.task_state import (
     TaskStateError, apply_execution_markers, apply_task_command, default_task_state,
     extract_task_plan, parse_task_command, task_plan_markdown, task_prompt_block, task_status, valid_task_state,
 )

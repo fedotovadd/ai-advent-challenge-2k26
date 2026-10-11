@@ -18,13 +18,13 @@ PAYLOAD = {
 
 class ImplementationTests(unittest.TestCase):
     def test_github_modules_exist(self):
-        self.assertIsNotNone(importlib.util.find_spec('github_api'))
-        self.assertIsNotNone(importlib.util.find_spec('github_mcp_server'))
+        self.assertIsNotNone(importlib.util.find_spec('deepseek_app.mcp.github_api'))
+        self.assertIsNotNone(importlib.util.find_spec('deepseek_app.mcp.github_mcp_server'))
 
 
 class GitHubAPITests(unittest.IsolatedAsyncioTestCase):
     async def fetch(self, handler, owner='octocat', repo='Hello-World'):
-        from github_api import get_repository
+        from deepseek_app.mcp.github_api import get_repository
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
             return await get_repository(owner, repo, client=client)
 
@@ -56,7 +56,7 @@ class GitHubAPITests(unittest.IsolatedAsyncioTestCase):
             await self.fetch(handler)
 
     async def test_rejects_invalid_identifiers_without_sending_request(self):
-        from github_api import GitHubAPIError
+        from deepseek_app.mcp.github_api import GitHubAPIError
         def handler(request):
             self.fail('Invalid input must not reach GitHub')
         for value in ['', ' ', '.', '..', 'a/b', 'a\\b', 'a\nb', 'a\x00b', 'a\x7fb']:
@@ -67,7 +67,7 @@ class GitHubAPITests(unittest.IsolatedAsyncioTestCase):
                         await self.fetch(handler, **args)
 
     async def test_status_errors_are_safe_and_distinguish_rate_limit_from_permissions(self):
-        from github_api import GitHubAPIError
+        from deepseek_app.mcp.github_api import GitHubAPIError
         cases = [
             (401, {}, 'токен'), (403, {}, 'доступ'),
             (403, {'x-ratelimit-remaining': '0'}, 'лимит'),
@@ -88,14 +88,14 @@ class GitHubAPITests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(calls), 1)
 
     async def test_secondary_rate_limit_is_recognized_without_exposing_body(self):
-        from github_api import GitHubAPIError
+        from deepseek_app.mcp.github_api import GitHubAPIError
         with self.assertRaisesRegex(GitHubAPIError, 'лимит'):
             await self.fetch(lambda req: httpx.Response(403, json={
                 'message': 'You have exceeded a secondary rate limit. SECRET'
             }))
 
     async def test_timeout_and_network_errors_do_not_expose_exception_text(self):
-        from github_api import GitHubAPIError
+        from deepseek_app.mcp.github_api import GitHubAPIError
         for error in [httpx.ReadTimeout, httpx.ConnectError]:
             def handler(request):
                 raise error('SECRET token and URL', request=request)
@@ -104,7 +104,7 @@ class GitHubAPITests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('SECRET', str(caught.exception))
 
     async def test_private_or_malformed_response_is_rejected(self):
-        from github_api import GitHubAPIError
+        from deepseek_app.mcp.github_api import GitHubAPIError
         invalid = [dict(PAYLOAD, private=True), [], {}, dict(PAYLOAD, stargazers_count='many')]
         for body in invalid:
             with self.subTest(body=body), self.assertRaises(GitHubAPIError):
@@ -115,7 +115,7 @@ class GitHubAPITests(unittest.IsolatedAsyncioTestCase):
 
 class MCPProtocolTests(unittest.IsolatedAsyncioTestCase):
     async def test_lists_tool_schema_and_calls_real_registered_tool(self):
-        from github_mcp_server import create_server
+        from deepseek_app.mcp.github_mcp_server import create_server
         async with httpx.AsyncClient(transport=httpx.MockTransport(
             lambda req: httpx.Response(200, json=PAYLOAD)
         )) as http_client:
@@ -138,7 +138,7 @@ class MCPProtocolTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(json.loads(result.content[0].text), result.structuredContent)
 
     async def test_tool_errors_are_mcp_errors_and_extra_arguments_are_rejected(self):
-        from github_mcp_server import create_server
+        from deepseek_app.mcp.github_mcp_server import create_server
         calls = []
         def handler(request):
             calls.append(request)

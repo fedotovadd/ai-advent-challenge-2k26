@@ -1,6 +1,6 @@
 import unittest
 
-from invariants import (
+from deepseek_app.agent.invariants import (
     InvariantCommandError, conflict_for_addition, invariant_prompt_block,
     parse_invariant_command, valid_invariants, violations_for_solution,
 )

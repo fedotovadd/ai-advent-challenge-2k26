@@ -3,12 +3,12 @@
 import argparse
 from pathlib import Path
 
-from document_index import DEFAULT_DB
-from providers import ask_model
-from rag_chat_memory import (conversation_context, prepare_payload,
+from deepseek_app.rag.document_index import DEFAULT_DB
+from deepseek_app.providers.providers import ask_model
+from deepseek_app.rag.rag_chat_memory import (conversation_context, prepare_payload,
                              validate_preparation)
-from rag_chat_store import ChatStore, DEFAULT_CHAT_DB
-from rag_day24 import answer_question_day24
+from deepseek_app.rag.rag_chat_store import ChatStore, DEFAULT_CHAT_DB
+from deepseek_app.rag.rag_day24 import answer_question_day24
 
 
 DEFAULT_CHAT_MODEL = "deepseek-v4-flash"

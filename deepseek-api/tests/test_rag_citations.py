@@ -1,11 +1,9 @@
 import json
 from pathlib import Path
-import sys
 import unittest
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from rag_citations import (EXCERPT_CHAR_LIMIT, NO_EVIDENCE_ANSWER,
+from deepseek_app.rag.rag_citations import (EXCERPT_CHAR_LIMIT, NO_EVIDENCE_ANSWER,
                            build_answer_payload, validate_answer_json)
 
 

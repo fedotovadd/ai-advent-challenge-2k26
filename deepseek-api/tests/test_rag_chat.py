@@ -2,14 +2,12 @@ import contextlib
 import io
 import json
 from pathlib import Path
-import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import rag_chat
-from rag_chat_store import ChatStore, StaleSessionError
+from deepseek_app.rag import rag_chat
+from deepseek_app.rag.rag_chat_store import ChatStore, StaleSessionError
 
 
 class TurnTests(unittest.TestCase):

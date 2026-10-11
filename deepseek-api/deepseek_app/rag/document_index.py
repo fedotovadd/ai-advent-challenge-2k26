@@ -12,11 +12,11 @@ import tempfile
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from epub_corpus import EXCLUDED, read_epub
-from index_chunking import make_chunks
+from deepseek_app.rag.epub_corpus import EXCLUDED, read_epub
+from deepseek_app.rag.index_chunking import make_chunks
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_EPUB = PROJECT_ROOT / "docs/day-21/corpus/agentic-design-patterns-ru.epub"
 DEFAULT_DB = PROJECT_ROOT / "docs/day-21/index.sqlite3"
 DEFAULT_REPORT = PROJECT_ROOT / "docs/day-21/comparison.md"

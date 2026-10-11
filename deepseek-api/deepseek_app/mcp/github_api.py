@@ -125,7 +125,7 @@ class _SearchResponse(BaseModel):
 async def search_repositories(query: str, *, limit: int = 3,
                               client: httpx.AsyncClient | None = None) -> dict:
     """Search public repositories, keeping only bounded metadata for the pipeline."""
-    from pipeline_models import SearchArguments, SearchResult
+    from deepseek_app.pipeline.pipeline_models import SearchArguments, SearchResult
 
     arguments = SearchArguments(query=query, limit=limit)
     if client is None:

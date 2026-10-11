@@ -1,14 +1,11 @@
 import json
 from pathlib import Path
-import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-import rag_agent
+from deepseek_app.rag import rag_agent
 
 
 class RagAgentTests(unittest.TestCase):

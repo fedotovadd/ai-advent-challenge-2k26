@@ -1,31 +1,31 @@
 import json
 import os
 import threading
-from pipeline_commands import parse_research_command
-from pipeline_http import guarded_agent_request, handle_research
-from mcp_chat_http import handle_mcp_chat
+from deepseek_app.pipeline.pipeline_commands import parse_research_command
+from deepseek_app.pipeline.pipeline_http import guarded_agent_request, handle_research
+from deepseek_app.server.mcp_chat_http import handle_mcp_chat
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from agent import AgentRegistry, ContextOverflowError, ContextSummaryError, DEFAULT_TEMPERATURE, InvariantViolationError, MODELS, MODEL_CAPABILITIES, OverflowProbeError, PersistenceError
-from day_three import (
+from deepseek_app.agent.agent import AgentRegistry, ContextOverflowError, ContextSummaryError, DEFAULT_TEMPERATURE, InvariantViolationError, MODELS, MODEL_CAPABILITIES, OverflowProbeError, PersistenceError
+from deepseek_app.agent.day_three import (
     DAY_THREE_TASKS,
     MAX_DAY_THREE_REQUEST_BYTES,
     run_day_three_experiment,
     stream_day_three_experiment,
 )
-from errors import MissingApiKeyError
-from providers import LocalModelError
-from context_memory import FactsUpdateError, validate_context_settings
-from memory_layers import MemoryCommandError, parse_memory_command
-from invariants import InvariantCommandError, parse_invariant_command
-import mcp_client
-from mcp_registry import McpRegistry, McpStorageError
-from task_state import TaskStateError, parse_task_command
+from deepseek_app.providers.errors import MissingApiKeyError
+from deepseek_app.providers.providers import LocalModelError
+from deepseek_app.agent.context_memory import FactsUpdateError, validate_context_settings
+from deepseek_app.agent.memory_layers import MemoryCommandError, parse_memory_command
+from deepseek_app.agent.invariants import InvariantCommandError, parse_invariant_command
+from deepseek_app.mcp import mcp_client
+from deepseek_app.mcp.mcp_registry import McpRegistry, McpStorageError
+from deepseek_app.agent.task_state import TaskStateError, parse_task_command
 
 
-STATIC_PAGE = Path(__file__).with_name("static") / "index.html"
+STATIC_PAGE = Path(__file__).resolve().parents[2] / "static" / "index.html"
 LOCAL_ERROR_RESPONSES = {
     "unavailable": (503, "Локальный сервис Ollama недоступен. Запустите Ollama и повторите запрос."),
     "missing_model": (404, "В Ollama нет модели qwen2.5:1.5b. Проверьте ollama list."),
@@ -42,10 +42,10 @@ def local_error_response(error):
     return None
 
 
-STATIC_AGENT_STATE = Path(__file__).with_name("static") / "agent-state.js"
-STATIC_MEMORY_CONTROLS = Path(__file__).with_name("static") / "memory-controls.js"
-STATIC_MCP_CONTROLS = Path(__file__).with_name("static") / "mcp-controls.js"
-STATIC_PROFILE_CONTROLS = Path(__file__).with_name("static") / "profile-controls.js"
+STATIC_AGENT_STATE = Path(__file__).resolve().parents[2] / "static" / "agent-state.js"
+STATIC_MEMORY_CONTROLS = Path(__file__).resolve().parents[2] / "static" / "memory-controls.js"
+STATIC_MCP_CONTROLS = Path(__file__).resolve().parents[2] / "static" / "mcp-controls.js"
+STATIC_PROFILE_CONTROLS = Path(__file__).resolve().parents[2] / "static" / "profile-controls.js"
 MAX_MEMORY_REQUEST_BYTES = 65_536
 
 
@@ -795,7 +795,7 @@ class ChatServer(ThreadingHTTPServer):
         self.operation_locks_guard = threading.Lock()
         self.pipeline_runner = None
         super().__init__(address, ChatRequestHandler)
-        mcp_path = (Path(state_path).parent if state_path is not None else Path(__file__).parent / "data") / "mcp_servers.json"
+        mcp_path = (Path(state_path).parent if state_path is not None else Path(__file__).resolve().parents[2] / "data") / "mcp_servers.json"
         self.mcp_registry = mcp_registry if mcp_registry is not None else McpRegistry(mcp_path)
         self.registry = AgentRegistry(ask_model, state_path, mcp_registry=self.mcp_registry)
         self.ask_model = ask_model

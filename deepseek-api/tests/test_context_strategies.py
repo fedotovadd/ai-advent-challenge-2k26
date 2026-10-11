@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent import Agent, AgentRegistry, default_settings
+from deepseek_app.agent.agent import Agent, AgentRegistry, default_settings
 
 
 class StrategyTests(unittest.TestCase):
@@ -150,7 +150,7 @@ class StrategyTests(unittest.TestCase):
 
     def test_failed_settings_save_does_not_discard_history(self):
         from unittest.mock import patch
-        from agent import PersistenceError
+        from deepseek_app.agent.agent import PersistenceError
         with tempfile.TemporaryDirectory() as directory:
             registry = AgentRegistry(lambda payload, **options: 'Ответ', Path(directory) / 'state.json')
             registry.update_settings('agent-1', {**default_settings(), 'contextStrategy': 'branching'})
@@ -163,14 +163,14 @@ class StrategyTests(unittest.TestCase):
             self.assertEqual(registry.agents(), before)
 
     def test_facts_limits_include_whitespace(self):
-        from context_memory import apply_facts_patch, FactsUpdateError
+        from deepseek_app.agent.context_memory import apply_facts_patch, FactsUpdateError
         for patch in ({'set': {'goal': ' ' * 501 + 'x'}, 'delete': []},
                       {'set': {' ' * 81 + 'x': 'value'}, 'delete': []}):
             with self.assertRaises(FactsUpdateError):
                 apply_facts_patch({}, json.dumps(patch))
 
     def test_history_after_metric_matches_retained_window(self):
-        from agent import estimate_payload_tokens
+        from deepseek_app.agent.agent import estimate_payload_tokens
         agent = self.make_agent(size=2)
         agent.respond('первое')
         result = agent.respond('второе')

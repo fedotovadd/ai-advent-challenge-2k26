@@ -8,22 +8,22 @@ from pathlib import Path
 import httpx
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from scheduler import ScheduleStore, Scheduler
+from deepseek_app.mcp.scheduler import ScheduleStore, Scheduler
 
 
 class SchedulerMCPExistsTests(unittest.TestCase):
     def test_scheduler_mcp_is_implemented(self):
-        self.assertIsNotNone(importlib.util.find_spec('scheduler_mcp_server'))
+        self.assertIsNotNone(importlib.util.find_spec('deepseek_app.mcp.scheduler_mcp_server'))
 
     def test_chat_client_accepts_only_exact_scheduler_url(self):
-        from mcp_client import validate_url
+        from deepseek_app.mcp.mcp_client import validate_url
         self.assertEqual(validate_url('http://127.0.0.1:8002/mcp'), 'http://127.0.0.1:8002/mcp')
         for url in ['http://127.0.0.1:8002/other', 'http://127.0.0.1:8004/mcp', 'http://127.0.0.1:8002/mcp?x=1']:
             with self.assertRaises(ValueError):
                 validate_url(url)
 
 
-@unittest.skipUnless(importlib.util.find_spec('scheduler_mcp_server'), 'implementation pending')
+@unittest.skipUnless(importlib.util.find_spec('deepseek_app.mcp.scheduler_mcp_server'), 'implementation pending')
 class SchedulerMCPTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -31,7 +31,7 @@ class SchedulerMCPTests(unittest.IsolatedAsyncioTestCase):
         self.store = ScheduleStore(Path(self.temp.name) / 'db.sqlite3')
 
     async def test_mcp_discovery_schedule_summary_and_cancel(self):
-        from scheduler_mcp_server import create_server
+        from deepseek_app.mcp.scheduler_mcp_server import create_server
         server = create_server(self.store)
         async with create_connected_server_and_client_session(server) as session:
             tools = (await session.list_tools()).tools
@@ -54,7 +54,7 @@ class SchedulerMCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(cancelled.structuredContent['job']['status'], 'cancelled')
 
     async def test_invalid_arguments_and_unknown_job_return_mcp_errors(self):
-        from scheduler_mcp_server import create_server
+        from deepseek_app.mcp.scheduler_mcp_server import create_server
         async with create_connected_server_and_client_session(create_server(self.store)) as session:
             for args in [
                 {'owner': 'a', 'repo': 'b', 'delay_seconds': -1},
@@ -71,8 +71,8 @@ class SchedulerMCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.store.list_schedules()['total'], 0)
 
     async def test_long_running_summaries_fit_chat_transport_limit(self):
-        from scheduler_mcp_server import create_server
-        from mcp_client import MAX_RESULT_BYTES
+        from deepseek_app.mcp.scheduler_mcp_server import create_server
+        from deepseek_app.mcp.mcp_client import MAX_RESULT_BYTES
         now = 1000
         self.store.clock = lambda: now
         async def fetch(owner, repo):
@@ -93,7 +93,7 @@ class SchedulerMCPTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(history.structuredContent['recent_runs']), 3)
 
     async def test_worker_runs_without_mcp_client_and_stops_with_application(self):
-        from scheduler_mcp_server import create_app
+        from deepseek_app.mcp.scheduler_mcp_server import create_app
         completed = asyncio.Event()
         async def fetch(owner, repo):
             return {'stargazers_count': 12, 'forks_count': 3}
@@ -107,7 +107,7 @@ class SchedulerMCPTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(app.state.worker_task.done())
 
     async def test_dashboard_and_api_show_saved_results_and_reject_foreign_host(self):
-        from scheduler_mcp_server import create_app
+        from deepseek_app.mcp.scheduler_mcp_server import create_app
         self.store.schedule('octocat', 'Hello-World', delay_seconds=300)
         app = create_app(self.store)
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://127.0.0.1:8002') as client:

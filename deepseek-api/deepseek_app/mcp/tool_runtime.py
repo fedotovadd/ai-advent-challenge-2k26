@@ -3,7 +3,7 @@ import copy
 import hashlib
 import json
 import time
-import mcp_client
+from deepseek_app.mcp import mcp_client
 
 MAX_TOOL_ROUNDS = 6
 MAX_TOOL_CALLS = 6

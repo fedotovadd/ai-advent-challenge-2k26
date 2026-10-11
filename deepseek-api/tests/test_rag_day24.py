@@ -3,15 +3,13 @@ import math
 import contextlib
 import io
 from pathlib import Path
-import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import rag_day24
-from rag_citations import NO_EVIDENCE_ANSWER
+from deepseek_app.rag import rag_day24
+from deepseek_app.rag.rag_citations import NO_EVIDENCE_ANSWER
 
 
 class Day24QuestionTests(unittest.TestCase):

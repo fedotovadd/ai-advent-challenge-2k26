@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from agent import AgentRegistry, PersistenceError, _valid_message
+from deepseek_app.agent.agent import AgentRegistry, PersistenceError, _valid_message
 
 
 class PipelineHistoryTests(unittest.TestCase):

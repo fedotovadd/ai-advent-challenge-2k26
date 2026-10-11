@@ -1,6 +1,6 @@
 import unittest
 
-from memory_layers import (
+from deepseek_app.agent.memory_layers import (
     default_memory_layers,
     MemoryCommandError,
     parse_memory_command,

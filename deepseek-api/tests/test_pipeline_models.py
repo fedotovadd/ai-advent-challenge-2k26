@@ -13,10 +13,10 @@ SUMMARY = {'query': 'mcp', 'source_count': 1, 'markdown': '# Отчёт\n'}
 
 class PipelineModelsTests(unittest.TestCase):
     def test_models_are_available(self):
-        self.assertIsNotNone(importlib.util.find_spec('pipeline_models'))
+        self.assertIsNotNone(importlib.util.find_spec('deepseek_app.pipeline.pipeline_models'))
 
     def test_search_requires_exact_types_fields_and_bounds(self):
-        from pipeline_models import SearchResult
+        from deepseek_app.pipeline.pipeline_models import SearchResult
         self.assertEqual(SearchResult.model_validate(SEARCH).model_dump(), SEARCH)
         for change in ({'total_count': '10'}, {'total_count': True}, {'total_count': -1},
                        {'items': SEARCH['items'] * 4}, {'incomplete_results': 1},
@@ -32,7 +32,7 @@ class PipelineModelsTests(unittest.TestCase):
             SEARCH['items'][0], description=None, language=None)])).items[0].description)
 
     def test_query_normalizes_only_command_input_and_limit_is_strict(self):
-        from pipeline_models import SearchArguments, normalize_query
+        from deepseek_app.pipeline.pipeline_models import SearchArguments, normalize_query
         self.assertEqual(normalize_query('  mcp language:python  '), 'mcp language:python')
         for query in ('', '  ', 'x' * 201, None, 123):
             with self.subTest(query=query), self.assertRaises(ValueError):
@@ -42,7 +42,7 @@ class PipelineModelsTests(unittest.TestCase):
                 SearchArguments(query='mcp', limit=limit)
 
     def test_markdown_limit_is_utf8_bytes_and_saved_file_is_bounded(self):
-        from pipeline_models import SummaryResult, SavedFile
+        from deepseek_app.pipeline.pipeline_models import SummaryResult, SavedFile
         self.assertEqual(SummaryResult(**dict(SUMMARY, markdown='я' * 3000)).source_count, 1)
         for change in ({'markdown': ''}, {'markdown': 'я' * 3001}, {'source_count': True},
                        {'source_count': 4}, {'path': '/tmp/unwanted'}):

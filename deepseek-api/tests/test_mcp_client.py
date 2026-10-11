@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
-import mcp_client
+from deepseek_app.mcp import mcp_client
 
 
 class FakeTransport:
@@ -84,7 +84,7 @@ class WebToolDiscoveryEntryPointTests(unittest.TestCase):
     def test_list_tools_always_uses_fixed_deepwiki_endpoint(self):
         discovery = AsyncMock(return_value=[])
 
-        with patch("mcp_client._list_public_tools", discovery):
+        with patch("deepseek_app.mcp.mcp_client._list_public_tools", discovery):
             self.assertEqual(mcp_client.list_tools(), [])
 
         discovery.assert_awaited_once_with(mcp_client.DEEPWIKI_MCP_URL)

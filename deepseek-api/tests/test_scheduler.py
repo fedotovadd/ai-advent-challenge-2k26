@@ -7,13 +7,13 @@ from pathlib import Path
 
 class SchedulerExistsTests(unittest.TestCase):
     def test_scheduler_is_implemented(self):
-        self.assertIsNotNone(importlib.util.find_spec('scheduler'))
+        self.assertIsNotNone(importlib.util.find_spec('deepseek_app.mcp.scheduler'))
 
 
-@unittest.skipUnless(importlib.util.find_spec('scheduler'), 'implementation pending')
+@unittest.skipUnless(importlib.util.find_spec('deepseek_app.mcp.scheduler'), 'implementation pending')
 class SchedulerTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        from scheduler import ScheduleStore, Scheduler
+        from deepseek_app.mcp.scheduler import ScheduleStore, Scheduler
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'jobs.sqlite3'
@@ -32,7 +32,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         return self.store.schedule('octocat', 'Hello-World', **kwargs)
 
     async def test_delayed_once_survives_restart_and_never_runs_early_or_twice(self):
-        from scheduler import ScheduleStore, Scheduler
+        from deepseek_app.mcp.scheduler import ScheduleStore, Scheduler
         job = self.schedule(delay_seconds=30)
         self.assertEqual(await self.worker.run_due(), 0)
         self.store = ScheduleStore(self.path, clock=lambda: self.now)
@@ -60,7 +60,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('2', summary['text'])
 
     async def test_failure_is_persisted_and_next_interval_recovers(self):
-        from github_api import GitHubAPIError
+        from deepseek_app.mcp.github_api import GitHubAPIError
         job = self.schedule(interval_seconds=10)
         original = self.worker.fetch
         async def fail(*args):
@@ -89,7 +89,7 @@ class SchedulerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['success_count'], 1)
 
     async def test_two_workers_do_not_execute_same_job(self):
-        from scheduler import ScheduleStore, Scheduler
+        from deepseek_app.mcp.scheduler import ScheduleStore, Scheduler
         self.schedule()
         other = Scheduler(ScheduleStore(self.path, clock=lambda: self.now),
                           fetch=self.worker.fetch, emit=self.emitted.append)

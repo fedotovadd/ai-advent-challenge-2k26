@@ -5,10 +5,10 @@ from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
 
-from rag_chat_memory import empty_state
+from deepseek_app.rag.rag_chat_memory import empty_state
 
 
-DEFAULT_CHAT_DB = Path(__file__).resolve().parent / "data" / "rag_chat.sqlite3"
+DEFAULT_CHAT_DB = Path(__file__).resolve().parents[2] / "data" / "rag_chat.sqlite3"
 
 
 class StaleSessionError(RuntimeError):

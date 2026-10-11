@@ -6,11 +6,11 @@ import hashlib
 import json
 from pathlib import Path
 
-from document_index import DEFAULT_DB
-from rag_chat import DEFAULT_CHAT_MODEL, run_turn
-from rag_chat_store import ChatStore
-from rag_agent import _atomic_write
-from rag_day24 import (MIN_RERANK_SCORE, TOP_K_AFTER, TOP_K_BEFORE,
+from deepseek_app.rag.document_index import DEFAULT_DB
+from deepseek_app.rag.rag_chat import DEFAULT_CHAT_MODEL, run_turn
+from deepseek_app.rag.rag_chat_store import ChatStore
+from deepseek_app.rag.rag_agent import _atomic_write
+from deepseek_app.rag.rag_day24 import (MIN_RERANK_SCORE, TOP_K_AFTER, TOP_K_BEFORE,
                        DEFAULT_RERANKER_MODEL)
 
 

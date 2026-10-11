@@ -7,13 +7,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import agent
-import day_three
-import errors
-import mcp_client
-import user_profiles
-import web
-from providers import LocalModelError
+from deepseek_app.agent import agent
+from deepseek_app.agent import day_three
+from deepseek_app.providers import errors
+from deepseek_app.mcp import mcp_client
+from deepseek_app.agent import user_profiles
+from deepseek_app.server import web
+from deepseek_app.providers.providers import LocalModelError
 
 
 class DeepSeekWebTests(unittest.TestCase):
@@ -178,7 +178,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertNotIn("DEEPSEEK_API_KEY", body)
 
     def test_root_serves_the_static_index_page(self):
-        static_page = Path(web.__file__).with_name("static") / "index.html"
+        static_page = Path(web.__file__).resolve().parents[2] / "static" / "index.html"
 
         status, body, headers = self.request("GET", "/")
 
@@ -187,7 +187,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(body, static_page.read_text(encoding="utf-8"))
 
     def test_static_agent_state_script_is_served(self):
-        static_script = Path(web.__file__).with_name("static") / "agent-state.js"
+        static_script = Path(web.__file__).resolve().parents[2] / "static" / "agent-state.js"
 
         status, body, headers = self.request("GET", "/static/agent-state.js")
 
@@ -196,7 +196,7 @@ class DeepSeekWebTests(unittest.TestCase):
         self.assertEqual(body, static_script.read_text(encoding="utf-8"))
 
     def test_static_mcp_controls_script_is_served(self):
-        static_script = Path(web.__file__).with_name("static") / "mcp-controls.js"
+        static_script = Path(web.__file__).resolve().parents[2] / "static" / "mcp-controls.js"
 
         status, body, headers = self.request("GET", "/static/mcp-controls.js")
 
@@ -260,7 +260,7 @@ class DeepSeekWebTests(unittest.TestCase):
 
     def test_profile_picker_uses_a_custom_menu_and_four_field_dialog(self):
         status, page, _ = self.request("GET", "/")
-        static_script = Path(web.__file__).with_name("static") / "profile-controls.js"
+        static_script = Path(web.__file__).resolve().parents[2] / "static" / "profile-controls.js"
         script_status, controls, _ = self.request("GET", "/static/profile-controls.js")
 
         self.assertEqual(status, 200)

@@ -1,10 +1,8 @@
 import json
 from pathlib import Path
-import sys
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from rag_chat_memory import empty_state, validate_preparation, conversation_context, prepare_payload
+from deepseek_app.rag.rag_chat_memory import empty_state, validate_preparation, conversation_context, prepare_payload
 
 
 class MemoryTests(unittest.TestCase):

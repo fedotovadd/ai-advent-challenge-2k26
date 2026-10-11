@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from mcp_registry import McpRegistry
-from mcp_client import validate_url
+from deepseek_app.mcp.mcp_registry import McpRegistry
+from deepseek_app.mcp.mcp_client import validate_url
 
 TOOL = {'name': 'get_repository', 'description': 'Repo', 'inputSchema': {
     'type': 'object', 'properties': {'owner': {'type': 'string'}},

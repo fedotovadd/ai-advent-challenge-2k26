@@ -9,7 +9,7 @@ from pathlib import Path
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError, SchemaError
 
-import mcp_client
+from deepseek_app.mcp import mcp_client
 
 
 class McpStorageError(Exception):

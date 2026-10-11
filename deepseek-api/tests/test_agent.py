@@ -4,9 +4,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import agent
-import user_profiles
-from agent import Agent, AgentRegistry, InvariantViolationError, MAX_BULK_AGENTS, PersistenceError, default_settings
+from deepseek_app.agent import agent
+from deepseek_app.agent import user_profiles
+from deepseek_app.agent.agent import Agent, AgentRegistry, InvariantViolationError, MAX_BULK_AGENTS, PersistenceError, default_settings
 
 
 class UserProfileTests(unittest.TestCase):

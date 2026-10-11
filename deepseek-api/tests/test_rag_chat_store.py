@@ -1,11 +1,9 @@
 import tempfile
 from pathlib import Path
-import sys
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from rag_chat_store import ChatStore, StaleSessionError
-from rag_chat_memory import empty_state
+from deepseek_app.rag.rag_chat_store import ChatStore, StaleSessionError
+from deepseek_app.rag.rag_chat_memory import empty_state
 
 
 class StoreTests(unittest.TestCase):

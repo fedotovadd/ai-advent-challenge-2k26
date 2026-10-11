@@ -2,7 +2,7 @@ import os
 
 from openai import APIConnectionError, APITimeoutError, NotFoundError, OpenAI
 
-from errors import MissingApiKeyError
+from deepseek_app.providers.errors import MissingApiKeyError
 
 
 LOCAL_MODEL = "qwen2.5:1.5b"

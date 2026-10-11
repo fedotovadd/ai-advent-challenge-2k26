@@ -11,7 +11,7 @@ from test_pipeline_tools import GITHUB_RESPONSE
 
 class PipelineMCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_protocol_schemas_calls_and_exact_forwarding(self):
-        from pipeline_mcp_server import create_server
+        from deepseek_app.pipeline.pipeline_mcp_server import create_server
         async with httpx.AsyncClient(transport=httpx.MockTransport(
             lambda req: httpx.Response(200, json=GITHUB_RESPONSE)
         )) as client:
@@ -39,7 +39,7 @@ class PipelineMCPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(Path(saved.structuredContent['path']).read_text(), summary.structuredContent['markdown'])
 
     async def test_invalid_inputs_extra_fields_and_safe_tool_errors(self):
-        from pipeline_mcp_server import create_server
+        from deepseek_app.pipeline.pipeline_mcp_server import create_server
         requests = []
         def handler(req):
             requests.append(req)
@@ -68,9 +68,9 @@ class PipelineMCPTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(list(Path(temp).iterdir()), [])
 
     async def test_complete_envelope_limit_accounts_for_json_escaping(self):
-        from pipeline_mcp_server import bounded_result
+        from deepseek_app.pipeline.pipeline_mcp_server import bounded_result
         # Fits the Markdown UTF-8 limit, but duplication and JSON escaping do not fit MCP.
-        from pipeline_models import SummaryResult
+        from deepseek_app.pipeline.pipeline_models import SummaryResult
         report = SummaryResult(**dict(SUMMARY, markdown='\x00' * 6000))
         with self.assertRaisesRegex(ValueError, '16 KiB'):
             bounded_result(report)

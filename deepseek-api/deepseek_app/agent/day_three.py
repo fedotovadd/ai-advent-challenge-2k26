@@ -1,6 +1,6 @@
 import concurrent.futures
 
-from agent import MODEL, SYSTEM_PROMPT, _response_content_and_usage
+from deepseek_app.agent.agent import MODEL, SYSTEM_PROMPT, _response_content_and_usage
 
 DIRECT_SYSTEM = (
     "Реши задачу самостоятельно. Дай точный, краткий и проверяемый ответ на русском языке. "

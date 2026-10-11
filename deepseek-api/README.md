@@ -1,5 +1,20 @@
 # Веб-чат с облачными и локальной моделями
 
+## Структура Python-кода
+
+Код приложения лежит в `deepseek_app/`: `agent/` хранит состояние и память агента,
+`providers/` подключает модели, `mcp/` содержит клиент и серверы инструментов,
+`pipeline/` выполняет исследовательские цепочки, `rag/` отвечает за индекс,
+поиск и RAG-чат, `server/` обслуживает HTTP-интерфейс. В корне остаётся
+`main.py` как точка входа: из `deepseek-api` запустите `python main.py`.
+Три прежних файла `*_mcp_server.py` в корне остаются совместимыми командами
+запуска; сами серверы теперь находятся в пакетах. Их можно запускать также
+через `python -m deepseek_app.mcp.github_mcp_server`,
+`python -m deepseek_app.pipeline.pipeline_mcp_server` и
+`python -m deepseek_app.mcp.scheduler_mcp_server`. Для RAG CLI используйте
+`python -m deepseek_app.rag.<имя_модуля>` из `deepseek-api`. Из корня
+репозитория примеры ниже добавляют `PYTHONPATH=deepseek-api`.
+
 Приложение запускает локальный интерфейс для общения с DeepSeek, Z.AI или Ollama. Внутри одного сервера работают независимые агенты со своей перепиской, настройками и данными последнего запроса к API.
 
 ## Оглавление
@@ -1089,11 +1104,11 @@ ollama serve
 Из корня репозитория:
 
 ```bash
-python3 deepseek-api/document_index.py build
-python3 deepseek-api/document_index.py compare
-python3 deepseek-api/document_index.py search "Как агенту хранить память проекта?" --strategy fixed
-python3 deepseek-api/document_index.py search "Как агенту хранить память проекта?" --strategy structural
-python3 deepseek-api/document_index.py search "Как проверять изменения перед коммитом?" --strategy structural --top-k 3
+PYTHONPATH=deepseek-api python3 -m deepseek_app.rag.document_index build
+PYTHONPATH=deepseek-api python3 -m deepseek_app.rag.document_index compare
+PYTHONPATH=deepseek-api python3 -m deepseek_app.rag.document_index search "Как агенту хранить память проекта?" --strategy fixed
+PYTHONPATH=deepseek-api python3 -m deepseek_app.rag.document_index search "Как агенту хранить память проекта?" --strategy structural
+PYTHONPATH=deepseek-api python3 -m deepseek_app.rag.document_index search "Как проверять изменения перед коммитом?" --strategy structural --top-k 3
 ```
 
 `build` создаёт `docs/day-21/index.sqlite3` и заменяет старую базу только
@@ -1119,10 +1134,10 @@ CLI сравнивает обычный ответ и ответ с пятью �
 `ZAI_API_KEY` и при необходимости запустите `ollama serve`. Из корня репозитория:
 
 ```bash
-python3 deepseek-api/rag_agent.py ask "Что включить в документ передачи сессии?" --mode plain
-python3 deepseek-api/rag_agent.py ask "Что включить в документ передачи сессии?" --mode rag
-python3 deepseek-api/rag_agent.py evaluate
-python3 deepseek-api/rag_agent.py evaluate --model deepseek-v4-flash
+PYTHONPATH=deepseek-api python3 -m deepseek_app.rag.rag_agent ask "Что включить в документ передачи сессии?" --mode plain
+PYTHONPATH=deepseek-api python3 -m deepseek_app.rag.rag_agent ask "Что включить в документ передачи сессии?" --mode rag
+PYTHONPATH=deepseek-api python3 -m deepseek_app.rag.rag_agent evaluate
+PYTHONPATH=deepseek-api python3 -m deepseek_app.rag.rag_agent evaluate --model deepseek-v4-flash
 ```
 
 Адрес Ollama и путь индекса можно задать через `--ollama-url` и `--index`
@@ -1179,11 +1194,11 @@ ollama pull embeddinggemma
 embedding-модели. Из корня проекта:
 
 ```bash
-.venv/bin/python deepseek-api/rag_day23.py ask "Как агенту искать причину ошибки до правки кода?" --mode baseline
-.venv/bin/python deepseek-api/rag_day23.py ask "Как агенту искать причину ошибки до правки кода?" --mode reranked
-.venv/bin/python deepseek-api/rag_day23.py ask "Как агенту искать причину ошибки до правки кода?" --mode rewritten
-.venv/bin/python deepseek-api/rag_day23.py ask "Как агенту искать причину ошибки до правки кода?" --mode reranked --top-k-before 20 --top-k-after 5 --min-rerank-score 1.0
-.venv/bin/python deepseek-api/rag_day23.py evaluate --model glm-4.7-flash
+PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_day23 ask "Как агенту искать причину ошибки до правки кода?" --mode baseline
+PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_day23 ask "Как агенту искать причину ошибки до правки кода?" --mode reranked
+PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_day23 ask "Как агенту искать причину ошибки до правки кода?" --mode rewritten
+PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_day23 ask "Как агенту искать причину ошибки до правки кода?" --mode reranked --top-k-before 20 --top-k-after 5 --min-rerank-score 1.0
+PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_day23 evaluate --model glm-4.7-flash
 ```
 
 `--index` и `--ollama-url` указываются **перед** `ask` или `evaluate`;
@@ -1214,8 +1229,8 @@ embedding-модели. Из корня проекта:
 настраиваются так же, как для дня 23. Из корня проекта:
 
 ```bash
-.venv/bin/python deepseek-api/rag_day24.py ask "Как агенту искать причину ошибки до правки кода?" --model glm-4.7-flash
-.venv/bin/python deepseek-api/rag_day24.py evaluate --model glm-4.7-flash
+PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_day24 ask "Как агенту искать причину ошибки до правки кода?" --model glm-4.7-flash
+PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_day24 evaluate --model glm-4.7-flash
 ```
 
 Общие `--index` и `--ollama-url` ставятся перед `ask` или `evaluate`.
@@ -1248,7 +1263,7 @@ embedding-модели. Из корня проекта:
 Из корня проекта запустите CLI (он не связан с веб-чатом):
 
 ```bash
-.venv/bin/python deepseek-api/rag_chat.py chat --session моя-задача
+PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_chat chat --session моя-задача
 ```
 
 `--session` создаёт или продолжает именованную сессию. По умолчанию история и
@@ -1275,7 +1290,7 @@ reranker дня 23 и ключ `ZAI_API_KEY` или `DEEPSEEK_API_KEY` для в
 Ошибки поиска, модели и сохранения показываются отдельно; неудачный ход не
 меняет состояние. Сценарии и фактические результаты находятся в
 `docs/day-25/`; воспроизвести новый прогон можно через
-`deepseek-api/rag_chat_eval.py --scenarios ... --results ... --db ...`.
+`PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_chat_eval --scenarios ... --results ... --db ...`.
 При ошибке сценарный прогон сохраняет `.partial` и базу; повтор с теми же
 сценарием, моделью, индексом и Ollama возобновляет ход. Имена входного файла,
 результата, `.partial`, базы и индекса должны различаться.

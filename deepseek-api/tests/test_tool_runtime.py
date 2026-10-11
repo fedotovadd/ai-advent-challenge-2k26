@@ -2,8 +2,8 @@ import copy
 import json
 import unittest
 from unittest.mock import Mock
-from mcp_registry import McpRegistry
-from tool_runtime import run_tools
+from deepseek_app.mcp.mcp_registry import McpRegistry
+from deepseek_app.mcp.tool_runtime import run_tools
 
 TOOL = {'name':'repo', 'description':'repo', 'inputSchema':{'type':'object','properties':{}}}
 USAGE = {'prompt_tokens':10, 'completion_tokens':2, 'total_tokens':12}

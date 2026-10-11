@@ -6,9 +6,9 @@ import re
 from pathlib import Path
 from uuid import uuid4
 
-from pipeline_models import SavedFile, SearchResult, SummaryResult
+from deepseek_app.pipeline.pipeline_models import SavedFile, SearchResult, SummaryResult
 
-DEFAULT_REPORTS_DIR = Path(__file__).resolve().parent / 'data' / 'reports'
+DEFAULT_REPORTS_DIR = Path(__file__).resolve().parents[2] / 'data' / 'reports'
 
 
 def _markdown_text(value: str) -> str:

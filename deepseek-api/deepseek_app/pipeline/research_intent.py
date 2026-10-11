@@ -3,8 +3,8 @@ import json
 import re
 from time import monotonic
 
-from errors import MissingApiKeyError
-from pipeline_models import SearchArguments
+from deepseek_app.providers.errors import MissingApiKeyError
+from deepseek_app.pipeline.pipeline_models import SearchArguments
 
 SYSTEM = '''Преобразуй запрос пользователя в JSON для поиска публичных GitHub-репозиториев.
 Ответ строго: {"action":"search|clarify|unsupported","query":строка|null,"limit":число|null,"message":строка|null}.

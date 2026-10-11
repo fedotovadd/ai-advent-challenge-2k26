@@ -8,19 +8,19 @@ import math
 from pathlib import Path
 import sys
 
-from document_index import DEFAULT_DB, OllamaEmbedder, load_index, search_index
-from providers import ask_model
-from rag_agent import MODEL, RagError, _atomic_write, _input_fingerprint, _read_questions
-from rag_citations import (MODELS, NO_EVIDENCE_ANSWER, build_answer_payload,
+from deepseek_app.rag.document_index import DEFAULT_DB, OllamaEmbedder, load_index, search_index
+from deepseek_app.providers.providers import ask_model
+from deepseek_app.rag.rag_agent import MODEL, RagError, _atomic_write, _input_fingerprint, _read_questions
+from deepseek_app.rag.rag_citations import (MODELS, NO_EVIDENCE_ANSWER, build_answer_payload,
                            validate_answer_json)
-from rag_reranker import (DEFAULT_RERANKER_MODEL, CrossEncoderReranker,
+from deepseek_app.rag.rag_reranker import (DEFAULT_RERANKER_MODEL, CrossEncoderReranker,
                           rerank_candidates)
 
 
 TOP_K_BEFORE = 20
 TOP_K_AFTER = 5
 MIN_RERANK_SCORE = 0.50
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_QUESTIONS = PROJECT_ROOT / "docs/day-22/control_questions.json"
 DEFAULT_RESULTS = PROJECT_ROOT / "docs/day-24/results.json"
 DEFAULT_REPORT = PROJECT_ROOT / "docs/day-24/evaluation.md"

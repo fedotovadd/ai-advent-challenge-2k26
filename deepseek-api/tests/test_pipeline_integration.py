@@ -16,10 +16,10 @@ from unittest.mock import Mock, patch
 import httpx
 import uvicorn
 
-import mcp_client
-import pipeline_tools
-from pipeline_mcp_server import create_server
-from pipeline_runner import run_pipeline
+from deepseek_app.mcp import mcp_client
+from deepseek_app.pipeline import pipeline_tools
+from deepseek_app.pipeline.pipeline_mcp_server import create_server
+from deepseek_app.pipeline.pipeline_runner import run_pipeline
 from test_pipeline_tools import GITHUB_RESPONSE
 
 
@@ -67,7 +67,7 @@ def running_mcp(payload=GITHUB_RESPONSE, *, status=200):
 
 class PipelineHTTPIntegrationTests(unittest.TestCase):
     def test_natural_language_to_real_mcp_chain_and_saved_file(self):
-        from web import ChatServer
+        from deepseek_app.server.web import ChatServer
         ask = Mock(return_value={'content': json.dumps({'action': 'search', 'query': 'mcp language:python', 'limit': 2, 'message': None}), 'usage': {'prompt_tokens': 100, 'completion_tokens': 20, 'total_tokens': 120}})
         with running_mcp() as (invoke, directory, requests), TemporaryDirectory() as state_dir:
             chat = ChatServer(('127.0.0.1', 0), ask, Path(state_dir) / 'agents.json')
@@ -110,7 +110,7 @@ class PipelineHTTPIntegrationTests(unittest.TestCase):
             def invoke(url, name, args):
                 calls.append((name, args))
                 return http_invoke(url, name, args)
-            with patch('pipeline_tools.summarize', blocked_summary), patch('pipeline_tools.save_to_file', record_save):
+            with patch('deepseek_app.pipeline.pipeline_tools.summarize', blocked_summary), patch('deepseek_app.pipeline.pipeline_tools.save_to_file', record_save):
                 with ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(run_pipeline, 'mcp', invoke=invoke, emit=emit)
                     try:
@@ -157,8 +157,8 @@ class PipelineHTTPIntegrationTests(unittest.TestCase):
             self.assertEqual(len(requests), 1)
 
     def test_chat_command_streams_real_mcp_progress_and_restores_saved_card_without_llm(self):
-        from agent import AgentRegistry
-        from web import ChatServer
+        from deepseek_app.agent.agent import AgentRegistry
+        from deepseek_app.server.web import ChatServer
         reached_summary, release_summary = threading.Event(), threading.Event()
         original_summarize = pipeline_tools.summarize
         def blocked_summary(search_result):
@@ -175,7 +175,7 @@ class PipelineHTTPIntegrationTests(unittest.TestCase):
             thread.start()
             connection = http.client.HTTPConnection(*chat.server_address, timeout=5)
             try:
-                with patch('pipeline_tools.summarize', blocked_summary):
+                with patch('deepseek_app.pipeline.pipeline_tools.summarize', blocked_summary):
                     connection.request('POST', '/api/agents/agent-1/messages', json.dumps({'text': '/research mcp'}),
                                        {'Content-Type': 'application/json'})
                     response = connection.getresponse()

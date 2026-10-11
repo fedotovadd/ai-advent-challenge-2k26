@@ -37,8 +37,8 @@ def guarded_agent_request(method):
 
 def handle_research(handler, agent_id, text, query):
     # Import here to keep HTTP routing independent from the MCP SDK lifecycle.
-    from agent import PersistenceError
-    from research_intent import raw_search_arguments, interpret_research
+    from deepseek_app.agent.agent import PersistenceError
+    from deepseek_app.pipeline.research_intent import raw_search_arguments, interpret_research
     registry = handler.server.registry
     try:
         arguments = raw_search_arguments(query)
@@ -107,7 +107,7 @@ def handle_research(handler, agent_id, text, query):
                 return
         runner = handler.server.pipeline_runner
         if runner is None:
-            from pipeline_runner import run_pipeline
+            from deepseek_app.pipeline.pipeline_runner import run_pipeline
             runner = run_pipeline
         options = {'limit': arguments['limit']} if arguments['limit'] != 3 else {}
         outcome = runner(arguments['query'], emit=emit, **options)

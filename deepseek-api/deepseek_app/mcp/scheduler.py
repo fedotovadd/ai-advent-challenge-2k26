@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-import github_api
+from deepseek_app.mcp import github_api
 
 LEASE_SECONDS = 60
 MAX_SECONDS = 31_536_000

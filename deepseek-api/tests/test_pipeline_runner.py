@@ -14,8 +14,8 @@ def envelope(data):
 
 class PipelineRunnerTests(unittest.TestCase):
     def test_three_calls_forward_original_structured_content_and_emit_in_order(self):
-        from pipeline_runner import run_pipeline
-        from mcp_client import LOCAL_PIPELINE_URL
+        from deepseek_app.pipeline.pipeline_runner import run_pipeline
+        from deepseek_app.mcp.mcp_client import LOCAL_PIPELINE_URL
         results = [envelope(copy.deepcopy(data)) for data in (SEARCH, SUMMARY, SAVED)]
         calls, events, timeline = [], [], []
         def invoke(url, name, arguments):
@@ -48,7 +48,7 @@ class PipelineRunnerTests(unittest.TestCase):
         self.assertTrue(all('run_id' not in event and 'seq' not in event for event in events))
 
     def test_each_step_stops_on_error_timeout_missing_data_and_invalid_schema(self):
-        from pipeline_runner import run_pipeline
+        from deepseek_app.pipeline.pipeline_runner import run_pipeline
         names = ['search', 'summarize', 'saveToFile']
         for failed_index in range(3):
             for bad in [{'isError': True, 'content': [{'type': 'text', 'text': 'Tool failed'}]},
@@ -72,7 +72,7 @@ class PipelineRunnerTests(unittest.TestCase):
                         self.assertIs(result['trace'][-1]['result'], bad)
 
     def test_invalid_input_has_no_mcp_calls_or_events(self):
-        from pipeline_runner import run_pipeline
+        from deepseek_app.pipeline.pipeline_runner import run_pipeline
         for query, limit in [('', 3), ('x' * 201, 3), ('mcp', True)]:
             invoke, emit = Mock(), Mock()
             with self.assertRaises(ValueError):
@@ -81,7 +81,7 @@ class PipelineRunnerTests(unittest.TestCase):
             emit.assert_not_called()
 
     def test_callback_failure_propagates_and_prevents_next_call(self):
-        from pipeline_runner import run_pipeline
+        from deepseek_app.pipeline.pipeline_runner import run_pipeline
         for when, expected_calls in [('step_started', 0), ('step_completed', 1), ('step_failed', 1)]:
             invoke = Mock(return_value=envelope(SEARCH) if when != 'step_failed' else {'isError': True, 'content': []})
             def emit(event):
@@ -92,7 +92,7 @@ class PipelineRunnerTests(unittest.TestCase):
             self.assertEqual(invoke.call_count, expected_calls)
 
     def test_runner_rejects_oversized_envelopes_without_forwarding_them(self):
-        from pipeline_runner import run_pipeline
+        from deepseek_app.pipeline.pipeline_runner import run_pipeline
         response = envelope(SEARCH)
         response['content'][0]['text'] = 'я' * 9000
         invoke = Mock(return_value=response)

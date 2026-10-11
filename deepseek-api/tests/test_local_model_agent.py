@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent import AgentRegistry, ContextOverflowError, _valid_settings, default_settings
+from deepseek_app.agent.agent import AgentRegistry, ContextOverflowError, _valid_settings, default_settings
 
 
 class LocalModelAgentTests(unittest.TestCase):

@@ -1,6 +1,6 @@
-from providers import ask_model
-import mcp_client
-from web import ChatServer
+from deepseek_app.providers.providers import ask_model
+from deepseek_app.mcp import mcp_client
+from deepseek_app.server.web import ChatServer
 
 
 def create_server(

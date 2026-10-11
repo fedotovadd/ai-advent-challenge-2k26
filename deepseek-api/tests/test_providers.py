@@ -5,17 +5,17 @@ from unittest.mock import patch
 import httpx
 from openai import APIConnectionError, APITimeoutError, NotFoundError
 
-import providers
+from deepseek_app.providers import providers
 
 
 class ProviderTests(unittest.TestCase):
-    @patch("providers.OpenAI")
+    @patch("deepseek_app.providers.providers.OpenAI")
     def test_local_model_uses_loopback_without_cloud_keys_and_forwards_options(self, openai):
         message = SimpleNamespace(content="Локальный ответ", tool_calls=None)
         openai.return_value.chat.completions.create.return_value = SimpleNamespace(
             choices=[SimpleNamespace(message=message)], usage=None)
         payload = {"model": "qwen2.5:1.5b", "messages": [{"role": "user", "content": "Привет"}], "temperature": 0.7}
-        with patch("providers.os.getenv", side_effect=AssertionError("cloud key read")):
+        with patch("deepseek_app.providers.providers.os.getenv", side_effect=AssertionError("cloud key read")):
             result = providers.ask_model(payload, max_tokens=512, stop="КОНЕЦ")
         openai.assert_called_once_with(api_key="ollama", base_url="http://127.0.0.1:11434/v1/", timeout=120, max_retries=0)
         openai.return_value.chat.completions.create.assert_called_once_with(
@@ -23,7 +23,7 @@ class ProviderTests(unittest.TestCase):
             max_tokens=512, stop="КОНЕЦ")
         self.assertEqual(result["content"], "Локальный ответ")
 
-    @patch("providers.OpenAI")
+    @patch("deepseek_app.providers.providers.OpenAI")
     def test_local_provider_errors_are_classified(self, openai):
         request = httpx.Request("POST", "http://127.0.0.1:11434/v1/chat/completions")
         cases = [
@@ -38,7 +38,7 @@ class ProviderTests(unittest.TestCase):
                     providers.ask_model({"model": "qwen2.5:1.5b", "messages": [], "temperature": 1})
                 self.assertEqual(caught.exception.kind, expected_kind)
 
-    @patch("providers.OpenAI")
+    @patch("deepseek_app.providers.providers.OpenAI")
     def test_local_empty_answer_is_an_error(self, openai):
         openai.return_value.chat.completions.create.return_value = SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content="", tool_calls=None))], usage=None)
@@ -46,14 +46,14 @@ class ProviderTests(unittest.TestCase):
             providers.ask_model({"model": "qwen2.5:1.5b", "messages": [], "temperature": 1})
         self.assertEqual(caught.exception.kind, "empty")
 
-    @patch("providers.OpenAI")
+    @patch("deepseek_app.providers.providers.OpenAI")
     def test_local_route_never_enables_sdk_retries(self, openai):
         openai.return_value.chat.completions.create.return_value = SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content="Ок", tool_calls=None))], usage=None)
         providers.ask_model({"model": "qwen2.5:1.5b", "messages": [], "temperature": 1}, max_retries=3)
         self.assertEqual(openai.call_args.kwargs["max_retries"], 0)
 
-    @patch("providers.OpenAI")
+    @patch("deepseek_app.providers.providers.OpenAI")
     def test_deepseek_route_still_uses_its_cloud_key(self, openai):
         openai.return_value.chat.completions.create.return_value = SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content="Облако", tool_calls=None))], usage=None)
@@ -61,7 +61,7 @@ class ProviderTests(unittest.TestCase):
             providers.ask_model({"model": "deepseek-v4-flash", "messages": [], "temperature": 1})
         openai.assert_called_once_with(api_key="deepseek-key", base_url="https://api.deepseek.com")
 
-    @patch("providers.OpenAI")
+    @patch("deepseek_app.providers.providers.OpenAI")
     def test_glm_model_uses_zai_endpoint_and_key(self, openai):
         openai.return_value.chat.completions.create.return_value = SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content="Ответ GLM"))],
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     unittest.main()
 
 class ProviderToolTests(unittest.TestCase):
-    @patch('providers.OpenAI')
+    @patch('deepseek_app.providers.providers.OpenAI')
     def test_tool_only_response_is_valid(self, openai):
         tool = SimpleNamespace(id='call_1', type='function', function=SimpleNamespace(name='repo', arguments='{}'))
         openai.return_value.chat.completions.create.return_value = SimpleNamespace(
@@ -94,7 +94,7 @@ class ProviderToolTests(unittest.TestCase):
         self.assertEqual(result['tool_calls'][0]['id'], 'call_1')
         self.assertIsNone(result['content'])
 
-    @patch('providers.OpenAI')
+    @patch('deepseek_app.providers.providers.OpenAI')
     def test_per_call_retry_override_is_applied_to_client_not_api_body(self, openai):
         openai.return_value.chat.completions.create.return_value = SimpleNamespace(
             choices=[SimpleNamespace(message=SimpleNamespace(content='{}'))], usage=None)

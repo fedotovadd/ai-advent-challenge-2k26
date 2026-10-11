@@ -3,13 +3,13 @@ import json
 import unittest
 from unittest.mock import Mock
 
-from errors import MissingApiKeyError
+from deepseek_app.providers.errors import MissingApiKeyError
 
 
 class ResearchIntentTests(unittest.TestCase):
     def module(self):
-        self.assertIsNotNone(importlib.util.find_spec('research_intent'), 'natural-language research is missing')
-        import research_intent
+        self.assertIsNotNone(importlib.util.find_spec('deepseek_app.pipeline.research_intent'), 'natural-language research is missing')
+        from deepseek_app.pipeline import research_intent
         return research_intent
 
     def test_legacy_and_explicit_raw_queries_skip_model(self):

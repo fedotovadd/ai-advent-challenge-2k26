@@ -16,7 +16,7 @@ GITHUB_RESPONSE = {'total_count': 10, 'incomplete_results': False, 'items': [GIT
 
 class SearchTests(unittest.IsolatedAsyncioTestCase):
     async def search(self, handler, query='mcp', limit=3):
-        from github_api import search_repositories
+        from deepseek_app.mcp.github_api import search_repositories
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             return await search_repositories(query, limit=limit, client=client)
 
@@ -38,7 +38,7 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(result['items'][0]), set(SEARCH['items'][0]))
 
     async def test_private_results_and_invalid_search_envelopes_are_rejected(self):
-        from github_api import GitHubAPIError
+        from deepseek_app.mcp.github_api import GitHubAPIError
         for payload in ({}, [], dict(GITHUB_RESPONSE, total_count='10'),
                         dict(GITHUB_RESPONSE, items=[dict(GITHUB_ITEM, private=True)]),
                         dict(GITHUB_RESPONSE, items=[dict(GITHUB_ITEM, stargazers_count=True)])):
@@ -57,7 +57,7 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
                 await self.search(lambda req: self.fail('No request expected'), query, limit)
 
     async def test_errors_reuse_safe_github_messages_and_do_not_follow_redirects(self):
-        from github_api import GitHubAPIError
+        from deepseek_app.mcp.github_api import GitHubAPIError
         for code, message in [(401, 'токен'), (429, 'лимит'), (503, 'недоступ'), (301, 'перенаправ')]:
             seen = []
             def handler(req):
@@ -76,7 +76,7 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
 
 class SummaryAndSaveTests(unittest.TestCase):
     def test_summary_is_deterministic_includes_sources_and_actual_count(self):
-        from pipeline_tools import summarize
+        from deepseek_app.pipeline.pipeline_tools import summarize
         first = summarize(SEARCH)
         self.assertEqual(first, summarize(SEARCH))
         self.assertEqual(first['source_count'], 1)
@@ -90,14 +90,14 @@ class SummaryAndSaveTests(unittest.TestCase):
         self.assertIn('Ничего не найдено', empty['markdown'])
 
     def test_summary_treats_markup_as_data(self):
-        from pipeline_tools import summarize
+        from deepseek_app.pipeline.pipeline_tools import summarize
         data = dict(SEARCH, items=[dict(SEARCH['items'][0], description='<script>x</script>\n# injected')])
         text = summarize(data)['markdown']
         self.assertNotIn('<script>', text)
         self.assertNotIn('\n# injected', text)
 
     def test_save_writes_exact_utf8_bytes_and_unique_files(self):
-        from pipeline_tools import save_to_file
+        from deepseek_app.pipeline.pipeline_tools import save_to_file
         with TemporaryDirectory() as temp:
             first = save_to_file(SUMMARY, reports_dir=Path(temp))
             second = save_to_file(SUMMARY, reports_dir=Path(temp))
@@ -109,7 +109,7 @@ class SummaryAndSaveTests(unittest.TestCase):
             self.assertEqual(first['sha256'], hashlib.sha256(expected).hexdigest())
 
     def test_save_rejects_paths_and_excess_bytes_without_creating_files(self):
-        from pipeline_tools import save_to_file
+        from deepseek_app.pipeline.pipeline_tools import save_to_file
         with TemporaryDirectory() as temp:
             for changes in ({'markdown': 'я' * 3001}, {'path': '../evil.md'}, {'markdown': ''}):
                 with self.assertRaises(ValueError):
@@ -117,8 +117,8 @@ class SummaryAndSaveTests(unittest.TestCase):
             self.assertEqual(list(Path(temp).iterdir()), [])
 
     def test_collision_preserves_existing_file_and_write_failure_cleans_partial(self):
-        from pipeline_tools import save_to_file
-        with TemporaryDirectory() as temp, patch('pipeline_tools.uuid4', return_value='fixed'):
+        from deepseek_app.pipeline.pipeline_tools import save_to_file
+        with TemporaryDirectory() as temp, patch('deepseek_app.pipeline.pipeline_tools.uuid4', return_value='fixed'):
             existing = Path(temp) / 'fixed.md'
             existing.write_bytes(b'keep me')
             with self.assertRaises(OSError):
@@ -135,7 +135,7 @@ class SummaryAndSaveTests(unittest.TestCase):
                     raise OSError('disk full')
                 def __exit__(self, *args):
                     self.file.close()
-            with patch('pipeline_tools.Path.open', return_value=BrokenWriter()):
+            with patch('deepseek_app.pipeline.pipeline_tools.Path.open', return_value=BrokenWriter()):
                 with self.assertRaises(OSError):
                     save_to_file(SUMMARY, reports_dir=Path(temp))
             self.assertEqual(list(Path(temp).iterdir()), [])
