@@ -10,6 +10,26 @@ from deepseek_app.providers import providers
 
 class ProviderTests(unittest.TestCase):
     @patch("deepseek_app.providers.providers.OpenAI")
+    def test_day29_aliases_are_local_and_return_token_counts(self, openai):
+        openai.return_value.chat.completions.create.return_value = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="Ответ", tool_calls=None), finish_reason="stop")],
+            usage=SimpleNamespace(prompt_tokens=21, completion_tokens=7, total_tokens=28))
+        for model in ("qwen2.5-day29-ctx4096", "qwen2.5-day29-ctx8192",
+                      "qwen2.5:1.5b-instruct-q8_0", "qwen2.5-day29-q8-ctx4096"):
+            with self.subTest(model=model), patch("deepseek_app.providers.providers.os.getenv", side_effect=AssertionError("cloud key read")):
+                result = providers.ask_model({"model": model, "messages": [], "temperature": 0}, max_tokens=512)
+            self.assertEqual(openai.call_args.kwargs["base_url"], providers.LOCAL_BASE_URL)
+            self.assertEqual(result["prompt_tokens"], 21)
+            self.assertEqual(result["completion_tokens"], 7)
+            self.assertEqual(result["total_tokens"], 28)
+
+    def test_unknown_day29_alias_is_rejected_before_cloud_routing(self):
+        with patch("deepseek_app.providers.providers.os.getenv", side_effect=AssertionError("cloud key read")):
+            for model in ("qwen2.5-day29-ctx16384", "qwen2.5:1.5b-instruct-q5_K_M"):
+                with self.subTest(model=model), self.assertRaisesRegex(ValueError, "Неизвестн"):
+                    providers.ask_model({"model": model, "messages": [], "temperature": 0})
+
+    @patch("deepseek_app.providers.providers.OpenAI")
     def test_local_model_uses_loopback_without_cloud_keys_and_forwards_options(self, openai):
         message = SimpleNamespace(content="Локальный ответ", tool_calls=None)
         openai.return_value.chat.completions.create.return_value = SimpleNamespace(

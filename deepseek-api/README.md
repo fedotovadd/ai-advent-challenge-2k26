@@ -65,6 +65,7 @@
 - [День 20 — оркестрация нескольких MCP-серверов](#день-20--оркестрация-нескольких-mcp-серверов)
 - [День 21 — локальный индекс EPUB](#день-21--локальный-индекс-epub)
 - [День 24 — проверенные цитаты и отказ](#день-24--проверенные-цитаты-и-отказ)
+- [День 29 — измерение настроек локальной LLM](#день-29--измерение-настроек-локальной-llm)
 
 ## Настройки и запуск
 
@@ -1307,6 +1308,61 @@ PYTHONPATH=deepseek-api .venv/bin/python -m deepseek_app.rag.rag_day28 report
 
 Измерения поиска и reranking относятся к первому
 проходу; повторы используют сохранённый контекст.
+
+## День 29 — измерение настроек локальной LLM
+
+День 29 использует тот же индекс, Top-20 → Top-5, reranker и порог 0,50,
+что и день 28. Установите зависимости из `requirements-rerank.txt` в
+`deepseek-api/.venv`, запустите `ollama serve` в отдельном терминале и
+убедитесь, что локально есть `embeddinggemma` и `qwen2.5:1.5b`.
+Варианты окна создаются из установленной модели без повторного квантования:
+
+```bash
+ollama create qwen2.5-day29-ctx4096 -f docs/day-29/Modelfile.ctx4096
+ollama create qwen2.5-day29-ctx8192 -f docs/day-29/Modelfile.ctx8192
+ollama pull qwen2.5:1.5b-instruct-q8_0
+ollama create qwen2.5-day29-q8-ctx4096 -f docs/day-29/Modelfile.q8.ctx4096
+```
+
+Из корня проекта первый набор экспериментов и следующие этапы на тех же
+снимках запускаются так:
+
+```bash
+PYTHONPATH=deepseek-api deepseek-api/.venv/bin/python -m deepseek_app.rag.rag_day29 compare
+PYTHONPATH=deepseek-api deepseek-api/.venv/bin/python -m deepseek_app.rag.rag_day29 compare --variants docs/day-29/variants-baseline-limits.json --snapshot-source docs/day-29/results.json --results docs/day-29/results-baseline-limits.json
+PYTHONPATH=deepseek-api deepseek-api/.venv/bin/python -m deepseek_app.rag.rag_day29 compare --variants docs/day-29/variants-baseline-context.json --snapshot-source docs/day-29/results.json --results docs/day-29/results-baseline-context.json
+PYTHONPATH=deepseek-api deepseek-api/.venv/bin/python -m deepseek_app.rag.rag_day29 compare --variants docs/day-29/variants-temperature.json --snapshot-source docs/day-29/results.json --results docs/day-29/results-temperature.json
+PYTHONPATH=deepseek-api deepseek-api/.venv/bin/python -m deepseek_app.rag.rag_day29 compare --variants docs/day-29/variants-quantization.json --snapshot-source docs/day-29/results.json --results docs/day-29/results-quantization.json
+PYTHONPATH=deepseek-api deepseek-api/.venv/bin/python -m deepseek_app.rag.rag_day29 compare --variants docs/day-29/variants-final.json --snapshot-source docs/day-29/results.json --results docs/day-29/paired-results.json --alternate
+```
+
+`compare` после каждого ответа сохраняет JSON и при повторе продолжает
+только при совпадении вопросов, индекса, профилей и хешей снимков. Для
+полностью нового прогона используйте `--overwrite` или другой путь
+`--results`. Ошибка Ollama, пустой и обрезанный ответы, отказ модели и
+отсутствие фрагментов имеют разные статусы. Три прохода используют один
+снимок; прогрев не входит в ответы, поиск не включён в время генерации.
+Модель выгружается между блоками, а реальные токены берутся из ответа
+совместимого API. Файл `docs/day-29/prompts.json` хранит точные шаблоны;
+каждый вызов дополнительно содержит хеш точных сообщений.
+
+После ручной оценки поля `manual.score` (`0/1/2`) и `manual.reason` в JSON
+отчёт пересобирается командой `report`. Для финального парного прогона
+передайте два профиля в отдельном `--variants`, прежние снимки через
+`--snapshot-source` и `--alternate` для чередования порядка моделей между
+вопросами. Итоговый выбранный профиль находится в
+`docs/day-29/profile.json`; пользовательский запрос:
+
+```bash
+PYTHONPATH=deepseek-api deepseek-api/.venv/bin/python -m deepseek_app.rag.rag_day29 ask "Какие четыре фазы предлагаются для нетривиальной задачи?"
+PYTHONPATH=deepseek-api deepseek-api/.venv/bin/python -m deepseek_app.rag.rag_day29 report --selected baseline-prompt-ctx4096 --paired docs/day-29/paired-results.json --additional docs/day-29/results-baseline-limits.json --additional docs/day-29/results-baseline-context.json --additional docs/day-29/results-temperature.json --additional docs/day-29/results-quantization.json --notes docs/day-29/conclusion.md
+```
+
+`ask` использует только `127.0.0.1:11434`, сохранённые параметры профиля
+и готовый индекс. При отсутствии фрагментов он отвечает «Не знаю» без
+вызова модели; при выключенной Ollama завершает команду понятной ошибкой
+без облачного fallback. Результаты и разбор ограничений — в
+`docs/day-29/results.json` и `docs/day-29/comparison.md`.
 
 ## День 25 — отдельный RAG-чат с памятью задачи
 

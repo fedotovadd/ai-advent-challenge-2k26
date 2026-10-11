@@ -6,6 +6,8 @@ from deepseek_app.providers.errors import MissingApiKeyError
 
 
 LOCAL_MODEL = "qwen2.5:1.5b"
+LOCAL_MODELS = frozenset((LOCAL_MODEL, "qwen2.5-day29-ctx4096", "qwen2.5-day29-ctx8192",
+                          "qwen2.5:1.5b-instruct-q8_0", "qwen2.5-day29-q8-ctx4096"))
 LOCAL_BASE_URL = "http://127.0.0.1:11434/v1/"
 
 
@@ -22,7 +24,10 @@ def _provider_settings(model):
 
 
 def ask_model(payload, **options):
-    local = payload["model"] == LOCAL_MODEL
+    model = payload["model"]
+    if model.startswith("qwen2.5") and model not in LOCAL_MODELS:
+        raise ValueError("Неизвестный локальный вариант дня 29")
+    local = model in LOCAL_MODELS
     if local:
         api_key, base_url = "ollama", LOCAL_BASE_URL
         client_options = {"timeout": 120, "max_retries": 0}
@@ -76,5 +81,7 @@ def ask_model(payload, **options):
         assistant["tool_calls"] = tool_calls
     return {"content": message.content, "usage": response.usage,
             "finish_reason": getattr(choice, "finish_reason", None),
+            "prompt_tokens": getattr(response.usage, "prompt_tokens", None),
             "completion_tokens": getattr(response.usage, "completion_tokens", None),
+            "total_tokens": getattr(response.usage, "total_tokens", None),
             "tool_calls": tool_calls, "message": assistant}

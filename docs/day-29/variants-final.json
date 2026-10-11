@@ -1,0 +1,22 @@
+{
+  "profiles": [
+    {
+      "id": "baseline",
+      "model": "qwen2.5:1.5b",
+      "temperature": 0,
+      "max_tokens": 1200,
+      "num_ctx": 32768,
+      "prompt": "day28",
+      "model_digest": "65ec06548149b04c096a120e4a6da9d4017ea809c91734ea5631e89f96ddc57b"
+    },
+    {
+      "id": "baseline-prompt-ctx4096",
+      "model": "qwen2.5-day29-ctx4096",
+      "temperature": 0,
+      "max_tokens": 1200,
+      "num_ctx": 4096,
+      "prompt": "day28",
+      "model_digest": "b5de4c8d2a50753775e4eb3af49852e6ac816000657700289e8648ee6a606248"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-11",
+  "os": "macOS 26.6.1 (Darwin 25.6.0, arm64)",
+  "cpu": "Apple M5 Pro",
+  "gpu": "Apple M5 Pro integrated GPU, 20 cores, Metal 4",
+  "ram_bytes": 51539607552,
+  "ollama_version": "0.35.1",
+  "python_version": "3.14.8",
+  "openai_version": "3.6.0",
+  "sentence_transformers_version": "6.1.0",
+  "torch_version": "2.14.1",
+  "api": "Ollama OpenAI-compatible /v1/chat/completions on http://127.0.0.1:11434",
+  "memory_method": "Sum of RSS for ollama serve and llama-server, sampled every 0.1 seconds; background after confirmed unload",
+  "gpu_memory_method": "Separate peak GPU memory unavailable; Ollama /api/ps size_vram retained as model placement estimate",
+  "cold_load_method": "Time of one 8-token warm-up request after confirmed unload; excluded from scored calls",
+  "first_stage_rss_note": "Initial sampler omitted llama-server. Its original values remain under *_unreliable keys and are excluded from comparisons. Later stages and final pair use the corrected sampler."
+}

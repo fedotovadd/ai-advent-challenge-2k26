@@ -1,0 +1,22 @@
+{
+  "profiles": [
+    {
+      "id": "q4-ctx4096",
+      "model": "qwen2.5-day29-ctx4096",
+      "temperature": 0,
+      "max_tokens": 1200,
+      "num_ctx": 4096,
+      "prompt": "day28",
+      "model_digest": "b5de4c8d2a50753775e4eb3af49852e6ac816000657700289e8648ee6a606248"
+    },
+    {
+      "id": "q8-ctx4096",
+      "model": "qwen2.5-day29-q8-ctx4096",
+      "temperature": 0,
+      "max_tokens": 1200,
+      "num_ctx": 4096,
+      "prompt": "day28",
+      "model_digest": "1939efde8116ae7dab03fb8d960aab0fb51993fd70b16016f341714a4ccb00a2"
+    }
+  ]
+}
